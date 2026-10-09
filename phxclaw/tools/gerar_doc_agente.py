@@ -7,7 +7,8 @@ De onde sai cada trecho (entre os marcadores <!-- gerado:NOME:inicio/fim -->):
   ferramentas  <- `phxclaw ferramentas` (a mesma Montagem do agente, nesta maquina)
   condicionais <- o fonte de crates/phxclaw-agent/src: nome de ToolSpec que existe no codigo
                   e NAO foi montado aqui (falta configuracao, token, canal ou feature)
-  cli          <- `phxclaw --help` (o texto que o binario imprime)
+  cli          <- `phxclaw ajuda --tudo` (os comandos com os parametros de cada um, cada
+                  ferramenta montada com os do esquema dela e cada rota da API)
   equipe       <- `phxclaw equipe listar` (o "N de M papeis" que a CLI conta)
 
 Por que o fonte entra junto do binario: a montagem varia por maquina (sem SMTP nao ha
@@ -190,8 +191,8 @@ def main():
                  + ", ".join(f"`{n}`" for n in nao_no_fonte) + "."]
     texto = trocar(texto, "condicionais", "\n".join(cond))
 
-    ajuda = rodar(bin_, "--help", env=env)
-    texto = trocar(texto, "cli", f"Saida de `phxclaw --help`, gerada em {hoje}:\n\n```text\n"
+    ajuda = rodar(bin_, "ajuda", "--tudo", env=env)
+    texto = trocar(texto, "cli", f"Saida de `phxclaw ajuda --tudo`, gerada em {hoje}:\n\n```text\n"
                    f"{ajuda.rstrip()}\n```")
 
     eq = rodar(bin_, "equipe", "listar", env=env).splitlines()[0]

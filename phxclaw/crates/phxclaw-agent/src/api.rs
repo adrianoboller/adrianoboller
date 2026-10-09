@@ -116,6 +116,9 @@ pub fn router(state: ApiState) -> Router {
             state.clone(),
             crate::rbac::portao,
         ))
+        // Os cabecalhos de seguranca (CSP, nosniff, no-store do dado...), por FORA do
+        // portao: `layer` cobre tambem o 401 dele e o 404 de rota que nao existe.
+        .layer(axum::middleware::from_fn(crate::pwa::blindar))
         .with_state(state)
 }
 
@@ -278,6 +281,15 @@ fn criar_tarefa_em(
             "saida_esquema tem de ser um objeto de esquema JSON".into(),
         ));
     }
+    // Orcamento (R3): o pedido nunca passa do teto global (acima, recusa dizendo o teto), e
+    // dinheiro sem preco para o modelo nao se confere -- recusa aqui, antes da cota e do
+    // disco. O motor confere de novo para quem nao passa por esta porta.
+    let orcamento = orcamento_do_pedido(
+        &agente,
+        n.orcamento.as_ref(),
+        crate::orcamento::Alvo::Tarefa,
+    )
+    .map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     // Depois da validacao: pedido invalido nao gasta a cota de quem errou o campo.
     if let Err(seg) = s.limite.tomar() {
         return Err(Recusa {
@@ -291,6 +303,7 @@ fn criar_tarefa_em(
     t.webhook = n.webhook;
     t.verificar = verificar;
     t.saida_esquema = n.saida_esquema;
+    t.orcamento = orcamento;
     s.store
         .save(&t)
         .map_err(|e| recusa(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -375,7 +388,23 @@ pub fn criar_fluxo_com(
     entrada: Vec<Value>,
     preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
 ) -> Result<Criada, Recusa> {
-    criar_fluxo_ate(s, caminho, entrada, preparo, None, None)
+    criar_fluxo_ate(s, caminho, entrada, preparo, None, None, None)
+}
+
+/// O orcamento de um pedido pela politica do agente que vai rodar: o UNICO lugar da regra
+/// para a tarefa e para o fluxo (teto global e preco do modelo).
+fn orcamento_do_pedido(
+    agente: &Agent,
+    pedido: Option<&crate::tarefa::Orcamento>,
+    alvo: crate::orcamento::Alvo,
+) -> Result<Option<crate::tarefa::Orcamento>, String> {
+    let o = agente.config.orcamento.do_pedido(pedido, alvo)?;
+    crate::orcamento::conferir_preco(
+        o.as_ref(),
+        agente.config.precos.as_deref(),
+        &agente.llm.provedores(),
+    )?;
+    Ok(o)
 }
 
 /// O mesmo disparo, cortado nos ancestrais de `ate` (o `rodar --ate` da CLI): e o
@@ -387,6 +416,7 @@ pub fn criar_fluxo_ate(
     preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
     ate: Option<String>,
     projeto: Option<String>,
+    orcamento: Option<crate::tarefa::Orcamento>,
 ) -> Result<Criada, Recusa> {
     let recusa = |status, e: String| Recusa {
         status,
@@ -401,6 +431,8 @@ pub fn criar_fluxo_ate(
     crate::fluxos::conferir_entrada(&entrada).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     let agente = (s.factory)(&s.default_model).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     let agente = crate::metricas::GLOBAL.medindo(agente);
+    let orcamento = orcamento_do_pedido(&agente, orcamento.as_ref(), crate::orcamento::Alvo::Fluxo)
+        .map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     if let Err(seg) = s.limite.tomar() {
         return Err(Recusa {
             status: StatusCode::TOO_MANY_REQUESTS,
@@ -409,6 +441,7 @@ pub fn criar_fluxo_ate(
         });
     }
     let mut mae = crate::fluxos::tarefa_do_fluxo(&f, &s.default_model);
+    mae.orcamento = orcamento;
     // Antes do primeiro `save`, como no `criar_tarefa_em`: nao ha instante em que a tarefa
     // exista fora do projeto de quem a pediu.
     mae.projeto = projeto;
@@ -444,8 +477,15 @@ pub fn criar_fluxo_ate(
         .await;
         let fim = store.load(&id);
         crate::metricas::GLOBAL.fim_de_fluxo(|| match (&r, &fim) {
-            (Err(_), _) => Some(TaskStatus::Failed),
-            (Ok(_), Ok(t)) => Some(t.status),
+            (Err(_), Ok(t)) => Some(crate::metricas::FimDeFluxo {
+                estado: TaskStatus::Failed,
+                custo: crate::custo::total(t),
+            }),
+            (Err(_), _) => Some(crate::metricas::FimDeFluxo {
+                estado: TaskStatus::Failed,
+                custo: None,
+            }),
+            (Ok(_), Ok(t)) => Some(crate::metricas::FimDeFluxo::de(t)),
             _ => None,
         });
         match fim {
@@ -501,7 +541,10 @@ pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<(
         // ja corria, que nao executou nada.
         crate::metricas::GLOBAL.fim_de_fluxo(|| match &r {
             Err(crate::fluxos::FalhaDaRetomada::JaEmCurso(_)) => None,
-            _ => store.load(&id).ok().map(|t| t.status),
+            _ => store
+                .load(&id)
+                .ok()
+                .map(|t| crate::metricas::FimDeFluxo::de(&t)),
         });
     }))
 }

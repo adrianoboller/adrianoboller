@@ -451,10 +451,12 @@ async fn turno(estado: &Arc<Estado>, params: &Value) -> Result<Value, (i64, Stri
                 if let Some(ultima) = turnos.historico.last_mut() {
                     ultima.1 = texto;
                 }
-                let motivo = if t.status == TaskStatus::Cancelled {
-                    "cancelled"
-                } else {
-                    "end_turn"
+                // O orcamento esgotado e o `max_tokens` do ACP: o turno parou por teto de
+                // gasto, nao porque o agente terminou.
+                let motivo = match t.status {
+                    TaskStatus::Cancelled => "cancelled",
+                    TaskStatus::BudgetExceeded => "max_tokens",
+                    _ => "end_turn",
                 };
                 return Ok(json!({"stopReason": motivo}));
             }

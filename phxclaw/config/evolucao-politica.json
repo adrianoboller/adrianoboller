@@ -1,0 +1,86 @@
+{
+  "versao": 1,
+  "nota": "Politica da auto-evolucao (SP000015). Lida por um motor so: crates/phxclaw-agent/src/evolucao.rs. Caminhos relativos a pasta do projeto; 'dir/' veta a pasta inteira, '*' casa um trecho sem '/'. Politica que nao veta a si mesma nem o modulo da evolucao e recusada inteira.",
+  "backlog": "docs/absorcao/phxclaw.json",
+  "vetados": [
+    "crates/phxclaw-sandbox/",
+    "crates/phxclaw-secret-broker/",
+    "crates/phxclaw-key-provider/",
+    "crates/phxclaw-egress-broker/",
+    "crates/phxclaw-types/src/segredo.rs",
+    "crates/phxclaw-agent/src/motor.rs",
+    "crates/phxclaw-agent/src/rbac.rs",
+    "crates/phxclaw-agent/src/montagem.rs",
+    "crates/phxclaw-agent/src/licenca.rs",
+    "crates/phxclaw-agent/src/segredos.rs",
+    "crates/phxclaw-agent/src/chaves.rs",
+    "crates/phxclaw-agent/src/oauth.rs",
+    "crates/phxclaw-agent/src/regras.rs",
+    "crates/phxclaw-agent/src/tarefa.rs",
+    "crates/phxclaw-agent/src/processo.rs",
+    "crates/phxclaw-agent/src/gonogo.rs",
+    "crates/phxclaw-agent/src/evolucao.rs",
+    "crates/phxclaw-agent/tests/evolucao.rs",
+    "crates/phxclaw-self-evolving-intelligence/",
+    "crates/phxclaw-skill-evolution/",
+    "config/evolucao-politica.json",
+    "config/capabilities-*.json",
+    "config/capability-catalog.json",
+    "config/constitution.json",
+    ".phxclaw/",
+    ".github/",
+    "deploy/",
+    "scripts/run_*_gates.py",
+    "Cargo.toml",
+    "Cargo.lock",
+    "LICENSE*"
+  ],
+  "itens_vetados": [
+    {
+      "item": "segredos_externos",
+      "motivo": "seguranca: segredos (vetado pelo dono)"
+    },
+    {
+      "item": "guardrails",
+      "motivo": "seguranca: varredura e guardas (vetado pelo dono)"
+    },
+    {
+      "item": "remoto_ssh_containers",
+      "motivo": "capacidade nova de acesso remoto (vetado pelo dono)"
+    },
+    {
+      "item": "instalacao_docker_k8s",
+      "motivo": "deploy/ e vetado"
+    },
+    {
+      "item": "canal_imessage",
+      "motivo": "depende de recurso (Mac) que o dono nao fornece"
+    },
+    {
+      "item": "ambientes_nuvem",
+      "motivo": "depende da VM do dono e e decisao de produto"
+    },
+    {
+      "item": "live_share",
+      "motivo": "limite declarado pelo dono (edicao simultanea)"
+    },
+    {
+      "item": "dobra_codigo",
+      "motivo": "fora por decisao do pesquisador"
+    },
+    {
+      "item": "telemetria_energia",
+      "motivo": "depende de maquina com RAPL"
+    },
+    {
+      "item": "voz_wake",
+      "motivo": "depende de microfone ao vivo"
+    }
+  ],
+  "portoes": [
+    "fmt",
+    "clippy",
+    "test"
+  ],
+  "revisao_bloqueia_em": "alta"
+}

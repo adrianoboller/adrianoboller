@@ -312,6 +312,9 @@ impl Llm for GravadorLlm {
     fn id(&self) -> String {
         self.interno.id()
     }
+    fn provedores(&self) -> Vec<String> {
+        self.interno.provedores()
+    }
     fn chat<'a>(
         &'a self,
         messages: &'a [Message],

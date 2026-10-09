@@ -1,0 +1,79 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-7a91-8243-fbada6ce54ce",
+  "agent_id": 243,
+  "name": "Content Creator",
+  "macroarea": "Terceiros · Marketing",
+  "nucleus": "Marketing",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Expert content strategist and creator for multi-platform campaigns. Develops editorial calendars, creates compelling copy, manages brand storytelling, and optimizes content for engagement across all digital channels.",
+  "responsibilities": "Crafts compelling stories across every platform your audience lives on.",
+  "resources": "Descricao completa do papel em config/agents/agency/content-creator.md; ferramentas do cabecalho: WebFetch, WebSearch, Read, Write, Edit.",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read",
+    "fs.write",
+    "web.browse",
+    "web.search"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "fs.write",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "web.browse",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "web.search",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: as ferramentas sao as do tools: do cabecalho de origem (sem tools: = so leitura), sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo marketing/marketing-content-creator.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/content-creator.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "marketing",
+    "row": 132
+  }
+}

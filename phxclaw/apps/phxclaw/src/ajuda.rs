@@ -85,7 +85,7 @@ pub const COMANDOS: &[Comando] = &[
         nome: "sessoes",
         resumo: "Busca nas tarefas anteriores",
         apelidos: &["sessions"],
-        uso: "sessoes \"termo\" [--limite N]",
+        uso: "sessoes \"termo\" [--limite N] [--pasta DIR]",
         descricao: "Busca nas tarefas anteriores (a mesma busca de session_search).",
     },
     Comando {
@@ -93,7 +93,7 @@ pub const COMANDOS: &[Comando] = &[
         nome: "resumo",
         resumo: "Resumo das tarefas do dia",
         apelidos: &["summary"],
-        uso: "resumo [--data AAAA-MM-DD|hoje|ontem]",
+        uso: "resumo [--data AAAA-MM-DD|hoje|ontem] [--pasta DIR]",
         descricao: "Resumo das tarefas do dia (o mesmo de daily_summary).",
     },
     Comando {
@@ -109,10 +109,27 @@ pub const COMANDOS: &[Comando] = &[
         nome: "skills",
         resumo: "Importa SKILL.md de outros agentes (scripts desligados, origem com SHA-256)",
         apelidos: &[],
-        uso: "skills importar DIR [--com-scripts] [--pasta DIR]",
+        uso: "skills importar DIR [--com-scripts] [--aceitar-licenca-desconhecida] [--pasta DIR]",
         descricao: "Le todo SKILL.md abaixo de DIR (Claude Code, Codex, OpenClaw, Hermes), traduz \
                     os nomes de ferramenta conhecidos e grava na pasta de skills. scripts/ nao se \
-                    copia sem --com-scripts; ORIGEM.json guarda a origem e o SHA-256.",
+                    copia sem --com-scripts; ORIGEM.json guarda a origem e o SHA-256. Cada skill \
+                    passa pela porta de licenca (veja `licenca`): copyleft e recusada, \
+                    desconhecida so com --aceitar-licenca-desconhecida (decisao no ORIGEM.json), \
+                    compativel entra com o aviso em LICENCA.txt.",
+    },
+    Comando {
+        grupo: Grupo::Agente,
+        nome: "licenca",
+        resumo: "Confere a licenca de uma pasta de terceiro antes de copiar (porta unica)",
+        apelidos: &["license"],
+        uso: "licenca conferir DIR [--json] [--aceitar-licenca-desconhecida] [--limite DIR]",
+        descricao: "Sobe de DIR ate a raiz do repositorio (pasta com .git) ou --limite, le \
+                    LICENSE/COPYING, NOTICE, SPDX-License-Identifier e o license do plugin.json, \
+                    e classifica pelo SPDX ou pelo texto (nunca pelo nome do arquivo). Vence a \
+                    mais restritiva. Compativel com Apache-2.0 (MIT, Apache-2.0, BSD, ISC, 0BSD, \
+                    Unlicense, CC0-1.0, Zlib) entra; copyleft (GPL, AGPL, LGPL, MPL, EPL, \
+                    CC-BY-SA, -or-later) e recusada sempre; desconhecida so com a opcao. Sai 0 \
+                    quando entra e 2 quando recusa; --json e o que os importadores de fora leem.",
     },
     Comando {
         grupo: Grupo::Agente,
@@ -140,7 +157,8 @@ pub const COMANDOS: &[Comando] = &[
         nome: "equipe",
         resumo: "Os papeis da equipe: listar, mostrar, delegar",
         apelidos: &["team"],
-        uso: "equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID \"tarefa\" [--modelo M]]",
+        uso: "equipe [listar [--macroarea X] [--texto Y] | mostrar ID | delegar ID \"tarefa\" [--modelo M]] \
+              [--pasta DIR]",
         descricao: "Os papeis de config/agents (PHXCLAW_AGENTES_DIR); delegar roda um papel \
                     como subagente, so com a intersecao das capacidades.",
     },
@@ -163,11 +181,14 @@ pub const COMANDOS: &[Comando] = &[
         nome: "fluxo",
         resumo: "Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar",
         apelidos: &["workflow"],
-        uso: "fluxo rodar ARQ.json [--ate PASSO] [--pins] | retomar TAREFA [ARQ.json] | responder TAREFA \
-              TEXTO | esperas | pinar ARQ.json PASSO (--json V | --tarefa T) | despinar ARQ.json \
-              PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida P] | importar \
-              PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] [--modelo M] \
-              [--pasta DIR]",
+        uso: "fluxo rodar ARQ.json [--ate PASSO] [--pins] [--publicada] | retomar TAREFA [ARQ.json] | \
+              responder TAREFA TEXTO | esperas | pinar ARQ.json PASSO (--json V | --tarefa T) | \
+              despinar ARQ.json PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida P] | \
+              importar PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] | modelos \
+              | usar MODELO DESTINO.json | publicar ARQ.json [--nota T] | versoes ARQ.json | voltar \
+              ARQ.json N | restaurar ARQ.json N [--forcar] | exportar --ambiente dev|prod [--fluxos DIR] \
+              [--repo DIR] [--commit MSG] | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] \
+              [--sobrescrever] [--modelo M] [--pasta DIR]",
         descricao: "Fluxo declarativo em DAG; cada passo e tarefa, ferramenta, skill, mcp, comando \
                     ou no de controle, pelo mesmo portao. --ate para no passo (inclusive) e grava; \
                     retomar continua dali e pula os passos que deram certo (sem ARQ, pela \
@@ -176,14 +197,19 @@ pub const COMANDOS: &[Comando] = &[
                     pinar troca a execucao de um passo pelo dado do ARQ.pins.json, e o pin so \
                     vale no rodar com --pins (gatilho, agenda e sub-fluxo rodam o passo de \
                     verdade); exportar leva um sha256 de conferencia, nao assinatura; podar \
-                    segue fluxos.poda_dias/poda_max (sem eles, nada se apaga).",
+                    segue fluxos.poda_dias/poda_max (sem eles, nada se apaga). \
+                    modelos/usar: a galeria de fluxos prontos. publicar/versoes/voltar/restaurar: \
+                    as versoes publicadas de um fluxo (rodar --publicada roda a publicada). \
+                    exportar/importar --ambiente: o git dos fluxos por ambiente (--commit registra \
+                    pelo git do agente).",
     },
     Comando {
         grupo: Grupo::EquipeEFluxos,
         nome: "agenda",
         resumo: "Agenda: listar, adicionar (modelo ou fluxo) e disparar o que venceu",
         apelidos: &["schedule"],
-        uso: "agenda listar | adicionar NOME \"OBJETIVO\" (--cada SEG | --cron EXPR) | disparar [--pasta DIR]",
+        uso: "agenda listar | adicionar NOME \"OBJETIVO\" (--cada SEG | --cron EXPR) | disparar [--modelo M] \
+              [--pasta DIR]",
         descricao: "A mesma agenda do servidor (agenda.json da pasta) e o mesmo disparo da API. \
                     Objetivo `fluxo: ARQ.json` roda o fluxo em DAG sem modelo; qualquer outro \
                     texto vira tarefa do modelo.",
@@ -220,6 +246,20 @@ pub const COMANDOS: &[Comando] = &[
                     --collect-only), e a corrida de UM no (CRATE/modulo::teste ou nodeid do \
                     pytest), pelas mesmas funcoes de test_list/test_run do agente; sai 1 se falhou.",
     },
+    Comando {
+        grupo: Grupo::Codigo,
+        nome: "evoluir",
+        resumo: "Auto-evolucao: propoe um ramo verde e espera o Go (nunca mescla)",
+        apelidos: &["evolve"],
+        uso: "evoluir [--item NOME] [--modelo M] [--projeto DIR] [--pasta DIR] | itens | listar \
+              | aprovar ID | rejeitar ID [--motivo TEXTO]",
+        descricao: "Escolhe um item parcial/nao do backlog fora dos vetados de \
+                    config/evolucao-politica.json, implementa numa worktree pelo laco do agente \
+                    (plano primeiro), confere o diff contra os caminhos vetados, roda fmt, clippy \
+                    (zero avisos) e testes dos crates tocados e a revisao do proprio diff. So com \
+                    tudo verde nasce o ramo evolucao/ID, com relatorio em .phxclaw/evolucao/; \
+                    aprovar so marca e mostra o comando de merge. Sai 1 se nao ficou verde.",
+    },
     // --- servicos ---
     Comando {
         grupo: Grupo::Servicos,
@@ -228,7 +268,7 @@ pub const COMANDOS: &[Comando] = &[
         apelidos: &["serve"],
         uso: "servir [--porta 8787] [--pasta DIR] [--canal NOME] [--dispositivos --cert C --chave K \
               --tokens F [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM] \
-              [--ponte-tenant U] [--sem-porta]]",
+              [--ponte-tenant U] [--ponte-no U] [--sem-porta]]",
         descricao: "API de tarefas (criar, acompanhar, aprovar, responder, cancelar, artefatos, \
                     agendas), heartbeat, gatilhos, hooks e regras de .phxclaw/, e a UI web \
                     instalavel (PWA) em /. --ponte conecta PARA FORA num `phxclaw ponte`.",
@@ -365,12 +405,18 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::Credenciais,
         nome: "api",
-        resumo: "Guarda o Bearer da API de tarefas",
+        resumo: "Chama qualquer rota da API do `servir`; guarda o Bearer dela",
         apelidos: &[],
-        uso: "api chave [--pasta DIR]",
-        descricao: "Le PHXCLAW_API_TOKEN (24+ caracteres) do AMBIENTE do comando e guarda no \
-                    broker de <pasta>/api. O servir le do ambiente, senao do broker, senao de \
-                    <pasta>/api.token (gerado na primeira vez).",
+        uso: "api METODO ROTA [--corpo ARQ|-|JSON] [--consulta CHAVE=VALOR]... [--projeto P] \
+              [--url URL] [--saida ARQ] [--pasta DIR] | api rotas [--json] | api chave [--pasta DIR]",
+        descricao: "METODO ROTA: o pedido vai ao servidor de pe (--url, senao api.url_cliente) \
+                    pelo cliente do SDK, com o token local (PHXCLAW_API_TOKEN, o broker ou \
+                    <pasta>/api.token); responde o MESMO handler, atras do mesmo portao do RBAC. \
+                    --projeto vai no X-PhxClaw-Projeto; sai 0 em 2xx e 1 no resto, com o HTTP no \
+                    stderr. rotas: a tabela inteira (metodo, rota, parametros e o comando local \
+                    equivalente, quando ha). chave: le PHXCLAW_API_TOKEN (24+ caracteres) do \
+                    AMBIENTE do comando e guarda no broker de <pasta>/api. O servir le do \
+                    ambiente, senao do broker, senao de <pasta>/api.token (gerado na primeira vez).",
     },
     Comando {
         grupo: Grupo::Credenciais,
@@ -466,16 +512,24 @@ pub const COMANDOS: &[Comando] = &[
     Comando {
         grupo: Grupo::Medicao,
         nome: "avaliar",
-        resumo: "Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto e nota",
+        resumo: "Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto, nota e custo",
         apelidos: &["eval"],
-        uso: "avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR]",
+        uso: "avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR] | \
+              avaliar --provedores A,B --bateria ARQ|DIR [--saida DIR] [--pasta DIR]",
         descricao: "Roda cada caso de DIR (*.json com gabarito, ou *.jsonl gravado) N vezes por \
                     modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; \
                     vencedor so quando as faixas nao se cruzam. Alem do acerto, a nota parcial \
                     de ferramentas (conjunto e sequencia por LCS, 0 a 1, deterministica, nunca \
                     por juiz) e o agrupamento pelo sha256 do prompt e das skills de cada \
                     execucao. Energia so de RAPL ou NVIDIA: sem eles, «não medida». Cada \
-                    execucao fica gravada em SAIDA/gravacoes.",
+                    execucao fica gravada em SAIDA/gravacoes. Custo por acerto: o custo de todas \
+                    as execucoes (as que falharam tambem) sobre as que acertaram, pela tabela \
+                    custo.precos; sem preco, «não medido». Com --provedores e --bateria, a \
+                    bateria comum: o mesmo gabarito por provedor, medindo acerto, custo por \
+                    acerto, duracao, tentativas e intervencao, com intervalo de 95% por \
+                    bootstrap; vencedor so com os intervalos separados. O phxclaw-model-arena \
+                    registra os pares (informativo, nao decide). Provedor que nao respondeu sai \
+                    NÃO MEDIDO.",
     },
     Comando {
         grupo: Grupo::Medicao,
@@ -516,7 +570,34 @@ pub const COMANDOS: &[Comando] = &[
                     quando a faixa de acerto dela fica inteira acima; a decisao, com os numeros, \
                     vai para <skill>/otimizacao.jsonl.",
     },
+    // --- a ferramenta avulsa (grupo agente, ao lado da lista de diagnostico) ---
+    Comando {
+        grupo: Grupo::Agente,
+        nome: "ferramenta",
+        resumo: "Roda UMA ferramenta montada, com os parametros do esquema dela",
+        apelidos: &["tool"],
+        uso: "ferramenta [NOME [--PARAM VALOR]... [--json ARQ|-] [--trabalho DIR] [--modelo M] \
+              [--pasta DIR] | NOME --ajuda|--help | --nomes]",
+        descricao: "Os parametros saem do esquema da ferramenta (o mesmo que o modelo le): TEXTO, \
+                    N, REAL, booleano (--x sozinho e true), lista (--x repetido) e JSON para \
+                    objeto. --json da a base dos argumentos e --PARAM vai por cima. A chamada \
+                    passa pelo MESMO portao do laco do modelo e do mcp-serve: capacidade \
+                    (PHXCLAW_CAPACIDADES), esquema, regras de comando, hooks e evidencia no \
+                    ledger (o caminho sai no stderr). Sem NOME, lista todas com a linha de uso; \
+                    NOME --ajuda mostra tipo, obrigatorio, opcoes e padrao de cada parametro. \
+                    Sai 0 ok, 2 negado pelo portao, 1 erro.",
+    },
     // --- diagnostico ---
+    Comando {
+        grupo: Grupo::Diagnostico,
+        nome: "completar",
+        resumo: "Script de completar para bash, zsh, fish ou PowerShell",
+        apelidos: &["completion"],
+        uso: "completar bash|zsh|fish|powershell",
+        descricao: "Gerado do mesmo inventario da ajuda: os comandos, os apelidos e as opcoes \
+                    do uso de cada um; o nome da ferramenta se completa perguntando ao proprio \
+                    binario (`ferramenta --nomes`). Ex.: `source <(phxclaw completar bash)`.",
+    },
     Comando {
         grupo: Grupo::Diagnostico,
         nome: "ferramentas",
@@ -578,7 +659,9 @@ pub fn achar(nome: &str) -> Option<&'static Comando> {
 /// Ajuda inteira, agrupada.
 pub fn texto(produto: &str, versao: &str, cli: &str) -> String {
     let mut s = format!(
-        "{produto} {versao}\n\nUSO:\n  {cli} <COMANDO> [opcoes]\n  {cli} ajuda <COMANDO>\n"
+        "{produto} {versao}\n\nUSO:\n  {cli} <COMANDO> [opcoes]\n  {cli} ajuda <COMANDO>   \
+         (ou {cli} <COMANDO> --ajuda)\n  {cli} ajuda --tudo   (mais cada ferramenta com os \
+         parametros e cada rota da API)\n"
     );
     let largura = COMANDOS.iter().map(|c| c.nome.len()).max().unwrap_or(0);
     for g in Grupo::TODOS {
@@ -589,6 +672,10 @@ pub fn texto(produto: &str, versao: &str, cli: &str) -> String {
         s.push_str(&format!("\n{}:\n", g.titulo()));
         for c in do_grupo {
             s.push_str(&format!("  {:<largura$}  {}\n", c.nome, c.resumo));
+            // Todos os parametros de todo comando, na listagem geral: o uso inteiro, quebrado
+            // na largura da tela.
+            let recuo = " ".repeat(largura + 4);
+            s.push_str(&quebrar(&format!("{cli} {}", c.uso), &recuo, LARGURA));
         }
     }
     s.push_str(
@@ -598,6 +685,175 @@ pub fn texto(produto: &str, versao: &str, cli: &str) -> String {
          (padrao: CAPACIDADES_PADRAO)\n",
     );
     s
+}
+
+/// A largura da ajuda impressa (o teste reprova linha acima de 110).
+pub const LARGURA: usize = 106;
+
+/// `texto` quebrado em linhas de ate `largura`, cada uma com `recuo`; prefere quebrar
+/// antes de um ` | ` (a fronteira entre formas do mesmo comando).
+pub fn quebrar(texto: &str, recuo: &str, largura: usize) -> String {
+    let mut s = String::new();
+    let mut linha = String::new();
+    for palavra in texto.split_whitespace() {
+        let cabe = recuo.len() + linha.len() + 1 + palavra.len() <= largura;
+        if !linha.is_empty() && (!cabe || (palavra == "|" && linha.len() > largura / 2)) {
+            s.push_str(&format!("{recuo}{linha}\n"));
+            linha.clear();
+        }
+        if !linha.is_empty() {
+            linha.push(' ');
+        }
+        linha.push_str(palavra);
+    }
+    if !linha.is_empty() {
+        s.push_str(&format!("{recuo}{linha}\n"));
+    }
+    s
+}
+
+/// A ajuda inteira: os comandos, cada ferramenta montada com os parametros do esquema e
+/// cada rota da API. As tres listas saem do codigo (a tabela daqui, o esquema de cada
+/// ferramenta, `rotas::ROTAS`), e a catraca dos testes cruza cada uma com a sua origem.
+pub fn tudo(produto: &str, versao: &str, cli: &str, agente: &phxclaw_agent::Agent) -> String {
+    let mut s = texto(produto, versao, cli);
+    s.push_str("\nFERRAMENTAS (`ferramenta NOME --ajuda` traz tipo, opcoes e padrao):\n");
+    s.push_str(&crate::ferramenta::lista(agente, cli));
+    s.push_str("\nROTAS DA API (`api METODO ROTA`):\n");
+    s.push_str(&crate::rota::tabela(cli));
+    s
+}
+
+/// As palavras que o shell completa depois do comando: os subcomandos e as opcoes do uso.
+fn palavras_do_uso(c: &Comando) -> Vec<String> {
+    let mut v: Vec<String> = Vec::new();
+    for bruto in c
+        .uso
+        .split(|ch: char| ch.is_whitespace() || "[]()|".contains(ch))
+    {
+        // Texto entre aspas e exemplo de valor (`"objetivo"`), nao palavra do comando.
+        if bruto.starts_with('"') {
+            continue;
+        }
+        let p = bruto.trim_matches(|ch: char| ch == ',' || ch == '.' || ch == '"');
+        let opcao = p.starts_with("--") && p.len() > 2;
+        let palavra = !p.is_empty()
+            && p.chars().all(|ch| ch.is_ascii_lowercase() || ch == '-')
+            && !p.starts_with('-');
+        if (opcao || palavra) && p != c.nome && !v.iter().any(|x| x == p) {
+            v.push(p.to_string());
+        }
+    }
+    v
+}
+
+/// O script de completar do shell pedido, do mesmo inventario da ajuda.
+pub fn completar(shell: &str, cli: &str) -> Result<String, String> {
+    let nomes: Vec<&str> = COMANDOS
+        .iter()
+        .flat_map(|c| std::iter::once(c.nome).chain(c.apelidos.iter().copied()))
+        .filter(|n| !n.starts_with('-'))
+        .collect();
+    let por_comando: Vec<(Vec<&str>, Vec<String>)> = COMANDOS
+        .iter()
+        .map(|c| {
+            (
+                std::iter::once(c.nome)
+                    .chain(c.apelidos.iter().copied())
+                    .collect(),
+                palavras_do_uso(c),
+            )
+        })
+        .collect();
+    let f = cli.replace('-', "_");
+    Ok(match shell {
+        "bash" | "zsh" => {
+            let mut s = String::new();
+            if shell == "zsh" {
+                s.push_str("autoload -U +X bashcompinit && bashcompinit\n");
+            }
+            s.push_str(&format!(
+                "_{f}() {{\n  local cur=\"${{COMP_WORDS[COMP_CWORD]}}\"\n  \
+                 if [ \"$COMP_CWORD\" -eq 1 ]; then\n    \
+                 COMPREPLY=( $(compgen -W \"{}\" -- \"$cur\") ); return\n  fi\n  \
+                 case \"${{COMP_WORDS[1]}}\" in\n",
+                nomes.join(" ")
+            ));
+            for (ns, ps) in &por_comando {
+                let lista = if ns.contains(&"ferramenta") {
+                    // O nome da ferramenta vem do proprio binario: a montagem muda por maquina.
+                    format!("$({cli} ferramenta --nomes 2>/dev/null) {}", ps.join(" "))
+                } else {
+                    ps.join(" ")
+                };
+                s.push_str(&format!(
+                    "    {}) COMPREPLY=( $(compgen -W \"{lista}\" -- \"$cur\") ) ;;\n",
+                    ns.join("|")
+                ));
+            }
+            s.push_str(&format!("  esac\n}}\ncomplete -o default -F _{f} {cli}\n"));
+            s
+        }
+        "fish" => {
+            let mut s = format!("complete -c {cli} -f\n");
+            for c in COMANDOS {
+                for n in std::iter::once(c.nome).chain(c.apelidos.iter().copied()) {
+                    if !n.starts_with('-') {
+                        s.push_str(&format!(
+                            "complete -c {cli} -n __fish_use_subcommand -a {n} -d '{}'\n",
+                            c.resumo.replace('\'', " ")
+                        ));
+                    }
+                }
+            }
+            for (ns, ps) in &por_comando {
+                let mut lista = ps.join(" ");
+                if ns.contains(&"ferramenta") {
+                    lista = format!("({cli} ferramenta --nomes 2>/dev/null) {lista}");
+                }
+                if !lista.is_empty() {
+                    s.push_str(&format!(
+                        "complete -c {cli} -n '__fish_seen_subcommand_from {}' -a \"{lista}\"\n",
+                        ns.join(" ")
+                    ));
+                }
+            }
+            s
+        }
+        "powershell" | "pwsh" => {
+            let mut s = format!(
+                "Register-ArgumentCompleter -Native -CommandName {cli} -ScriptBlock {{\n  \
+                 param($palavra, $ast, $cursor)\n  $p = @($ast.CommandElements | \
+                 ForEach-Object {{ $_.ToString() }})\n  $mapa = @{{\n"
+            );
+            for (ns, ps) in &por_comando {
+                for n in ns.iter().filter(|n| !n.starts_with('-')) {
+                    s.push_str(&format!(
+                        "    '{n}' = @({})\n",
+                        ps.iter()
+                            .map(|p| format!("'{p}'"))
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ));
+                }
+            }
+            s.push_str(&format!(
+                "  }}\n  if ($p.Count -le 1 -or ($p.Count -eq 2 -and $palavra)) {{ $opcoes = \
+                 $mapa.Keys }}\n  elseif ($p[1] -in 'ferramenta','tool' -and $p.Count -le 3) \
+                 {{ $opcoes = @(& {cli} ferramenta --nomes 2>$null) }}\n  else {{ $opcoes = \
+                 $mapa[$p[1]] }}\n  $opcoes | Where-Object {{ $_ -like \"$palavra*\" }} | \
+                 Sort-Object | ForEach-Object {{\n    \
+                 [System.Management.Automation.CompletionResult]::new($_, $_, \
+                 'ParameterValue', $_)\n  }}\n}}\n"
+            ));
+            s
+        }
+        outro => {
+            return Err(format!(
+                "shell {outro:?}: use bash, zsh, fish ou powershell"
+            ));
+        }
+    })
 }
 
 /// Ajuda de um comando: uso completo, apelidos e a descricao inteira.
@@ -640,6 +896,7 @@ use phxclaw_config_runtime::distancia;
 #[cfg(test)]
 mod testes {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// Os nomes que o `match` do `main.rs` despacha, lidos do proprio fonte.
     fn despachados() -> Vec<String> {
@@ -683,6 +940,228 @@ mod testes {
         assert!(
             sem_despacho.is_empty(),
             "na ajuda sem despacho: {sem_despacho:?}"
+        );
+    }
+
+    /// O fonte de uma funcao chamada pelo despacho: `modulo::nome` do app, `nome` do
+    /// `main.rs`, ou `phxclaw_agent::modulo::nome` do agente.
+    fn fonte_de(caminho: &str) -> Option<(String, String)> {
+        let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let partes: Vec<&str> = caminho.split("::").collect();
+        let (arq, nome) = match partes.as_slice() {
+            [n] => (raiz.join("src/main.rs"), *n),
+            ["phxclaw_agent", m, n] => (
+                raiz.join(format!("../../crates/phxclaw-agent/src/{m}.rs")),
+                *n,
+            ),
+            [m, n] => (raiz.join(format!("src/{m}.rs")), *n),
+            _ => return None,
+        };
+        let t = std::fs::read_to_string(arq).ok()?;
+        Some((t, nome.to_string()))
+    }
+
+    /// O corpo de `fn nome(` em `t`.
+    fn corpo<'a>(t: &'a str, nome: &str) -> Option<&'a str> {
+        let i = [format!("fn {nome}("), format!("fn {nome}<")]
+            .iter()
+            .find_map(|a| t.find(a.as_str()))?;
+        let ab = i + t[i..].find('{')?;
+        let mut nivel = 0;
+        for (j, ch) in t[ab..].char_indices() {
+            match ch {
+                '{' => nivel += 1,
+                '}' => {
+                    nivel -= 1;
+                    if nivel == 0 {
+                        return Some(&t[ab..ab + j]);
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
+    /// Os grupos `"--a" | "--b"` de um texto (apelidos da mesma opcao, como `--papel` e
+    /// `--role`): basta um do grupo no uso.
+    fn apelidos_de_opcao(t: &str) -> Vec<Vec<String>> {
+        let mut grupos = Vec::new();
+        for l in t.lines() {
+            let l = l.trim();
+            if l.starts_with("\"--") && l.contains("\" | \"--") {
+                let antes = l.split("=>").next().unwrap_or(l);
+                grupos.push(
+                    antes
+                        .split('|')
+                        .map(|p| p.trim().trim_matches('"').to_string())
+                        .filter(|p| p.starts_with("--"))
+                        .collect(),
+                );
+            }
+        }
+        grupos
+    }
+
+    /// Os `"--opcao"` literais de um texto.
+    fn opcoes_em(t: &str, saida: &mut BTreeSet<String>) {
+        let mut resto = t;
+        while let Some(i) = resto.find("\"--") {
+            let depois = &resto[i + 1..];
+            let fim = depois
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .unwrap_or(depois.len());
+            if depois[fim..].starts_with('"') && fim > 2 {
+                saida.insert(depois[..fim].to_string());
+            }
+            resto = &depois[fim..];
+        }
+    }
+
+    /// As chamadas `caminho(...args...)` de um texto: as funcoes que recebem os argumentos.
+    fn chamadas_com_args(t: &str) -> Vec<String> {
+        let mut v = Vec::new();
+        for (i, _) in t.match_indices('(') {
+            let antes = &t[..i];
+            let ini = antes
+                .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == ':'))
+                .map_or(0, |k| k + 1);
+            let caminho = &antes[ini..];
+            let dentro = &t[i + 1..];
+            let fim = dentro.find(')').unwrap_or(dentro.len());
+            if !caminho.is_empty()
+                && caminho
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_lowercase())
+                && dentro[..fim].contains("args")
+            {
+                v.push(caminho.to_string());
+            }
+        }
+        v
+    }
+
+    /// Cada braco do despacho: os nomes e as opcoes que o codigo dele le (o braco, a funcao
+    /// que ele chama e, um nivel abaixo, as funcoes que ela chama com os argumentos).
+    /// Nomes do braco, opcoes lidas e grupos de apelidos de opcao.
+    type Braco = (Vec<String>, BTreeSet<String>, Vec<Vec<String>>);
+
+    fn opcoes_por_comando() -> Vec<Braco> {
+        let fonte = include_str!("main.rs");
+        let inicio = fonte.find("match args[0].as_str()").unwrap();
+        let corpo_do_match = &fonte[inicio..];
+        let fim = corpo_do_match.find("other =>").unwrap();
+        let mut bracos: Vec<(Vec<String>, String)> = Vec::new();
+        for linha in corpo_do_match[..fim].lines().skip(1) {
+            let l = linha.trim();
+            if l.starts_with('"') && l.contains("=>") {
+                let antes = &l[..l.find("=>").unwrap()];
+                let nomes = antes
+                    .split('|')
+                    .map(|p| p.trim().trim_matches('"').to_string())
+                    .collect();
+                bracos.push((nomes, String::new()));
+            }
+            if let Some(b) = bracos.last_mut() {
+                b.1.push_str(linha);
+                b.1.push('\n');
+            }
+        }
+        bracos
+            .into_iter()
+            .map(|(nomes, texto)| {
+                let mut ops = BTreeSet::new();
+                let mut grupos = apelidos_de_opcao(&texto);
+                opcoes_em(&texto, &mut ops);
+                let mut vistos = BTreeSet::new();
+                let mut fila: Vec<(String, usize)> = chamadas_com_args(&texto)
+                    .into_iter()
+                    .map(|c| (c, 0))
+                    .collect();
+                while let Some((c, nivel)) = fila.pop() {
+                    if !vistos.insert(c.clone()) {
+                        continue;
+                    }
+                    let Some((t, nome)) = fonte_de(&c) else {
+                        continue;
+                    };
+                    let Some(b) = corpo(&t, &nome) else { continue };
+                    opcoes_em(b, &mut ops);
+                    grupos.extend(apelidos_de_opcao(b));
+                    if nivel < 2 {
+                        // As do mesmo arquivo, pelo nome qualificado do arquivo de origem.
+                        let prefixo = c.rsplit_once("::").map(|(m, _)| m.to_string());
+                        for d in chamadas_com_args(b) {
+                            let q = match (&prefixo, d.contains("::")) {
+                                (Some(m), false) => format!("{m}::{d}"),
+                                _ => d,
+                            };
+                            fila.push((q, nivel + 1));
+                        }
+                    }
+                }
+                (nomes, ops, grupos)
+            })
+            .collect()
+    }
+
+    /// A catraca do lado dos comandos: toda opcao que o codigo de um comando le aparece no
+    /// uso dele, que e o que `ajuda` mostra. Opcao nova sem linha de ajuda reprova.
+    #[test]
+    fn toda_opcao_lida_no_codigo_esta_no_uso() {
+        let por = opcoes_por_comando();
+        assert!(por.len() > 30, "leitura do despacho falhou: {}", por.len());
+        let total: usize = por.iter().map(|(_, o, _)| o.len()).sum();
+        assert!(total > 40, "leitura das opcoes falhou: {total}");
+        let mut faltam = Vec::new();
+        for (nomes, ops, grupos) in &por {
+            let Some(c) = achar(&nomes[0]) else { continue };
+            let no_uso = |o: &str| {
+                c.uso
+                    .split(|ch: char| !(ch.is_ascii_alphanumeric() || ch == '-'))
+                    .any(|p| p == o)
+            };
+            for o in ops {
+                if c.apelidos.contains(&o.as_str()) {
+                    continue;
+                }
+                let por_apelido = grupos
+                    .iter()
+                    .any(|g| g.contains(o) && g.iter().any(|x| no_uso(x)));
+                if !no_uso(o) && !por_apelido {
+                    faltam.push(format!("{} {o}", c.nome));
+                }
+            }
+        }
+        assert!(
+            faltam.is_empty(),
+            "opcao lida no codigo e ausente do uso em ajuda.rs: {faltam:?}"
+        );
+    }
+
+    /// Os segredos do catalogo do config.json citam o comando que os guarda: esse comando
+    /// tem de existir na CLI, senao a recusa manda o operador rodar o que nao ha.
+    #[test]
+    fn todo_segredo_do_catalogo_cita_comando_que_existe() {
+        use phxclaw_config_runtime::agente::catalogo::{Natureza, catalogo};
+        let mut sem = Vec::new();
+        let mut com = 0;
+        for k in catalogo() {
+            if let Natureza::Segredo { comando, .. } = &k.natureza
+                && let Some(i) = comando.find("phxclaw ")
+            {
+                com += 1;
+                let nome = comando[i + 8..].split_whitespace().next().unwrap_or("");
+                if achar(nome).is_none() {
+                    sem.push(format!("{}: {comando}", k.chave));
+                }
+            }
+        }
+        assert!(com > 10, "leitura do catalogo falhou: {com}");
+        assert!(
+            sem.is_empty(),
+            "segredo citando comando inexistente: {sem:?}"
         );
     }
 

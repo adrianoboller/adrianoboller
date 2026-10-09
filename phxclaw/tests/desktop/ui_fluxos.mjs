@@ -17,6 +17,7 @@ import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { vigiarCsp } from './seguranca.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -141,8 +142,11 @@ try {
   // ---------------------------------------------------------------- a tela
   const browser = await chromium.launch();
   const erros = [];
+  // O agente real manda a CSP (pwa.rs): o console de cada contexto e vigiado.
+  const vigias = [];
   async function abrirTela(largura, temaEscolhido) {
     const ctx = await browser.newContext({ viewport: { width: largura, height: largura < 640 ? 860 : 900 }, locale: 'pt-BR', deviceScaleFactor: 1, hasTouch: largura < 640 });
+    vigias.push(await vigiarCsp(ctx));
     await ctx.addInitScript(([t, tm]) => { try { localStorage.setItem('phxclaw.token', t); localStorage.setItem('phxclaw.tema', tm); } catch {} }, [token, temaEscolhido]);
     const page = await ctx.newPage();
     page.on('pageerror', e => erros.push(`${largura}/${temaEscolhido}: ${e}`));
@@ -413,6 +417,8 @@ try {
   }
   check('contraste 1280/escuro (com execucao) >= 4,5:1', (medidas.contraste_1280_escuro || []).every(x => x.razao >= 4.5) && medidas.contraste_1280_escuro?.length >= 8, JSON.stringify(medidas.contraste_1280_escuro));
   check('nenhum erro de pagina', !erros.length, erros.join(' | '));
+  const csp = vigias.flatMap(v => v.vistas);
+  check('zero violacao de CSP (o agente real manda a da tela)', csp.length === 0, csp.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) {
   falhou = e;

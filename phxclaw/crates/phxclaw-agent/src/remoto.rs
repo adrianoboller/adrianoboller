@@ -318,6 +318,8 @@ pub fn rotas_da_ponte(srv: Arc<ServidorDispositivos>, token_cliente: String) -> 
     Router::new()
         .route("/v1/{*resto}", any(rele))
         .merge(pwa::rotas())
+        // O mesmo ponto do `servir`: a tela pela ponte sai com a mesma CSP.
+        .layer(axum::middleware::from_fn(pwa::blindar))
         .with_state(Ponte {
             srv,
             token_cliente: token_cliente.into(),

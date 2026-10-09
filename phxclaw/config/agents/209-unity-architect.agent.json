@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-7829-bfd0-75f82a104793",
+  "agent_id": 209,
+  "name": "Unity Architect",
+  "macroarea": "Terceiros · Desenvolvimento de Jogos",
+  "nucleus": "Game Development / unity",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Data-driven modularity specialist - Masters ScriptableObjects, decoupled systems, and single-responsibility component design for scalable Unity projects",
+  "responsibilities": "Designs data-driven, decoupled Unity systems that scale without spaghetti.",
+  "resources": "Descricao completa do papel em config/agents/agency/unity-architect.md; ferramentas do cabecalho: nenhuma declarada (so leitura).",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: as ferramentas sao as do tools: do cabecalho de origem (sem tools: = so leitura), sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo game-development/unity/unity-architect.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/unity-architect.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "game-development",
+    "row": 98
+  }
+}

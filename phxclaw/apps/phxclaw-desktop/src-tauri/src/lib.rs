@@ -726,6 +726,18 @@ fn execute_capture_action_ref(
     }
 }
 
+/// Os comandos que so LEEM a pagina: os unicos que a janela `main` aceita.
+fn comando_so_le(command: &WebViewCommand) -> bool {
+    matches!(
+        command,
+        WebViewCommand::QuerySelector { .. }
+            | WebViewCommand::QuerySelectorAll { .. }
+            | WebViewCommand::GetOuterHtml { .. }
+            | WebViewCommand::GetComputedStyle { .. }
+            | WebViewCommand::DomToSvg { .. }
+    )
+}
+
 fn dispatch_webview_action(
     app: &tauri::AppHandle,
     state: &DesktopState,
@@ -754,6 +766,22 @@ fn dispatch_webview_action(
             &request,
             DesktopActionStatus::Denied,
             json!({"error":"unknown or unmanaged webview"}),
+            vec![],
+        );
+    }
+
+    // A janela `main` e o Command Center: ela tem o `invoke` do Tauri e os botoes que aprovam
+    // (o Go da auto-evolucao, as perguntas do portao). Escrever nela -- HTML, script, CSS,
+    // atributo, clique ou tecla -- seria o agente agindo como o operador; ali so se le.
+    if is_main
+        && let DesktopAction::WebView { command, .. } = &request.action
+        && !comando_so_le(command)
+    {
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error":"a janela main so aceita comandos de leitura"}),
             vec![],
         );
     }
@@ -1100,4 +1128,55 @@ fn flag(chave: &str) -> bool {
 fn write_secret_file(path: &Path, value: &str) -> std::io::Result<()> {
     // Mesmo motor do secret-broker: o arquivo nasce 0600, sem janela com a umask.
     phxclaw_secret_broker::write_private_file(path, value.as_bytes())
+}
+
+#[cfg(test)]
+mod testes_da_main {
+    use super::*;
+
+    #[test]
+    fn a_main_so_aceita_leitura() {
+        let s = || "#x".to_string();
+        for le in [
+            WebViewCommand::QuerySelector { selector: s() },
+            WebViewCommand::QuerySelectorAll { selector: s() },
+            WebViewCommand::GetOuterHtml { selector: None },
+            WebViewCommand::GetComputedStyle { selector: s() },
+        ] {
+            assert!(comando_so_le(&le), "{le:?}");
+        }
+        for escreve in [
+            WebViewCommand::Navigate {
+                url: "https://x".into(),
+            },
+            WebViewCommand::LoadHtml {
+                html: "<b>".into(),
+                base_url: None,
+            },
+            WebViewCommand::EvaluateJavascript { script: "1".into() },
+            WebViewCommand::InjectCss { css: "b{}".into() },
+            WebViewCommand::SetInnerHtml {
+                selector: s(),
+                html: "<i>".into(),
+            },
+            WebViewCommand::SetAttribute {
+                selector: s(),
+                name: "a".into(),
+                value: "b".into(),
+            },
+            WebViewCommand::RemoveAttribute {
+                selector: s(),
+                name: "a".into(),
+            },
+            WebViewCommand::Click { selector: s() },
+            WebViewCommand::Focus { selector: s() },
+            WebViewCommand::TypeText {
+                selector: s(),
+                text: "t".into(),
+            },
+            WebViewCommand::ScrollIntoView { selector: s() },
+        ] {
+            assert!(!comando_so_le(&escreve), "{escreve:?}");
+        }
+    }
 }

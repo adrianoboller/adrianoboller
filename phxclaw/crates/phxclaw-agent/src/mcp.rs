@@ -23,10 +23,11 @@ use phxclaw_evidence_ledger::EvidenceLedger;
 use phxclaw_mcp_lsp_runtime::{
     Cancellation, CapabilityPolicy, DEFAULT_MAX_FRAME_BYTES, HttpEndpointPolicy,
     JSONRPC_INVALID_PARAMS, JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, JSONRPC_PARSE_ERROR,
-    McpStdioSession, McpStreamableHttpClient, McpToolDescriptor, ProcessSpec, RuntimeAudit,
-    RuntimeError, SessionPolicy, Url, encode_mcp_line, jsonrpc_error, jsonrpc_result,
-    negotiate_server_version, normalize_mcp_name, qualified_tool_name, tool_call_result,
-    tool_result_is_error, tool_result_text, tools_list_result,
+    JsonRpcRequest, McpStdioSession, McpStreamableHttpClient, McpToolDescriptor, ProcessSpec,
+    RuntimeAudit, RuntimeError, SessionPolicy, Url, encode_mcp_line, exchange_result,
+    jsonrpc_error, jsonrpc_result, negotiate_legacy_version, negotiate_server_version,
+    normalize_mcp_name, qualified_tool_name, tool_call_result, tool_result_is_error,
+    tool_result_text, tools_list_result,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -201,6 +202,21 @@ enum Conexao {
     },
 }
 
+/// A capacidade de um servidor MCP sai da CASA, nunca do servidor: `mcp.<servidor>` para o
+/// que o operador declarou, `mcp.<pacote>.<servidor>` para o que um pacote assinado trouxe.
+/// O nome normalizado nao tem ponto, entao as duas formas nunca se encontram. Medido (R7,
+/// 09/10/2026): com a forma unica, o pacote que declarava um servidor `eco` ao lado do `eco`
+/// do operador tinha o `mcp__eco__apagar` dele rodando sob o `mcp.eco` que o operador
+/// concedera ao proprio servidor -- a concessao de um virava a do outro pelo NOME, e o nome
+/// quem escolhe e o pacote. Tambem nada do `tools/list` (descricao, `annotations` como
+/// `readOnlyHint`) entra aqui: o que a ferramenta de fora diz de si nao a rebaixa.
+fn capacidade_de(servidor: &str, pacote: Option<&str>) -> String {
+    match pacote {
+        None => format!("mcp.{servidor}"),
+        Some(p) => format!("mcp.{}.{servidor}", normalize_mcp_name(p.trim())),
+    }
+}
+
 fn resolver_comando(comando: &str, base: &Path) -> Result<PathBuf, String> {
     if comando.contains('/') {
         let p = Path::new(comando);
@@ -222,6 +238,7 @@ impl ServidorMcp {
         d: &ServidorDeclarado,
         base: &Path,
         raiz_do_agente: Option<&Path>,
+        pacote: Option<&str>,
     ) -> Result<Self, String> {
         let d = &d.resolvida()?;
         let nome = normalize_mcp_name(d.nome.trim());
@@ -282,7 +299,7 @@ impl ServidorMcp {
         };
         // `Tool::capability` devolve `&'static str`: o texto vaza UMA vez por servidor
         // configurado, na montagem, e nao por chamada.
-        let capacidade: &'static str = Box::leak(format!("mcp.{nome}").into_boxed_str());
+        let capacidade: &'static str = Box::leak(capacidade_de(&nome, pacote).into_boxed_str());
         Ok(Self {
             nome,
             capacidade,
@@ -551,43 +568,60 @@ pub fn carregar_em(
     raiz_do_agente: Option<&Path>,
 ) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
     let mut avisos = Vec::new();
-    let cfg: ConfigMcp = match std::fs::read(caminho)
-        .map_err(|e| e.to_string())
-        .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.to_string()))
-    {
+    let (cfg, base) = match ler_config(caminho) {
         Ok(c) => c,
         Err(e) => {
-            avisos.push(format!("{}: {e}", caminho.display()));
+            avisos.push(e);
             return (vec![], avisos);
         }
     };
+    let (tools, mais) = carregar_config_em(&cfg, &base, raiz_do_agente, None);
+    avisos.extend(mais);
+    (tools, avisos)
+}
+
+/// O arquivo do operador lido, e a pasta dele (a base dos caminhos relativos).
+fn ler_config(caminho: &Path) -> Result<(ConfigMcp, PathBuf), String> {
+    let cfg: ConfigMcp = std::fs::read(caminho)
+        .map_err(|e| e.to_string())
+        .and_then(|b| serde_json::from_slice(&b).map_err(|e| e.to_string()))
+        .map_err(|e| format!("{}: {e}", caminho.display()))?;
     let base = caminho
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
     let base = std::fs::canonicalize(&base).unwrap_or(base);
-    let (tools, mais) = carregar_config_em(&cfg, &base, raiz_do_agente);
-    avisos.extend(mais);
-    (tools, avisos)
+    Ok((cfg, base))
 }
 
-/// A mesma subida para uma configuracao ja lida (o `.mcp.json` de um pacote de plugin,
-/// traduzido): um caminho so do declarado ate a ferramenta.
+/// A mesma subida para uma configuracao do operador ja lida: um caminho so do declarado ate
+/// a ferramenta.
 pub fn carregar_config(cfg: &ConfigMcp, base: &Path) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
-    carregar_config_em(cfg, base, None)
+    carregar_config_em(cfg, base, None, None)
+}
+
+/// A subida do `.mcp.json` de um pacote assinado (traduzido): a mesma do operador, com a
+/// capacidade no espaco do pacote (`mcp.<pacote>.<servidor>`, ver `capacidade_de`).
+pub fn carregar_config_de_pacote(
+    cfg: &ConfigMcp,
+    base: &Path,
+    pacote: &str,
+) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
+    carregar_config_em(cfg, base, None, Some(pacote))
 }
 
 fn carregar_config_em(
     cfg: &ConfigMcp,
     base: &Path,
     raiz_do_agente: Option<&Path>,
+    pacote: Option<&str>,
 ) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
     let mut avisos = Vec::new();
     let base = base.to_path_buf();
     let mut servidores = Vec::new();
     let mut vistos = BTreeSet::new();
     for d in &cfg.servidores {
-        match ServidorMcp::de_declarado(d, &base, raiz_do_agente) {
+        match ServidorMcp::de_declarado(d, &base, raiz_do_agente, pacote) {
             Ok(s) if !vistos.insert(s.nome.clone()) => {
                 avisos.push(format!("servidor '{}' declarado duas vezes", s.nome))
             }
@@ -689,6 +723,196 @@ pub fn declarado_no_ambiente(nome: &str) -> Result<ServidorDeclarado, String> {
         .resolvida()
 }
 
+/// O servidor `nome` do arquivo do OPERADOR (`config`, o de `PHXCLAW_MCP_CONFIG`), pronto e
+/// sem subir nada: o que o gatilho de notificacao assina. Servidor de pacote nao esta neste
+/// arquivo, e por isso nao arma gatilho.
+pub fn servidor_do_operador(
+    config: &Path,
+    nome: &str,
+    raiz_do_agente: Option<&Path>,
+) -> Result<ServidorMcp, String> {
+    let (cfg, base) = ler_config(config)?;
+    let alvo = normalize_mcp_name(nome.trim());
+    let d = cfg
+        .servidores
+        .iter()
+        .find(|d| normalize_mcp_name(d.nome.trim()) == alvo)
+        .ok_or_else(|| format!("servidor '{nome}' nao declarado em {}", config.display()))?;
+    ServidorMcp::de_declarado(d, &base, raiz_do_agente, None)
+}
+
+// ------------------------------------------------------------------ assinatura de recursos
+
+/// O que a conexao de ASSINATURA pode mandar: o handshake e o `resources/subscribe`. Nenhum
+/// `tools/call`: quem assina so escuta, e o que a notificacao dispara roda pelo portao.
+const METODOS_DA_ASSINATURA: &[&str] = &[
+    "initialize",
+    "notifications/initialized",
+    "resources/subscribe",
+];
+/// Fila entre o leitor do fio e o gatilho. Cheia, o leitor espera: o servidor que inunda
+/// enche o proprio cano, e nao a memoria do agente.
+const FILA_DA_ASSINATURA: usize = 256;
+
+/// Uma assinatura viva: o processo do servidor, no bwrap como o da ferramenta, lido por uma
+/// tarefa propria. Cair a `Assinatura` aborta a tarefa, e com ela o processo
+/// (`kill_on_drop`): a leitura sem prazo do fio nunca e cortada no meio de uma linha com a
+/// sessao ainda em uso.
+pub struct Assinatura {
+    rx: tokio::sync::mpsc::Receiver<Result<Value, String>>,
+    leitor: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for Assinatura {
+    fn drop(&mut self) {
+        self.leitor.abort();
+    }
+}
+
+impl Assinatura {
+    /// A proxima mensagem que o servidor mandou por conta propria; `Err` e o motivo de o fio
+    /// ter caido, `None` o fim. O pedido do servidor (o `ping` dele) ja foi respondido pelo
+    /// leitor, e vem tambem: quem conta a inundacao conta tudo.
+    pub async fn proxima(&mut self) -> Option<Result<Value, String>> {
+        self.rx.recv().await
+    }
+}
+
+impl ServidorMcp {
+    pub fn nome(&self) -> &str {
+        &self.nome
+    }
+
+    /// A capacidade que a casa deu a este servidor (`capacidade_de`).
+    pub fn capacidade(&self) -> &'static str {
+        self.capacidade
+    }
+
+    /// Sobe o servidor, faz o handshake, confere que ele ANUNCIA o que se vai pedir
+    /// (`resources.subscribe` para os `recursos`, `resources.listChanged` para a `lista`) e
+    /// assina cada recurso. So stdio: o streamable HTTP entrega notificacao fora de pedido
+    /// pelo GET em SSE, que o runtime ainda nao abre, e dizer isso e melhor que assinar e
+    /// nunca ouvir nada.
+    pub async fn assinar(
+        &self,
+        recursos: &[String],
+        lista: bool,
+        auditoria: RuntimeAudit,
+    ) -> Result<Assinatura, String> {
+        let Transporte::Stdio { spec } = &self.transporte else {
+            return Err(format!(
+                "servidor '{}': a assinatura de recursos so vale por stdio nesta versao (o \
+                 servidor por url manda a notificacao pelo GET em SSE, que o runtime nao abre)",
+                self.nome
+            ));
+        };
+        let sessao = SessionPolicy {
+            request_timeout_ms: self.prazo_inicio.as_millis() as u64,
+            startup_timeout_ms: self.prazo_inicio.as_millis() as u64,
+            shutdown_timeout_ms: CORTESIA_FECHAR.as_millis() as u64,
+            ..SessionPolicy::default()
+        };
+        let politica = CapabilityPolicy {
+            allowed_methods: METODOS_DA_ASSINATURA
+                .iter()
+                .map(|m| m.to_string())
+                .collect(),
+            allowed_tools: BTreeSet::new(),
+        };
+        let nome = self.nome.clone();
+        let subir = async {
+            let (spec, seguranca) =
+                crate::processo::servidor_no_bwrap(spec).map_err(|e| e.to_string())?;
+            let mut s = McpStdioSession::spawn(&spec, &seguranca, sessao, politica, auditoria)
+                .await
+                .map_err(|e| e.to_string())?;
+            let ex = s
+                .initialize_legacy(CLIENTE, VERSAO)
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut recebidas = ex.notifications.clone();
+            let r = exchange_result(ex).map_err(|e| e.to_string())?;
+            let versao = r
+                .get("protocolVersion")
+                .and_then(Value::as_str)
+                .ok_or("initialize sem protocolVersion")?;
+            negotiate_legacy_version(versao).map_err(|e| e.to_string())?;
+            let anuncia = |k: &str| {
+                r.pointer(&format!("/capabilities/resources/{k}")) == Some(&Value::Bool(true))
+            };
+            if !recursos.is_empty() && !anuncia("subscribe") {
+                return Err(
+                    "o servidor nao anuncia resources.subscribe no initialize: nao ha o que assinar"
+                        .to_string(),
+                );
+            }
+            if lista && !anuncia("listChanged") {
+                return Err(
+                    "o servidor nao anuncia resources.listChanged no initialize: a lista nunca \
+                     avisaria"
+                        .to_string(),
+                );
+            }
+            for uri in recursos {
+                let ex = s
+                    .request(
+                        JsonRpcRequest::new("resources/subscribe", json!({"uri": uri})),
+                        Cancellation::default(),
+                    )
+                    .await
+                    .map_err(|e| format!("resources/subscribe {uri}: {e}"))?;
+                recebidas.extend(ex.notifications.iter().cloned());
+                exchange_result(ex).map_err(|e| format!("resources/subscribe {uri}: {e}"))?;
+            }
+            Ok::<_, String>((s, recebidas))
+        };
+        let (mut s, recebidas) = tokio::time::timeout(self.prazo_inicio, subir)
+            .await
+            .map_err(|_| format!("sem resposta em {:?}", self.prazo_inicio))?
+            .map_err(|e| format!("servidor '{nome}': {e}"))?;
+        let (tx, rx) = tokio::sync::mpsc::channel(FILA_DA_ASSINATURA);
+        let leitor = tokio::spawn(async move {
+            for v in recebidas {
+                if tx.send(Ok(v)).await.is_err() {
+                    return;
+                }
+            }
+            loop {
+                let v = match s.next_message().await {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let _ = tx.send(Err(e.to_string())).await;
+                        break;
+                    }
+                };
+                // Pedido do servidor: responde (o `ping` com `{}`, o resto com metodo
+                // desconhecido) para ele nao derrubar a sessao esperando.
+                if let (Some(id), Some(m)) = (v.get("id"), v.get("method").and_then(Value::as_str))
+                {
+                    let resposta = if m == "ping" {
+                        jsonrpc_result(id.clone(), json!({}))
+                    } else {
+                        jsonrpc_error(
+                            id.clone(),
+                            JSONRPC_METHOD_NOT_FOUND,
+                            "o cliente que assina so escuta",
+                        )
+                    };
+                    if let Err(e) = s.reply(&resposta).await {
+                        let _ = tx.send(Err(e.to_string())).await;
+                        break;
+                    }
+                }
+                if tx.send(Ok(v)).await.is_err() {
+                    break;
+                }
+            }
+            let _ = s.kill().await;
+        });
+        Ok(Assinatura { rx, leitor })
+    }
+}
+
 /// O que a montagem chama: le `PHXCLAW_MCP_CONFIG`, escreve os avisos no stderr (o
 /// stdout do `mcp-serve` e o fio do protocolo) e devolve as ferramentas.
 pub fn carregar_do_ambiente(raiz_do_agente: &Path) -> Vec<Arc<dyn Tool>> {
@@ -704,6 +928,37 @@ pub fn carregar_do_ambiente(raiz_do_agente: &Path) -> Vec<Arc<dyn Tool>> {
 
 // ------------------------------------------------------------------ servidor
 
+/// Uma sessao de chamadas pelo portao fora do laco do modelo: um id novo, a evidencia dele
+/// e a pasta de trabalho. E UMA so porque o `mcp-serve` e o `phxclaw ferramenta` chamam o
+/// mesmo `Agent::call_tool`; duas montagens desta sessao seriam duas regras de onde a
+/// evidencia mora, e a que alguem esquecesse chamaria a ferramenta sem deixar rastro.
+pub struct Sessao {
+    pub ctx: ToolContext,
+    pub ledger: EvidenceLedger,
+}
+
+impl Sessao {
+    pub fn abrir(agente: &Agent, workdir: PathBuf) -> std::io::Result<Self> {
+        let task_id = phxclaw_types::new_uuid_v7().to_string();
+        let ledger = EvidenceLedger::open(agente.store.evidence_path(&task_id))
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        std::fs::create_dir_all(&workdir)?;
+        let ctx = ToolContext {
+            task_id,
+            workdir,
+            timeout: agente.config.tool_timeout,
+        };
+        Ok(Self { ctx, ledger })
+    }
+
+    /// Solta o que as ferramentas seguraram para a sessao (navegador, processo).
+    pub async fn fechar(&self, agente: &Agent) {
+        for t in &agente.tools {
+            t.finish(&self.ctx.task_id).await;
+        }
+    }
+}
+
 /// Serve por stdio (ou qualquer par leitor/escritor) as ferramentas que a politica do
 /// `agente` concede. A lista sai do `visible_specs` e a chamada do `call_tool`: a mesma
 /// porta do laco do modelo, com a mesma evidencia. Termina no fim da entrada, soltando o
@@ -718,15 +973,8 @@ where
     R: AsyncBufRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    let task_id = phxclaw_types::new_uuid_v7().to_string();
-    let ledger = EvidenceLedger::open(agente.store.evidence_path(&task_id))
-        .map_err(|e| std::io::Error::other(e.to_string()))?;
-    std::fs::create_dir_all(&workdir)?;
-    let ctx = ToolContext {
-        task_id: task_id.clone(),
-        workdir,
-        timeout: agente.config.tool_timeout,
-    };
+    let sessao = Sessao::abrir(agente, workdir)?;
+    let (ctx, ledger) = (&sessao.ctx, &sessao.ledger);
     let mut r = Ok(());
     loop {
         let linha = match ler_linha(&mut entrada).await? {
@@ -747,16 +995,14 @@ where
                 JSONRPC_PARSE_ERROR,
                 &e.to_string(),
             )),
-            Ok(v) => responder(agente, &ctx, &ledger, v).await,
+            Ok(v) => responder(agente, ctx, ledger, v).await,
         };
         if let Some(resp) = resposta {
             saida.write_all(&encode_mcp_line(&resp)).await?;
             saida.flush().await?;
         }
     }
-    for t in &agente.tools {
-        t.finish(&task_id).await;
-    }
+    sessao.fechar(agente).await;
     r
 }
 

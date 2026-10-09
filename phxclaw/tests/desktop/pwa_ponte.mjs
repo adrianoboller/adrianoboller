@@ -18,6 +18,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { cabecalhosDaUi, vigiarCsp } from './seguranca.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require('/opt/node22/lib/node_modules/playwright');
@@ -96,6 +97,11 @@ try {
 
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices['Pixel 7'] });
+  const vigia = await vigiarCsp(ctx);
+  // A tela pela ponte sai com os MESMOS cabecalhos do `servir` (remoto.rs monta o pwa::blindar).
+  const cab = await fetch(`http://localhost:${pHttp}/`);
+  const faltam = Object.entries(cabecalhosDaUi()).filter(([k, v]) => cab.headers.get(k) !== v).map(([k]) => k);
+  check('a tela pela ponte sai com os cabecalhos de seguranca', faltam.length === 0, faltam.join(', '));
   const page = await ctx.newPage();
   await page.goto(`http://localhost:${pHttp}/?tela=tarefas`);
   await page.evaluate(() => navigator.serviceWorker.ready);
@@ -132,6 +138,8 @@ try {
   // A ponte recusa rota fora do controle remoto, mesmo com o token certo.
   const st = await page.evaluate(async t => (await fetch('./v1/schedules', { headers: { Authorization: `Bearer ${t}` } })).status, tokenPonte);
   check('a ponte recusa rota fora do controle remoto (403)', st === 403, String(st));
+  const csp = await vigia.todas(ctx.pages());
+  check('zero violacao de CSP pela ponte', csp.length === 0, csp.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) {
   falhou = e;

@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-7ceb-9b14-978168a74c38",
+  "agent_id": 152,
+  "name": "GaussDB Expert Engineer",
+  "macroarea": "Terceiros · Engenharia",
+  "nucleus": "Engineering",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Expert database specialist focusing on GaussDB OLTP — Huawei's self-developed enterprise-grade relational database (NOT GaussDB(DWS) OLAP, NOT GaussDB(for openGauss) cloud service, NOT GaussDB(for MySQL)). Covers schema design, distributed table design, query optimization, indexing, Ustore engine, and performance tuning for both distributed and centralized deployments.",
+  "responsibilities": "Distribution keys, CN/DN query plans, Ustore engine — GaussDB databases that don't wake you at 3am.",
+  "resources": "Descricao completa do papel em config/agents/agency/gaussdb-expert-engineer.md; ferramentas do cabecalho: nenhuma declarada (so leitura).",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: as ferramentas sao as do tools: do cabecalho de origem (sem tools: = so leitura), sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo engineering/engineering-gaussdb-expert.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/gaussdb-expert-engineer.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "engineering",
+    "row": 41
+  }
+}

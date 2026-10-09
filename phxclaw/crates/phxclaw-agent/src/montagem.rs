@@ -72,7 +72,8 @@ pub struct Montagem {
     /// nem existe.
     pub canal: Option<crate::canal::CanalTelegram>,
     /// Ferramentas dos servidores MCP declarados em `PHXCLAW_MCP_CONFIG`, descobertas uma
-    /// vez na montagem. Capacidade `mcp.<servidor>`, fora do padrao: o operador concede.
+    /// vez na montagem. Capacidade `mcp.<servidor>` (a de pacote, `mcp.<pacote>.<servidor>`),
+    /// fora do padrao: o operador concede.
     pub mcp: Vec<Arc<dyn Tool>>,
     /// Os papeis de `config/agents` (`PHXCLAW_AGENTES_DIR`). Catalogo invalido nao
     /// derruba o agente: vira aviso e `None`, e `team_list`/`team_delegate` nem existem.
@@ -171,8 +172,12 @@ impl Montagem {
 
     /// Agente para um modelo ("ollama:qwen2.5:1.5b", "openai:...", ...). A chave do
     /// provedor de nuvem sai do broker da raiz do agente, nunca do ambiente.
+    /// `rota`/`rota:<spec>` pede o roteamento por politica (`modelo.roteamento`, R4).
     pub fn agent(&self, model_spec: &str) -> Result<Agent, String> {
-        let llm = crate::chaves::modelo(model_spec, self.raiz_do_agente())?;
+        let llm = match crate::roteamento::pedido(model_spec) {
+            Some(cabeca) => crate::roteamento::do_config(cabeca, self.raiz_do_agente())?,
+            None => crate::chaves::modelo(model_spec, self.raiz_do_agente())?,
+        };
         self.montar(llm)
     }
 
@@ -391,6 +396,11 @@ impl Montagem {
             }
         }
         let caps: Vec<&str> = self.capabilities.iter().map(String::as_str).collect();
+        // Preco e orcamento (R2/R3): arquivo de precos ruim ou teto em dinheiro sem tabela
+        // e erro da montagem, nunca o «sem orcamento» calado.
+        let precos = crate::custo::da_configuracao()?;
+        let orcamento = crate::orcamento::Politica::da_configuracao()?;
+        orcamento.conferir_com(precos.as_deref())?;
         let config = AgentConfig {
             max_steps: self.max_steps,
             require_final_tool: true,
@@ -403,6 +413,8 @@ impl Montagem {
             comandos: self.comandos(),
             prazo_de_resposta: Some(PRAZO_DE_RESPOSTA),
             tentativas_de_argumento: tentativas_de_argumento()?,
+            precos,
+            orcamento,
             ..AgentConfig::default()
         }
         .grant(&caps);

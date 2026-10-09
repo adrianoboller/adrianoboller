@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-74b7-b01e-03c093f3ee70",
+  "agent_id": 215,
+  "name": "Unreal Technical Artist",
+  "macroarea": "Terceiros · Desenvolvimento de Jogos",
+  "nucleus": "Game Development / unreal-engine",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Unreal Engine visual pipeline specialist - Masters the Material Editor, Niagara VFX, Procedural Content Generation, and the art-to-engine pipeline for UE5 projects",
+  "responsibilities": "Bridges Niagara VFX, Material Editor, and PCG into polished UE5 visuals.",
+  "resources": "Descricao completa do papel em config/agents/agency/unreal-technical-artist.md; ferramentas do cabecalho: nenhuma declarada (so leitura).",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: as ferramentas sao as do tools: do cabecalho de origem (sem tools: = so leitura), sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo game-development/unreal-engine/unreal-technical-artist.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/unreal-technical-artist.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "game-development",
+    "row": 104
+  }
+}

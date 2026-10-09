@@ -170,6 +170,14 @@ pub enum LlmError {
 pub trait Llm: Send + Sync {
     /// Identificador estavel, ex.: "ollama:qwen2.5:1.5b", "openai:gpt-5".
     fn id(&self) -> String;
+    /// Os provedores que podem ATENDER uma chamada deste modelo, pelo spec de cada um: o
+    /// preco e por provedor, e o orcamento em dinheiro so se confere antes de gastar se
+    /// todos tem preco. O padrao e ele mesmo; o modelo roteado lista a cadeia inteira, e
+    /// todo involucro repassa o do interno. O involucro que esquecer devolve o proprio id,
+    /// que nao tem preco: o orcamento em dinheiro recusa -- fecha, nunca abre.
+    fn provedores(&self) -> Vec<String> {
+        vec![self.id()]
+    }
     fn chat<'a>(
         &'a self,
         messages: &'a [Message],

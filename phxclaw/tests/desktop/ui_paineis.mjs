@@ -13,6 +13,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { subir } from './qualificacao/servidor.mjs';
+import { vigiarCsp } from './seguranca.mjs';
 import { chromium, UI, OUT, GRADE, CONFIG } from './qualificacao/comum.mjs';
 import { stubTauriFn } from './qualificacao/stub.mjs';
 
@@ -29,6 +30,8 @@ const browser = await chromium.launch();
 try {
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, locale: 'pt-BR' });
   await ctx.addInitScript(stubTauriFn, GRADE);
+  // O servidor de revisao manda a CSP do agente (pwa.rs): violacao e defeito.
+  const vigia = await vigiarCsp(ctx);
   await ctx.addInitScript(() => { try { localStorage.setItem('phxclaw.token', 'token-de-teste'); } catch {} });
   const page = await ctx.newPage();
   const erros = [];
@@ -121,6 +124,8 @@ try {
   check('perfis: USAR manda PUT {usar} e o perfil aparece ATIVO', ativo.estado === 'ATIVO' && /casa/.test(ativo.status) && !ativo.desativar, JSON.stringify(ativo));
   await page.screenshot({ path: join(SAIDA, 'ui_paineis_perfis.png') });
   check('sem erro de JavaScript na pagina', erros.length === 0, erros.join(' | ').slice(0, 300));
+  const csp = await vigia.todas(ctx.pages());
+  check('zero violacao de CSP', csp.length === 0, csp.slice(0, 3).join(' | '));
   await ctx.close();
 } catch (e) {
   check('roteiro', false, String(e).slice(0, 300));

@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 // Os tipos de fio moram no contrato comum, para o SDK le-los sem o agente inteiro.
-pub use phxclaw_agent_core::tarefa::{StepRecord, Task, TaskStatus};
+pub use phxclaw_agent_core::tarefa::{Orcamento, StepRecord, Task, TaskStatus};
 
 #[derive(Debug, Clone)]
 pub struct TaskStore {

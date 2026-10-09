@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 14:22), com `PHXCLAW_CAPACIDADES` no padrao. **74 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
+Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 17:20), com `PHXCLAW_CAPACIDADES` no padrao. **74 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -140,7 +140,7 @@ Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `git_worktree` | `git.write` | Isolated git worktrees for parallel tasks. action=add {name, branch?, base?} creates <repo>/.worktrees/<name> on branch phxclaw/<name> (returns its path, usable as 'path' in git/git_write and file tools); action=list; action=remove {name, force?}. 'path' selects the main repo. |
 | `go_no_go` | `gonogo.write` | Integrators' council Go/NoGo. action: open {integration, integrators} declares the council (fixed afterwards); record {integration, integrator, verdict: OK\|NOGO, errors? (required for NOGO)} -- the integrator must be in the council, and once a name is recorded only the same task can record for it again; status {integration}. Decision: any current NOGO -> NOGO; a council member without verdict -> WAIT; all OK -> GO. |
 | `lsp` | `fs.read` | Read-only language server queries on files in the task directory (rust (.rs), python (.py, .pyi)). action=definition\|references\|hover need path, line and column (1-based); action=symbols with path lists the file's symbols, with query searches the workspace; action=diagnostics returns the file's errors and warnings. Never edits files. |
-| `team_list` | `team.read` | List the 111 PhxClaw team roles (id \| name \| macro-area \| type \| criticality \| main capability \| when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role. |
+| `team_list` | `team.read` | List the 391 PhxClaw team roles (id \| name \| macro-area \| type \| criticality \| main capability \| when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role. |
 | `team_delegate` | `team.delegate` | Delegate one self-contained sub-task to a PhxClaw team role (by id or name, see team_list). The role runs as a sub-agent with its own mission and limits and only the tools both it and you are allowed; returns its answer. Human roles do not run: they come back asking for a human decision. |
 | `parallel_tasks` | `agent.parallel` | Run up to 6 coding tasks in parallel over a git repo in the working directory. Each task gets its own git worktree (branch phxclaw/<name>) as an isolated sandboxed workspace and a sub-agent; when all finish, each worktree's changes are committed on its branch. Returns per task: answer, branch, commit and changed files. 'attempts' (best-of-N, up to 4) runs the same objective N times in separate worktrees (<name>-1..N) so you can compare and keep the best. Review/merge the branches afterwards with git/git_write. |
 | `parallel_research` | `agent.spawn` | Run up to 6 independent sub-agents in parallel, one per sub-task, and return each answer. Use for research over many items (compare products, gather facts about several topics). |
@@ -181,80 +181,378 @@ Montadas sem nome literal no fonte (MCP externo ou nome dinamico): `browser_clic
 ## Linha de comando
 
 A referência é a ajuda do próprio binário, copiada aqui pelo gerador (os `CLI_REFERENCE_V0xx`
-antigos não cobrem o agente).
+antigos não cobrem o agente): cada comando com todos os parâmetros, cada ferramenta montada com os
+do esquema dela (`phxclaw ferramenta NOME --ajuda` traz tipo, opções e padrão) e cada rota da API
+(`phxclaw api METODO ROTA`). Três catracas travam a cobertura: `ferramenta::testes` (toda
+ferramenta montada tem forma na CLI e a ajuda mostra cada parâmetro), `rotas::testes` (toda rota
+dos routers tem linha na tabela) e `ajuda::testes` (toda opção que o código lê está no uso).
 
 <!-- gerado:cli:inicio -->
-Saida de `phxclaw --help`, gerada em 2026-10-09:
+Saida de `phxclaw ajuda --tudo`, gerada em 2026-10-09:
 
 ```text
 PhxClaw 0.70.0
 
 USO:
   phxclaw <COMANDO> [opcoes]
-  phxclaw ajuda <COMANDO>
+  phxclaw ajuda <COMANDO>   (ou phxclaw <COMANDO> --ajuda)
+  phxclaw ajuda --tudo   (mais cada ferramenta com os parametros e cada rota da API)
 
 AGENTE:
   agente        Roda o agente agora, mostrando cada passo
+                phxclaw agente "objetivo" [--modelo M] [--plano [--sim]] [--estilo NOME] [--imagem ARQ]...
+                [--gravar ARQ] [--verificar "CMD"] [--saida-esquema ARQ] [--pasta DIR]
   voz           Conversa por voz, um turno por arquivo WAV
+                phxclaw voz ARQ.wav [ARQ2.wav ...] [--modelo M] [--pasta DIR]
   sessoes       Busca nas tarefas anteriores
+                phxclaw sessoes "termo" [--limite N] [--pasta DIR]
   resumo        Resumo das tarefas do dia
+                phxclaw resumo [--data AAAA-MM-DD|hoje|ontem] [--pasta DIR]
   estilos       Lista os estilos de saida
+                phxclaw estilos
   skills        Importa SKILL.md de outros agentes (scripts desligados, origem com SHA-256)
+                phxclaw skills importar DIR [--com-scripts] [--aceitar-licenca-desconhecida] [--pasta DIR]
+  licenca       Confere a licenca de uma pasta de terceiro antes de copiar (porta unica)
+                phxclaw licenca conferir DIR [--json] [--aceitar-licenca-desconhecida] [--limite DIR]
   indexar       Indexa uma pasta de documentos para o doc_search (BM25)
+                phxclaw indexar DIR [--pasta DIR]
   projeto       Confia num projeto: os AGENTS.md dele entram no prompt
+                phxclaw projeto confiar|mostrar [DIR] [--pasta DIR]
+  ferramenta    Roda UMA ferramenta montada, com os parametros do esquema dela
+                phxclaw ferramenta [NOME [--PARAM VALOR]... [--json ARQ|-] [--trabalho DIR] [--modelo M]
+                [--pasta DIR] | NOME --ajuda|--help | --nomes]
 
 EQUIPE E FLUXOS:
   equipe        Os papeis da equipe: listar, mostrar, delegar
+                phxclaw equipe [listar [--macroarea X] [--texto Y] | mostrar ID
+                | delegar ID "tarefa" [--modelo M]] [--pasta DIR]
   gonogo        Conselho de integradores: abrir, registrar parecer, ver, decidir Go/NoGo
+                phxclaw gonogo abrir INTEGRACAO --integradores a,b | registrar INTEGRACAO INTEGRADOR
+                OK|NOGO [--erro "..."]... [--credencial TOKEN|-] | ver INTEGRACAO
+                | decidir INTEGRACAO [--pasta DIR]
   fluxo         Fluxo em DAG: rodar, retomar, responder esperas, pinar, podar, exportar e listar
+                phxclaw fluxo rodar ARQ.json [--ate PASSO] [--pins] [--publicada]
+                | retomar TAREFA [ARQ.json] | responder TAREFA TEXTO | esperas
+                | pinar ARQ.json PASSO (--json V | --tarefa T) | despinar ARQ.json PASSO
+                | podar [--dias N] [--max N] | exportar ARQ.json [--saida P]
+                | importar PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]
+                | modelos | usar MODELO DESTINO.json | publicar ARQ.json [--nota T]
+                | versoes ARQ.json | voltar ARQ.json N | restaurar ARQ.json N [--forcar]
+                | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG]
+                | importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--sobrescrever] [--modelo M]
+                [--pasta DIR]
   agenda        Agenda: listar, adicionar (modelo ou fluxo) e disparar o que venceu
+                phxclaw agenda listar | adicionar NOME "OBJETIVO" (--cada SEG
+                | --cron EXPR) | disparar [--modelo M] [--pasta DIR]
 
 CODIGO:
   revisar       Revisao de codigo de um diff ou PR (serve para CI)
+                phxclaw revisar [--repo DIR] [--rev R] [--cached] [--diff ARQ|-] [--pr github:dono/proj#7]
+                [--evento ARQ] [--comentar] [--foco TEXTO] [--modelo M] [--falhar-em alta] [--pasta DIR]
   tarefa        Tarefas do projeto (.phxclaw/tarefas.json): listar e rodar
+                phxclaw tarefa listar | rodar NOME
   testes        Explorador de testes: a arvore e um no dela (Rust e Python)
+                phxclaw testes listar | rodar NO [--projeto DIR] [--caminho REL] [--linguagem rust|python]
+  evoluir       Auto-evolucao: propoe um ramo verde e espera o Go (nunca mescla)
+                phxclaw evoluir [--item NOME] [--modelo M] [--projeto DIR] [--pasta DIR]
+                | itens | listar | aprovar ID | rejeitar ID [--motivo TEXTO]
 
 SERVICOS (API, CANAIS, EDITORES, DISPOSITIVOS):
   servir        API de tarefas, UI web (PWA), gatilhos e heartbeat
+                phxclaw servir [--porta 8787] [--pasta DIR] [--canal NOME] [--dispositivos --cert C
+                --chave K --tokens F [--porta-dispositivos 8788]] [--ponte wss://H:P/ [--ponte-ca PEM]
+                [--ponte-tenant U] [--ponte-no U] [--sem-porta]]
   canal         Canal de mensagens como entrada do agente (25 canais)
+                phxclaw canal NOME [--pasta DIR] [--escuta ENDERECO]
   mcp-serve     Ferramentas do agente como servidor MCP (stdio)
+                phxclaw mcp-serve [--trabalho DIR] [--modelo M] [--pasta DIR]
   acp           Agent Client Protocol para editores (stdio)
+                phxclaw acp [--modelo M] [--pasta DIR]
   dispositivos  Servidor WSS de dispositivos pareados
+                phxclaw dispositivos --cert C --chave K --tokens F [--porta 8788]
+                | dispositivos chave [--pasta DIR]
   ponte         Ponte de controle remoto (o agente se liga para fora)
+                phxclaw ponte --cert PEM --chave PEM --tokens ARQ [--porta 8790] [--porta-wss 8791]
+                [--pasta DIR] | ponte chave [--pasta DIR]
 
 CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
   forja         Guarda o token do GitHub ou do GitLab
+                phxclaw forja token github|gitlab [--pasta DIR]
   mcp           Credencial de um servidor MCP remoto (Bearer ou OAuth)
+                phxclaw mcp token|login NOME [--pasta DIR]
   credencial    Segredo de uma credencial nomeada do no HTTP (http_request)
+                phxclaw credencial guardar|renovacao|login NOME [--pasta DIR]
   elevenlabs    Guarda a chave da ElevenLabs ou lista as vozes da conta
+                phxclaw elevenlabs chave|vozes [--busca TEXTO] [--pasta DIR]
   gemini        Guarda a chave da Gemini API (Nano Banana no image_generate)
+                phxclaw gemini chave [--pasta DIR]
   xai           Guarda a chave da xAI (habilita x_search)
+                phxclaw xai chave [--pasta DIR]
   n8n           Guarda a chave da API e o segredo do webhook do n8n (habilita n8n_workflow)
-  api           Guarda o Bearer da API de tarefas
+                phxclaw n8n chave|segredo [--pasta DIR]
+  api           Chama qualquer rota da API do `servir`; guarda o Bearer dela
+                phxclaw api METODO ROTA [--corpo ARQ|-|JSON] [--consulta CHAVE=VALOR]... [--projeto P]
+                [--url URL] [--saida ARQ] [--pasta DIR] | api rotas [--json]
+                | api chave [--pasta DIR]
   usuario       Usuarios, projetos e papeis da API (token so como hash)
+                phxclaw usuario criar NOME --papel owner|admin|member|leitor [--projeto P]...
+                | listar | chave NOME | remover NOME [--pasta DIR]
   openai        Guarda a chave da OpenAI (modelos openai:*)
+                phxclaw openai chave [--pasta DIR]
   anthropic     Guarda a chave da Anthropic (modelos anthropic:*)
+                phxclaw anthropic chave [--pasta DIR]
   imagem        Guarda a chave do gerador de imagem openai
+                phxclaw imagem chave [--pasta DIR]
   email         Guarda a senha do SMTP (send_email e canal de e-mail)
+                phxclaw email chave [--pasta DIR]
   plugins       Semente de assinatura, reassinar manifestos, loja: catalogo, instalar, empacotar
+                phxclaw plugins chave [--pasta DIR] | plugins assinar [DIR] [--raiz DIR] [--pasta DIR]
+                | plugins catalogo [BUSCA] | plugins instalar NOME | plugins empacotar DIR SAIDA.tar
 
 MEDICAO (so numero medido, com faixa min-max, N e data):
   repetir       Repete uma gravacao sem modelo e acusa a divergencia com o passo
+                phxclaw repetir ARQ.jsonl [--ferramentas reais|gravadas] [--pasta DIR]
   medir         Soma uma gravacao por tarefa: chamadas, duracao e tokens de cada passo
-  avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto e nota
+                phxclaw medir ARQ.jsonl [--json]
+  avaliar       Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto, nota e custo
+                phxclaw avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR]
+                | avaliar --provedores A,B --bateria ARQ|DIR [--saida DIR] [--pasta DIR]
   ui            Prova as telas geradas: ida e volta (fidelidade) e larguras (responsivo)
+                phxclaw ui fidelidade [--telas N] [--modelo N] [--prazo S] [--saida DIR] [--capturas DIR]
+                | responsivo [--alvo html|bootstrap] [--bootstrap-css ARQ] [--telas N] [--saida DIR]
+                [--capturas DIR] | responsivo --phx ARQ.phx.json [--bootstrap-css ARQ] [--exemplo
+                INDEX.html] | importar ARQ.phx.json [--saida DIR] [--bootstrap-css CAMINHO]
   skill         Otimiza uma skill por A/B medido; so promove sem cruzar faixas
+                phxclaw skill otimizar NOME --tarefas DIR [--modelo M] [--rodadas N] [--pasta DIR]
 
 DIAGNOSTICO:
+  completar     Script de completar para bash, zsh, fish ou PowerShell
+                phxclaw completar bash|zsh|fish|powershell
   ferramentas   Ferramentas montadas nesta maquina, em JSON
+                phxclaw ferramentas
   core          Estado medido do runtime
+                phxclaw core status
   db            Plano de instalacao do PostgreSQL
+                phxclaw db plan [plataforma]
   config        O config.json: valor efetivo e origem de cada chave, validar, definir
+                phxclaw config mostrar [--json] | validar ARQ | exemplo
+                | definir CHAVE VALOR|--remover [--projeto|--perfil NOME]
+                | perfil listar|usar NOME|nenhum|criar NOME [--copiar-base]
+                | sincronizar enviar|receber --ponte URL [--forcar] [--pasta DIR]
   version       Versao
+                phxclaw version
 
 MODELOS: ollama:<modelo> (local), openai:<modelo>, anthropic:<modelo>, gemini:<modelo>
          (chaves de OPENAI_API_KEY / ANTHROPIC_API_KEY / GEMINI_API_KEY)
 POLITICA: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,... (padrao: CAPACIDADES_PADRAO)
+
+FERRAMENTAS (`ferramenta NOME --ajuda` traz tipo, opcoes e padrao):
+74 ferramentas montadas nesta maquina. `phxclaw ferramenta NOME --ajuda` mostra os parametros de uma.
+
+  phxclaw ferramenta write_file --path TEXTO --content TEXTO [--json ARQ|-]
+  phxclaw ferramenta read_file --path TEXTO [--end_line N] [--start_line N] [--json ARQ|-]
+  phxclaw ferramenta list_files [--json ARQ|-]
+  phxclaw ferramenta edit_file --path TEXTO --old_text TEXTO --new_text TEXTO [--json ARQ|-]
+  phxclaw ferramenta design_erp_ui [--app_name TEXTO] [--bootstrap] [--bootstrap_css TEXTO] [--flutter]
+  [--folder TEXTO] [--react] [--rust] [--sql TEXTO] [--sql_path TEXTO] [--wlanguage] [--json ARQ|-]
+  phxclaw ferramenta screenshot_to_erp_ui --image TEXTO --table TEXTO [--app_name TEXTO] [--bootstrap]
+  [--bootstrap_css TEXTO] [--flutter] [--folder TEXTO] [--react] [--rust] [--vision] [--wlanguage] [--json
+  ARQ|-]
+  phxclaw ferramenta shell --command TEXTO [--json ARQ|-]
+  phxclaw ferramenta shell_bg --action TEXTO [--command TEXTO] [--id N] [--json ARQ|-]
+  phxclaw ferramenta web_search --query TEXTO [--max_results N] [--json ARQ|-]
+  phxclaw ferramenta browser_open --url TEXTO [--json ARQ|-]
+  phxclaw ferramenta browser_read [--json ARQ|-]
+  phxclaw ferramenta browser_click --selector TEXTO [--json ARQ|-]
+  phxclaw ferramenta browser_type --selector TEXTO --text TEXTO [--submit] [--json ARQ|-]
+  phxclaw ferramenta browser_screenshot [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta image_render --source TEXTO [--height N] [--output TEXTO] [--width N] [--json ARQ|-]
+  phxclaw ferramenta deep_research --question TEXTO [--json ARQ|-]
+  phxclaw ferramenta ocr --path TEXTO [--first_page N] [--lang TEXTO] [--max_pages N] [--json ARQ|-]
+  phxclaw ferramenta image --path TEXTO [--json ARQ|-]
+  phxclaw ferramenta transcribe --path TEXTO [--language TEXTO] [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta speak --text TEXTO [--output TEXTO] [--voice TEXTO] [--json ARQ|-] [capacidade nao
+  concedida]
+  phxclaw ferramenta wake_word --path TEXTO --keywords TEXTO... [--threshold REAL] [--json ARQ|-]
+  [capacidade nao concedida]
+  phxclaw ferramenta image_generate [--input_image TEXTO] [--output TEXTO] [--prompt TEXTO] [--size TEXTO]
+  [--svg TEXTO] [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta desktop --action TEXTO [--button TEXTO] [--double] [--dx N] [--dy N] [--key TEXTO]
+  [--keys TEXTO...] [--path TEXTO] [--state TEXTO] [--text TEXTO] [--x N] [--y N] [--json ARQ|-]
+  [capacidade nao concedida]
+  phxclaw ferramenta create_document --path TEXTO --blocks JSON [--title TEXTO] [--json ARQ|-]
+  phxclaw ferramenta create_spreadsheet --path TEXTO --sheets JSON [--json ARQ|-]
+  phxclaw ferramenta create_presentation --path TEXTO --title TEXTO --slides JSON [--subtitle TEXTO]
+  [--json ARQ|-]
+  phxclaw ferramenta read_document --path TEXTO [--json ARQ|-]
+  phxclaw ferramenta zip_list --path TEXTO [--json ARQ|-]
+  phxclaw ferramenta zip --action TEXTO --path TEXTO [--dest TEXTO] [--files TEXTO...] [--json ARQ|-]
+  phxclaw ferramenta data_file --path TEXTO --action TEXTO [--query TEXTO] [--json ARQ|-]
+  phxclaw ferramenta data_file_format --path TEXTO [--output TEXTO] [--json ARQ|-]
+  phxclaw ferramenta pdf --path TEXTO --action TEXTO [--first_page N] [--last_page N] [--json ARQ|-]
+  phxclaw ferramenta pdf_create --source TEXTO [--output TEXTO] [--json ARQ|-]
+  phxclaw ferramenta canvas --name TEXTO --html TEXTO [--css TEXTO] [--script TEXTO] [--title TEXTO]
+  [--json ARQ|-]
+  phxclaw ferramenta publish_site --folder TEXTO [--json ARQ|-]
+  phxclaw ferramenta linux_system --action TEXTO [--filter TEXTO] [--item TEXTO] [--limit N] [--lines N]
+  [--priority TEXTO] [--since TEXTO] [--sort TEXTO] [--unit TEXTO] [--json ARQ|-] [capacidade nao
+  concedida]
+  phxclaw ferramenta linux_system_admin --action TEXTO [--operation TEXTO] [--pid N] [--signal TEXTO]
+  [--unit TEXTO] [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta network --action TEXTO [--count N] [--host TEXTO] [--port N] [--timeout_ms N] [--json
+  ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta network_lan --action TEXTO --host TEXTO [--count N] [--port N] [--timeout_ms N]
+  [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta rust_project --action TEXTO [--fix] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta python_repl --code TEXTO [--reset] [--json ARQ|-]
+  phxclaw ferramenta python_project --action TEXTO [--args TEXTO...] [--fix] [--path TEXTO] [--script
+  TEXTO] [--target TEXTO] [--json ARQ|-]
+  phxclaw ferramenta test_list [--language TEXTO] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta test_run --node TEXTO [--language TEXTO] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta debug --action TEXTO [--args TEXTO...] [--breakpoints JSON] [--console] [--expression
+  TEXTO] [--file TEXTO] [--frame N] [--language TEXTO] [--line N] [--program TEXTO] [--json ARQ|-]
+  phxclaw ferramenta calculator --expression TEXTO [--json ARQ|-]
+  phxclaw ferramenta http_request --url TEXTO [--aceitar_erro] [--cabecalhos JSON] [--corpo JSON]
+  [--credencial TEXTO] [--itens TEXTO] [--lote JSON] [--metodo TEXTO] [--paginacao JSON] [--query JSON]
+  [--resposta TEXTO] [--teto_bytes N] [--teto_ms N] [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta weather --lat REAL --lon REAL [--hours N] [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta session_search --query TEXTO [--limit N] [--json ARQ|-]
+  phxclaw ferramenta daily_summary [--date TEXTO] [--json ARQ|-]
+  phxclaw ferramenta memory_save --text TEXTO [--substitui TEXTO] [--json ARQ|-]
+  phxclaw ferramenta memory_search --query TEXTO [--include_invalid] [--limit N] [--json ARQ|-]
+  phxclaw ferramenta skill_load --name TEXTO [--json ARQ|-]
+  phxclaw ferramenta glob --pattern TEXTO [--include_ignored] [--limit N] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta grep --pattern TEXTO [--case_insensitive] [--context N] [--glob TEXTO]
+  [--include_ignored] [--limit N] [--output_mode TEXTO] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta replace_in_project --pattern TEXTO --replacement TEXTO [--case_insensitive]
+  [--confirm] [--glob TEXTO] [--include_ignored] [--path TEXTO] [--regex] [--json ARQ|-]
+  phxclaw ferramenta file_history --action TEXTO --path TEXTO [--version N] [--json ARQ|-]
+  phxclaw ferramenta file_history_restore --path TEXTO --version N [--json ARQ|-]
+  phxclaw ferramenta notebook_read --path TEXTO [--json ARQ|-]
+  phxclaw ferramenta notebook_edit --path TEXTO --action TEXTO [--cell_id TEXTO] [--cell_type TEXTO]
+  [--index N] [--source TEXTO] [--json ARQ|-]
+  phxclaw ferramenta checkpoint_list [--json ARQ|-]
+  phxclaw ferramenta checkpoint_restore --id TEXTO [--remove_new] [--json ARQ|-]
+  phxclaw ferramenta code_review [--cached] [--diff TEXTO] [--focus TEXTO] [--path TEXTO] [--rev TEXTO]
+  [--json ARQ|-]
+  phxclaw ferramenta git --action TEXTO [--cached] [--end_line N] [--file TEXTO] [--limit N] [--path
+  TEXTO] [--paths TEXTO...] [--rev TEXTO] [--start_line N] [--json ARQ|-]
+  phxclaw ferramenta git_write --action TEXTO [--all] [--base TEXTO] [--block N] [--branch TEXTO]
+  [--choice TEXTO] [--create] [--end_line N] [--file TEXTO] [--force] [--hunk JSON] [--include_untracked]
+  [--index N] [--message TEXTO] [--op TEXTO] [--path TEXTO] [--paths TEXTO...] [--start_line N] [--text
+  TEXTO] [--json ARQ|-]
+  phxclaw ferramenta project_task --action TEXTO [--name TEXTO] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta git_worktree --action TEXTO [--base TEXTO] [--branch TEXTO] [--force] [--name TEXTO]
+  [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta go_no_go --action TEXTO --integration TEXTO [--errors TEXTO...] [--integrator TEXTO]
+  [--integrators TEXTO...] [--verdict TEXTO] [--json ARQ|-] [capacidade nao concedida]
+  phxclaw ferramenta lsp --action TEXTO [--column N] [--line N] [--path TEXTO] [--query TEXTO] [--json
+  ARQ|-]
+  phxclaw ferramenta team_list [--id TEXTO] [--macroarea TEXTO] [--text TEXTO] [--json ARQ|-]
+  phxclaw ferramenta team_delegate --role TEXTO --task TEXTO [--json ARQ|-]
+  phxclaw ferramenta parallel_tasks --tasks JSON [--base TEXTO] [--path TEXTO] [--json ARQ|-]
+  phxclaw ferramenta parallel_research --subtasks TEXTO... [--json ARQ|-]
+  phxclaw ferramenta fluxo [--caminho TEXTO] [--entrada JSON] [--modo TEXTO] [--nome TEXTO] [--json ARQ|-]
+  [capacidade nao concedida]
+
+ROTAS DA API (`api METODO ROTA`):
+46 rotas do `phxclaw servir`. Chame qualquer uma com `phxclaw api METODO ROTA`.
+
+  GET /health                           Saude do servidor
+  GET /metrics                          Exposicao Prometheus (so com api.metricas)
+  POST /v1/tasks                        Cria uma tarefa (roda em segundo plano no servidor)
+                                          corpo: {objective, model?, plan_only?, images?, webhook?,
+                                          verificar?, ...}
+  GET /v1/tasks                         Lista as tarefas
+  GET /v1/tasks/{id}                    Uma tarefa inteira, com os passos
+  POST /v1/tasks/{id}/plan              Edita o plano de uma tarefa esperando aprovacao
+                                          corpo: {steps: [texto]}
+  POST /v1/tasks/{id}/approve           Aprova o plano
+                                          corpo: {}
+  POST /v1/tasks/{id}/cancel            Cancela a tarefa
+                                          corpo: {}
+  POST /v1/tasks/{id}/answer            Responde a pergunta do agente
+                                          corpo: {answer}
+  GET /v1/tasks/{id}/artifacts/{*path}  Bytes de um artefato da tarefa
+  POST /v1/schedules                    Agenda uma tarefa ou fluxo
+                                          corpo: {name, objective | fluxo, cron | every_seconds}
+                                          local: phxclaw agenda adicionar
+  GET /v1/schedules                     A agenda
+                                          local: phxclaw agenda listar
+  GET /sites/{id}/{*path}               Site publicado por publish_site
+                                          tela (navegador)
+  GET /canvas/{id}/{nome}               Pagina hospedeira de um canvas
+                                          tela (navegador)
+  GET /canvas/{id}/{nome}/widget        O widget de um canvas
+                                          tela (navegador)
+  GET /v1/config                        Valor efetivo e origem de cada chave
+                                          local: phxclaw config mostrar --json
+  PUT /v1/config                        Grava chaves do config.json (If-Match: revisao)
+                                          corpo: {valores: {chave: valor}, escopo?}
+                                          local: phxclaw config definir
+  GET /v1/config/perfis                 Perfis do config.json
+                                          local: phxclaw config perfil listar
+  PUT /v1/config/perfis                 Cria, usa ou desliga um perfil
+                                          corpo: {acao, nome?}
+                                          local: phxclaw config perfil
+  GET /v1/config/sincronizar            Retrato do config.json para sincronizar pela ponte
+                                          local: phxclaw config sincronizar receber
+  PUT /v1/config/sincronizar            Recebe o config.json da outra ponta
+                                          corpo: o retrato
+                                          local: phxclaw config sincronizar enviar
+  GET /                                 A tela (PWA)
+                                          tela (navegador)
+  GET /{a}                              index.html, manifest.webmanifest e sw.js da tela
+                                          tela (navegador)
+  GET /assets/{*resto}                  Arquivos da tela
+                                          tela (navegador)
+  GET /ui/politica                      Politica da tela (bloquear_inspecao); publica, antes do login
+  POST /v1/tunel/terminal               Uma linha de comando no terminal do projeto
+                                          corpo: {comando}
+  POST /v1/tunel/lsp                    Consulta ao servidor de linguagem do projeto
+                                          corpo: o pedido LSP
+  GET /v1/ide/terminal                  Terminal do Helix no navegador
+                                          websocket: fio de terminal interativo; no terminal local, rode o
+                                          editor direto
+  GET /v1/ide/simbolos                  Simbolos de um arquivo do projeto
+                                          consulta: arquivo, prazo?
+  GET /v1/ide/arquivo                   Conteudo de um arquivo do projeto
+                                          consulta: caminho
+  POST /v1/ide/completar                Completacao de codigo pelo modelo
+                                          corpo: {antes, depois?, arquivo?, linguagem?}
+  GET /v1/ide/testes                    Arvore de testes do projeto
+                                          consulta: caminho?, linguagem?
+                                          local: phxclaw testes listar
+  POST /v1/ide/testes/rodar             Roda um no da arvore de testes
+                                          corpo: {no, caminho?, linguagem?}
+                                          local: phxclaw testes rodar
+  GET /v1/plugins/catalogo              Catalogo da loja de pacotes
+                                          consulta: busca?
+                                          local: phxclaw plugins catalogo
+  POST /v1/plugins/instalar             Instala um pacote assinado da loja
+                                          corpo: {nome}
+                                          local: phxclaw plugins instalar
+  POST /mcp                             MCP por streamable HTTP (JSON-RPC)
+                                          corpo: a mensagem JSON-RPC; cabecalho mcp-session-id
+                                          local: phxclaw mcp-serve
+  GET /mcp                              405: o servidor nao inicia fluxo
+  DELETE /mcp                           Fecha a sessao MCP (204)
+  GET /v1/fluxos                        Os fluxos da pasta
+  GET /v1/fluxos/arquivo                Le um fluxo
+                                          consulta: nome
+  PUT /v1/fluxos/arquivo                Grava um fluxo
+                                          consulta: nome; corpo: {texto}
+  POST /v1/fluxos/validar               Valida um fluxo sem gravar
+                                          corpo: {texto}
+  POST /v1/fluxos/rodar                 Roda um fluxo (com --ate)
+                                          corpo: {nome, ate?, orcamento?}
+  POST /v1/triggers/{nome}              Dispara o gatilho de webhook de um fluxo
+                                          corpo: o evento; credencial do gatilho
+  GET /v1/triggers/{nome}               Formulario do gatilho, quando o fluxo declara um
+                                          tela (navegador)
+  POST /v1/flows/{tarefa}/resume        Retoma um fluxo parado numa espera de webhook
+                                          consulta: a credencial da espera; corpo: a resposta
+                                          local: phxclaw fluxo responder
 ```
 <!-- gerado:cli:fim -->
 
@@ -291,7 +589,7 @@ POLITICA: PHXCLAW_CAPACIDADES=web.search,web.browse,fs.read,fs.write,... (padrao
 ## Equipe de papéis
 
 <!-- gerado:equipe:inicio -->
-**111 papeis** carregados de `config/agents` (medido em 2026-10-09 por `phxclaw equipe listar`).
+**391 papeis** carregados de `config/agents` (medido em 2026-10-09 por `phxclaw equipe listar`).
 <!-- gerado:equipe:fim -->
 
 - **`team_list`** (`team.read`) lista os papéis (id, nome, macroárea, tipo, criticidade,

@@ -13,6 +13,10 @@
 //! - **Atras do mesmo portao das outras rotas** (papel leitor na matriz do `rbac.rs`).
 //! - Contadores do PROCESSO: reiniciar zera, que e o que o Prometheus espera de um
 //!   `counter` (ele trata o recomeco).
+//! - **Custo por resultado** (R2): o dinheiro gasto pelas tarefas e pelos fluxos, pelo
+//!   estado em que pararam, na moeda da tabela de precos (`custo.precos`). A moeda NAO e
+//!   rotulo (e texto do operador); quem le a metrica le a moeda na tabela. Tarefa sem custo
+//!   medido nao soma zero: conta em `*_custo_nao_medido_total`.
 
 use crate::motor::Agent;
 use crate::tarefa::{Task, TaskStatus};
@@ -27,7 +31,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::time::{Duration, Instant};
 
 /// Os estados de `TaskStatus`, na ordem do indice de `indice_do_estado` (o nome e o do fio).
-const ESTADOS: [&str; 7] = [
+const ESTADOS: [&str; N_ESTADOS] = [
     "pending",
     "awaiting_approval",
     "awaiting_input",
@@ -35,7 +39,10 @@ const ESTADOS: [&str; 7] = [
     "completed",
     "failed",
     "cancelled",
+    "budget_exceeded",
 ];
+
+const N_ESTADOS: usize = 8;
 
 fn indice_do_estado(e: TaskStatus) -> usize {
     // `match` exaustivo: estado novo nao compila sem lugar aqui.
@@ -47,6 +54,7 @@ fn indice_do_estado(e: TaskStatus) -> usize {
         TaskStatus::Completed => 4,
         TaskStatus::Failed => 5,
         TaskStatus::Cancelled => 6,
+        TaskStatus::BudgetExceeded => 7,
     }
 }
 
@@ -108,6 +116,8 @@ pub struct FimDeTarefa {
     pub estado: TaskStatus,
     pub passos: u64,
     pub duracao: Option<Duration>,
+    /// Custo da tarefa com as filhas, na moeda da tabela; `None` = nao medido.
+    pub custo: Option<f64>,
 }
 
 impl FimDeTarefa {
@@ -116,14 +126,39 @@ impl FimDeTarefa {
             estado: t.status,
             passos: t.steps.len() as u64,
             duracao: inicio.map(|i| i.elapsed()),
+            custo: crate::custo::total(t),
         }
     }
 }
 
+/// O que se conta no fim de uma execucao de fluxo: o estado e o custo dos passos.
+pub struct FimDeFluxo {
+    pub estado: TaskStatus,
+    pub custo: Option<f64>,
+}
+
+impl FimDeFluxo {
+    pub fn de(t: &Task) -> Self {
+        Self {
+            estado: t.status,
+            custo: crate::custo::total(t),
+        }
+    }
+}
+
+/// Dinheiro em milionesimos: soma atomica sem trava, e a sexta casa e a do relatorio.
+fn micro(v: f64) -> u64 {
+    (v * 1e6).round().clamp(0.0, u64::MAX as f64) as u64
+}
+
 pub struct Metricas {
     ligada: AtomicBool,
-    tarefas: [AtomicU64; 7],
-    fluxos: [AtomicU64; 7],
+    tarefas: [AtomicU64; N_ESTADOS],
+    fluxos: [AtomicU64; N_ESTADOS],
+    tarefa_custo_micro: [AtomicU64; N_ESTADOS],
+    tarefa_custo_nao_medido: [AtomicU64; N_ESTADOS],
+    fluxo_custo_micro: [AtomicU64; N_ESTADOS],
+    fluxo_custo_nao_medido: [AtomicU64; N_ESTADOS],
     passos: AtomicU64,
     ferramenta_ok: AtomicU64,
     ferramenta_erro: AtomicU64,
@@ -153,8 +188,12 @@ impl Metricas {
     pub const fn nova() -> Self {
         Self {
             ligada: AtomicBool::new(false),
-            tarefas: [const { AtomicU64::new(0) }; 7],
-            fluxos: [const { AtomicU64::new(0) }; 7],
+            tarefas: [const { AtomicU64::new(0) }; N_ESTADOS],
+            fluxos: [const { AtomicU64::new(0) }; N_ESTADOS],
+            tarefa_custo_micro: [const { AtomicU64::new(0) }; N_ESTADOS],
+            tarefa_custo_nao_medido: [const { AtomicU64::new(0) }; N_ESTADOS],
+            fluxo_custo_micro: [const { AtomicU64::new(0) }; N_ESTADOS],
+            fluxo_custo_nao_medido: [const { AtomicU64::new(0) }; N_ESTADOS],
             passos: AtomicU64::new(0),
             ferramenta_ok: AtomicU64::new(0),
             ferramenta_erro: AtomicU64::new(0),
@@ -204,7 +243,12 @@ impl Metricas {
             return;
         }
         let f = fim();
-        self.tarefas[indice_do_estado(f.estado)].fetch_add(1, Relaxed);
+        let i = indice_do_estado(f.estado);
+        self.tarefas[i].fetch_add(1, Relaxed);
+        match f.custo {
+            Some(c) => self.tarefa_custo_micro[i].fetch_add(micro(c), Relaxed),
+            None => self.tarefa_custo_nao_medido[i].fetch_add(1, Relaxed),
+        };
         self.passos.fetch_add(f.passos, Relaxed);
         if let Some(d) = f.duracao {
             self.tarefa_duracao.observar(d);
@@ -213,12 +257,17 @@ impl Metricas {
 
     /// Fim de um trecho de execucao de fluxo (do disparo ou da retomada ate parar), pelo
     /// estado em que parou. O fecho so roda com a metrica ligada.
-    pub fn fim_de_fluxo(&self, estado: impl FnOnce() -> Option<TaskStatus>) {
+    pub fn fim_de_fluxo(&self, fim: impl FnOnce() -> Option<FimDeFluxo>) {
         if !self.ligada() {
             return;
         }
-        if let Some(e) = estado() {
-            self.fluxos[indice_do_estado(e)].fetch_add(1, Relaxed);
+        if let Some(f) = fim() {
+            let i = indice_do_estado(f.estado);
+            self.fluxos[i].fetch_add(1, Relaxed);
+            match f.custo {
+                Some(c) => self.fluxo_custo_micro[i].fetch_add(micro(c), Relaxed),
+                None => self.fluxo_custo_nao_medido[i].fetch_add(1, Relaxed),
+            };
         }
     }
 
@@ -228,10 +277,17 @@ impl Metricas {
             return None;
         }
         let mut o = String::new();
-        let por_estado = |o: &mut String, nome: &str, ajuda: &str, v: &[AtomicU64; 7]| {
+        let por_estado = |o: &mut String, nome: &str, ajuda: &str, v: &[AtomicU64; N_ESTADOS]| {
             let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
             for (i, e) in ESTADOS.iter().enumerate() {
                 let _ = writeln!(o, "{nome}{{estado=\"{e}\"}} {}", v[i].load(Relaxed));
+            }
+        };
+        let dinheiro = |o: &mut String, nome: &str, ajuda: &str, v: &[AtomicU64; N_ESTADOS]| {
+            let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
+            for (i, e) in ESTADOS.iter().enumerate() {
+                let x = v[i].load(Relaxed) as f64 / 1e6;
+                let _ = writeln!(o, "{nome}{{estado=\"{e}\"}} {x:.6}");
             }
         };
         por_estado(
@@ -245,6 +301,30 @@ impl Metricas {
             "phxclaw_fluxo_execucoes_total",
             "Execucoes de fluxo (disparo ou retomada) pelo estado em que pararam.",
             &self.fluxos,
+        );
+        dinheiro(
+            &mut o,
+            "phxclaw_tarefa_custo_total",
+            "Custo das tarefas de objetivo (com as filhas), pelo estado final, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
+            &self.tarefa_custo_micro,
+        );
+        por_estado(
+            &mut o,
+            "phxclaw_tarefa_custo_nao_medido_total",
+            "Tarefas de objetivo terminadas sem custo medido (modelo fora da tabela, ou sem tabela), pelo estado final.",
+            &self.tarefa_custo_nao_medido,
+        );
+        dinheiro(
+            &mut o,
+            "phxclaw_fluxo_custo_total",
+            "Custo das execucoes de fluxo (todos os passos), pelo estado em que pararam, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
+            &self.fluxo_custo_micro,
+        );
+        por_estado(
+            &mut o,
+            "phxclaw_fluxo_custo_nao_medido_total",
+            "Execucoes de fluxo paradas sem custo medido, pelo estado em que pararam.",
+            &self.fluxo_custo_nao_medido,
         );
         let contador = |o: &mut String, nome: &str, ajuda: &str, linhas: &[(&str, u64)]| {
             let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
@@ -307,6 +387,9 @@ struct LlmMedido {
 impl Llm for LlmMedido {
     fn id(&self) -> String {
         self.interno.id()
+    }
+    fn provedores(&self) -> Vec<String> {
+        self.interno.provedores()
     }
     fn chat<'a>(
         &'a self,
@@ -470,6 +553,7 @@ mod testes {
                 estado: TaskStatus::Completed,
                 passos: 1,
                 duracao: None,
+                custo: None,
             }
         });
         m.fim_de_fluxo(|| {
@@ -500,8 +584,14 @@ mod testes {
             estado: TaskStatus::Failed,
             passos: 3,
             duracao: Some(Duration::from_millis(1500)),
+            custo: None,
         });
-        m.fim_de_fluxo(|| Some(TaskStatus::AwaitingInput));
+        m.fim_de_fluxo(|| {
+            Some(FimDeFluxo {
+                estado: TaskStatus::AwaitingInput,
+                custo: Some(0.25),
+            })
+        });
         let t = m.texto().unwrap();
         assert!(
             t.contains("phxclaw_ferramenta_chamadas_total{resultado=\"ok\"} 1"),
@@ -530,6 +620,15 @@ mod testes {
         );
         assert!(
             t.contains("phxclaw_ferramenta_duracao_segundos_count 1"),
+            "{t}"
+        );
+        // Custo por resultado: o nao medido conta como nao medido, nunca como zero somado.
+        assert!(
+            t.contains("phxclaw_tarefa_custo_nao_medido_total{estado=\"failed\"} 1"),
+            "{t}"
+        );
+        assert!(
+            t.contains("phxclaw_fluxo_custo_total{estado=\"awaiting_input\"} 0.250000"),
             "{t}"
         );
         assert!(!t.contains(segredo) && !t.contains("eco"), "{t}");

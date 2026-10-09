@@ -1,0 +1,39 @@
+{
+  "origem": "https://github.com/msitarzewski/agency-agents",
+  "commit": "f99f6aa910a442b0197b768ce0ea7751e35e2060",
+  "licenca": "MIT, Copyright (c) 2025 AgentLand Contributors",
+  "divisoes": [
+    "academic",
+    "design",
+    "engineering",
+    "finance",
+    "game-development",
+    "gis",
+    "healthcare",
+    "marketing",
+    "paid-media",
+    "product",
+    "project-management",
+    "research",
+    "sales",
+    "security",
+    "spatial-computing",
+    "specialized",
+    "support",
+    "testing",
+    "strategy"
+  ],
+  "achados": 282,
+  "importados": 280,
+  "recusados": [
+    {
+      "arquivo": "design/design-whimsy-injector.md",
+      "motivo": "varredura anti-injecao recusou o papel (credential_request)"
+    },
+    {
+      "arquivo": "engineering/engineering-prompt-engineer.md",
+      "motivo": "varredura anti-injecao recusou o papel (prompt_injection)"
+    }
+  ],
+  "avisos": []
+}

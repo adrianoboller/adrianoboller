@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-793a-87a0-4a165204f609",
+  "agent_id": 331,
+  "name": "Government Digital Presales Consultant",
+  "macroarea": "Terceiros · Especializados",
+  "nucleus": "Specialized",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Presales expert for China's government digital transformation market (ToG), proficient in policy interpretation, solution design, bid document preparation, POC validation, compliance requirements (classified protection/cryptographic assessment/Xinchuang domestic IT), and stakeholder management — helping technical teams efficiently win government IT projects.",
+  "responsibilities": "Navigates the Chinese government IT procurement maze — from policy signals to winning bids — so your team lands digital transformation projects.",
+  "resources": "Descricao completa do papel em config/agents/agency/government-digital-presales-consultant.md; ferramentas do cabecalho: nenhuma declarada (so leitura).",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: as ferramentas sao as do tools: do cabecalho de origem (sem tools: = so leitura), sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo specialized/government-digital-presales-consultant.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/government-digital-presales-consultant.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "specialized",
+    "row": 220
+  }
+}

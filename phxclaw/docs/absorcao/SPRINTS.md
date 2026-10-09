@@ -263,6 +263,39 @@ Troca «contra falso» por «real». Depende do dono:
 
 **Aceite:** nunca faz merge; diff que toca caminho vetado é recusado pelo portão; item sem portão verde não vira branch.
 
+**O que entrou (09/10/2026, sem commit — o integrador decide):**
+
+| Peça | Onde | Prova |
+|---|---|---|
+| `phxclaw evoluir [--item] [--modelo]`, `itens`, `listar`, `aprovar ID`, `rejeitar ID` | `apps/phxclaw/src/evolucao.rs` (só lê opções) | exercitado no binário: `itens` lista 5 candidatos e 10 vetados; `aprovar ../x` recusa o id; `--item guardrails` recusa com o motivo |
+| Ciclo: item → clone raso + `git_worktree` → plano → laço → commit pela mãe → portão do alcance → fmt/clippy(0 avisos)/test dos crates tocados → `code_review` do diff → ramo por `git bundle` | `crates/phxclaw-agent/src/evolucao.rs` | `tests/evolucao.rs`, 4 testes com `ScriptedLlm` num repositório git temporário |
+| Política versionada, um motor só; política que não veta a si mesma é recusada | `config/evolucao-politica.json` (31 caminhos, 10 itens vetados com motivo) | 6 testes de unidade em `evolucao::tests` |
+| Relatório `.phxclaw/evolucao/<id>.md` + registro JSON; desfechos em `desfechos.jsonl` (PENDENTE ou INFRUTÍFERO com causa/prevenção; a escolha não lê esse arquivo) | idem | asserções nos 4 testes |
+
+Prova real nos dois sentidos (09/10/2026): portão do alcance tirado → o diff no sandbox chega a
+«esperando Go» e o teste reprova; `aprovar` ou o ciclo fazendo `git merge` → os testes do verde
+e do aprovar reprovam. Restaurado por escrita; 0 `// REPOSTO` no código.
+
+**Defeito achado no caminho:** o `rust_project fmt` (sem `fix`) mandava `cargo fmt --check
+--message-format json`, que o rustfmt 1.9 estável recusa — o `fmt` saía vermelho em todo projeto,
+formatado ou não, e o teste do portão vermelho passava pelo motivo errado. Consertado em
+`sistema.rs` (texto `Diff in ARQ:LINHA:`), com teste do leitor e a asserção do motivo no teste do
+vermelho.
+
+**Os dois crates antigos — proposta: aposentar do ciclo (não apagados; decisão de produto):**
+- `phxclaw-self-evolving-intelligence`: `can_auto_promote` devolve `automatic: true` para prompt
+  de risco baixo — promoção sem Go, contra a decisão do dono; e o «toca núcleo ou política» é um
+  booleano que quem chama declara, não uma conferência do diff. Ninguém depende dele.
+- `phxclaw-skill-evolution`: `evaluate_candidate` tem o caminho `AutoLowRisk` (padrão
+  `allow_auto_low_risk: true`), o mesmo problema; e o domínio é pacote de skill (`skills.*`), não
+  diff de código. O `phxclaw-release-hardening` depende dele, então aposentar mexe lá também.
+- O que se aproveitou como ideia: evidência presa ao artefato — `aprovar` recusa se o ramo não
+  aponta mais para o commit que os portões conferiram.
+
+**Falta:** um ciclo real com modelo de verdade contra este repositório (sem chave paga, sem
+Ollama e ~5 GB livres nesta máquina — o `target/` do workspace no clone não cabe); o gatilho por
+agenda (não entrou: hoje a periodicidade é `cron` chamando `phxclaw evoluir`).
+
 ---
 
 ## SP000016 — Entrega v0.71

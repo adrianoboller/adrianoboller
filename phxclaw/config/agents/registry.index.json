@@ -2,7 +2,7 @@
   "manifest_version": "1.0.0",
   "source_workbook": "PhxClaw_Equipe_110_Agentes_Detalhada_v3_RustOffline.xlsx",
   "sheet": "Equipe 110",
-  "count": 111,
+  "count": 391,
   "agents": [
     {
       "uuid": "01a0e473-f601-710f-a4c9-f0e852a63358",
@@ -669,6 +669,1686 @@
       "agent_id": 111,
       "name": "Integrador",
       "file": "111-integrador.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74c6-ba10-340864885871",
+      "agent_id": 112,
+      "name": "Anthropologist",
+      "file": "112-anthropologist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74cf-8f8f-45906321061a",
+      "agent_id": 113,
+      "name": "Geographer",
+      "file": "113-geographer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7eee-bcc3-719d45eff838",
+      "agent_id": 114,
+      "name": "Historian",
+      "file": "114-historian.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-793e-9aa8-77cd0ee1feb3",
+      "agent_id": 115,
+      "name": "Narratologist",
+      "file": "115-narratologist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7125-8405-9e61701e5535",
+      "agent_id": 116,
+      "name": "Psychologist",
+      "file": "116-psychologist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d75-9fdc-93427c4fdb7b",
+      "agent_id": 117,
+      "name": "Statistician",
+      "file": "117-statistician.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ce5-addb-76df909e9bf7",
+      "agent_id": 118,
+      "name": "Brand Guardian",
+      "file": "118-brand-guardian.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7095-96c3-3ad7cdcfeabe",
+      "agent_id": 119,
+      "name": "Image Prompt Engineer",
+      "file": "119-image-prompt-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-717c-9d16-42f5b1342ca5",
+      "agent_id": 120,
+      "name": "Inclusive Visuals Specialist",
+      "file": "120-inclusive-visuals-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a2e-ab58-cae9bca030d0",
+      "agent_id": 121,
+      "name": "Persona Walkthrough Specialist",
+      "file": "121-persona-walkthrough-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73ed-869e-6e553d060f92",
+      "agent_id": 122,
+      "name": "UI Designer",
+      "file": "122-ui-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-768e-9f8c-3b5d4cbf7fd7",
+      "agent_id": 123,
+      "name": "UI Finish-Gate Reviewer",
+      "file": "123-ui-finish-gate-reviewer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-721d-bdd7-d48cf3e7e5d7",
+      "agent_id": 124,
+      "name": "UX Architect",
+      "file": "124-ux-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c2c-b333-76dee62dd32d",
+      "agent_id": 125,
+      "name": "UX Researcher",
+      "file": "125-ux-researcher.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7aae-8735-0ede59cebc39",
+      "agent_id": 126,
+      "name": "Visual Storyteller",
+      "file": "126-visual-storyteller.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f58-bec7-7ea2e149a585",
+      "agent_id": 127,
+      "name": "AI Data Remediation Engineer",
+      "file": "127-ai-data-remediation-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7008-816e-7be1cb3da782",
+      "agent_id": 128,
+      "name": "AI Engineer",
+      "file": "128-ai-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7777-a6bf-eb777a31b7d3",
+      "agent_id": 129,
+      "name": "API Platform Engineer",
+      "file": "129-api-platform-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7698-a803-5698268414b4",
+      "agent_id": 130,
+      "name": "ATS Validator Architect",
+      "file": "130-ats-validator-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-705e-9244-90f270694d15",
+      "agent_id": 131,
+      "name": "Autonomous Optimization Architect",
+      "file": "131-autonomous-optimization-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7776-957f-5a5405c42455",
+      "agent_id": 132,
+      "name": "Backend Architect",
+      "file": "132-backend-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7915-81bb-443ac575f656",
+      "agent_id": 133,
+      "name": "China Network Engineer",
+      "file": "133-china-network-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78b9-88da-7edf49080019",
+      "agent_id": 134,
+      "name": "CMS Developer",
+      "file": "134-cms-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71d1-aa46-497b303961c6",
+      "agent_id": 135,
+      "name": "Code Reviewer",
+      "file": "135-code-reviewer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b8a-adda-997e3697a3aa",
+      "agent_id": 136,
+      "name": "Codebase Onboarding Engineer",
+      "file": "136-codebase-onboarding-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-734e-bfed-80af55fe2441",
+      "agent_id": 137,
+      "name": "Data Engineer",
+      "file": "137-data-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f3e-9408-4f70e171ab44",
+      "agent_id": 138,
+      "name": "Data Visualization Engineer",
+      "file": "138-data-visualization-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70e1-b4e4-7c09f1a90062",
+      "agent_id": 139,
+      "name": "Database Optimizer",
+      "file": "139-database-optimizer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7e2d-98c0-88191057163e",
+      "agent_id": 140,
+      "name": "Database Reliability Engineer",
+      "file": "140-database-reliability-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7050-bdfc-6231760fa5ef",
+      "agent_id": 141,
+      "name": "Desktop App Engineer",
+      "file": "141-desktop-app-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d38-bdfc-37886fe75f06",
+      "agent_id": 142,
+      "name": "Developer Tooling Engineer",
+      "file": "142-developer-tooling-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-759c-9b9a-07acaded78c3",
+      "agent_id": 143,
+      "name": "DevOps Automator",
+      "file": "143-devops-automator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7604-aaa9-fd67946f32a0",
+      "agent_id": 144,
+      "name": "Drupal Performance Engineer",
+      "file": "144-drupal-performance-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-723f-ab39-2cee824bd77a",
+      "agent_id": 145,
+      "name": "Drupal Shopping Cart Engineer",
+      "file": "145-drupal-shopping-cart-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-796d-ad4a-102c30e31bc8",
+      "agent_id": 146,
+      "name": "Email Intelligence Engineer",
+      "file": "146-email-intelligence-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-738e-9645-892488b2ac8e",
+      "agent_id": 147,
+      "name": "Embedded Firmware Engineer",
+      "file": "147-embedded-firmware-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b26-9357-21c8bcc946eb",
+      "agent_id": 148,
+      "name": "Feishu Integration Developer",
+      "file": "148-feishu-integration-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d71-91cf-b5265b2c8b00",
+      "agent_id": 149,
+      "name": "Filament Optimization Specialist",
+      "file": "149-filament-optimization-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71cd-a05f-1d911daa2e56",
+      "agent_id": 150,
+      "name": "FinOps Engineer",
+      "file": "150-finops-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-77c1-8ebc-bc8d96a9835b",
+      "agent_id": 151,
+      "name": "Frontend Developer",
+      "file": "151-frontend-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ceb-9b14-978168a74c38",
+      "agent_id": 152,
+      "name": "GaussDB Expert Engineer",
+      "file": "152-gaussdb-expert-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71ef-8043-e4ae8bb9ea91",
+      "agent_id": 153,
+      "name": "Git Workflow Master",
+      "file": "153-git-workflow-master.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72eb-8aae-478149fc6461",
+      "agent_id": 154,
+      "name": "Internationalization Engineer",
+      "file": "154-internationalization-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d91-8791-5fcae8ef5689",
+      "agent_id": 155,
+      "name": "Identity & Access Engineer",
+      "file": "155-identity-access-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b07-b2df-33ab986eebbe",
+      "agent_id": 156,
+      "name": "Incident Response Commander",
+      "file": "156-incident-response-commander.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71ee-9a12-d1126a609beb",
+      "agent_id": 157,
+      "name": "IoT Fleet Engineer",
+      "file": "157-iot-fleet-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d76-a882-c06cc907b5bf",
+      "agent_id": 158,
+      "name": "IT Service Manager",
+      "file": "158-it-service-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7cf3-8c61-1a9280b784c0",
+      "agent_id": 159,
+      "name": "Knowledge Graph Engineer",
+      "file": "159-knowledge-graph-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-79ed-937f-5927910832c9",
+      "agent_id": 160,
+      "name": "LLM Post-Training Engineer",
+      "file": "160-llm-post-training-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ec7-a7b8-208196765a68",
+      "agent_id": 161,
+      "name": "Minimal Change Engineer",
+      "file": "161-minimal-change-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78fe-a70f-890615cf3549",
+      "agent_id": 162,
+      "name": "Mobile App Builder",
+      "file": "162-mobile-app-builder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7cc3-a87b-e500802fd548",
+      "agent_id": 163,
+      "name": "Mobile Release Engineer",
+      "file": "163-mobile-release-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-751b-9093-75d96c1c8994",
+      "agent_id": 164,
+      "name": "Multi-Agent Systems Architect",
+      "file": "164-multi-agent-systems-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73ee-a74d-95bd256d65e2",
+      "agent_id": 165,
+      "name": "Network Engineer",
+      "file": "165-network-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7192-90ec-f09fefe0aad2",
+      "agent_id": 166,
+      "name": "OrgScript Engineer",
+      "file": "166-orgscript-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7513-b906-176adf34abb2",
+      "agent_id": 167,
+      "name": "Payments & Billing Engineer",
+      "file": "167-payments-billing-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-770e-ac31-804a9f8a7fde",
+      "agent_id": 168,
+      "name": "PDF Engine Architect",
+      "file": "168-pdf-engine-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7496-88d9-b826383ee23e",
+      "agent_id": 169,
+      "name": "Platform Engineer",
+      "file": "169-platform-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c9e-82d6-7c2edf2c57f2",
+      "agent_id": 170,
+      "name": "Privacy Engineer",
+      "file": "170-privacy-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b7d-92b3-22398414a58e",
+      "agent_id": 171,
+      "name": "RAG Pipeline Engineer",
+      "file": "171-rag-pipeline-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-784c-9845-22f8af6dc1f3",
+      "agent_id": 172,
+      "name": "Rapid Prototyper",
+      "file": "172-rapid-prototyper.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-77fb-b6a9-7f4a478f1089",
+      "agent_id": 173,
+      "name": "Realtime Collaboration Engineer",
+      "file": "173-realtime-collaboration-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d52-ac98-96928db246f9",
+      "agent_id": 174,
+      "name": "Rust Refactoring Specialist",
+      "file": "174-rust-refactoring-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a93-9dc6-5f14f8163315",
+      "agent_id": 175,
+      "name": "Search Relevance Engineer",
+      "file": "175-search-relevance-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7435-b2a4-91b78922100f",
+      "agent_id": 176,
+      "name": "Section 508 Accessibility Specialist",
+      "file": "176-section-508-accessibility-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a71-aa96-c23798bfbfaf",
+      "agent_id": 177,
+      "name": "Senior Developer",
+      "file": "177-senior-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7df3-aaf2-66258dcdd831",
+      "agent_id": 178,
+      "name": "ServiceNow Developer & Mentor",
+      "file": "178-servicenow-developer-mentor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f13-bdcc-e17998cb38f9",
+      "agent_id": 179,
+      "name": "Software Architect",
+      "file": "179-software-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b9d-9533-ab86eacc6f7f",
+      "agent_id": 180,
+      "name": "Solidity Smart Contract Engineer",
+      "file": "180-solidity-smart-contract-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d18-958f-0f43b65cdb54",
+      "agent_id": 181,
+      "name": "SRE (Site Reliability Engineer)",
+      "file": "181-sre-site-reliability-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ab9-9a82-f654b07e706c",
+      "agent_id": 182,
+      "name": "Technical Writer",
+      "file": "182-technical-writer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7559-9c44-6c47935f7daa",
+      "agent_id": 183,
+      "name": "Universal Document Compiler",
+      "file": "183-universal-document-compiler.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a7a-85d7-84059be4098b",
+      "agent_id": 184,
+      "name": "USWDS Developer",
+      "file": "184-uswds-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7647-80ce-4e9c11bf85db",
+      "agent_id": 185,
+      "name": "Video Streaming Engineer",
+      "file": "185-video-streaming-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78f2-840e-3b68d0952059",
+      "agent_id": 186,
+      "name": "Voice AI Integration Engineer",
+      "file": "186-voice-ai-integration-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7616-949c-23473d9bee58",
+      "agent_id": 187,
+      "name": "WebAssembly Engineer",
+      "file": "187-webassembly-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d69-a535-31edf0ffdde1",
+      "agent_id": 188,
+      "name": "WeChat Mini Program Developer",
+      "file": "188-wechat-mini-program-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b08-802c-a64fcb6e246b",
+      "agent_id": 189,
+      "name": "WordPress Performance Engineer",
+      "file": "189-wordpress-performance-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71c5-80c2-87d1717783bc",
+      "agent_id": 190,
+      "name": "WordPress Shopping Cart Engineer",
+      "file": "190-wordpress-shopping-cart-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70f2-b901-f364c12d262e",
+      "agent_id": 191,
+      "name": "Bookkeeper & Controller",
+      "file": "191-bookkeeper-controller.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b54-a52c-8273e77f995f",
+      "agent_id": 192,
+      "name": "Financial Analyst",
+      "file": "192-financial-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78ff-8023-82faab1ba4b8",
+      "agent_id": 193,
+      "name": "FP&A Analyst",
+      "file": "193-fp-a-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b15-8c15-c7c6599a0be2",
+      "agent_id": 194,
+      "name": "Investment Researcher",
+      "file": "194-investment-researcher.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ed1-ba2b-cf0c63b8f9f3",
+      "agent_id": 195,
+      "name": "Tax Strategist",
+      "file": "195-tax-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7e5d-8a53-00655d3bf721",
+      "agent_id": 196,
+      "name": "Blender Add-on Engineer",
+      "file": "196-blender-add-on-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7019-b83b-008239b0d229",
+      "agent_id": 197,
+      "name": "Economy Designer",
+      "file": "197-economy-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7734-aeb8-7b35638ff348",
+      "agent_id": 198,
+      "name": "Game Audio Engineer",
+      "file": "198-game-audio-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7738-a5e3-160bf3a4f4d9",
+      "agent_id": 199,
+      "name": "Game Designer",
+      "file": "199-game-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-722c-8abe-26e2a310c1c2",
+      "agent_id": 200,
+      "name": "Godot Gameplay Scripter",
+      "file": "200-godot-gameplay-scripter.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ebd-b16b-5e0393c863d6",
+      "agent_id": 201,
+      "name": "Godot Multiplayer Engineer",
+      "file": "201-godot-multiplayer-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7588-802b-4a3f84fd6094",
+      "agent_id": 202,
+      "name": "Godot Shader Developer",
+      "file": "202-godot-shader-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78e8-8149-ef5e31030003",
+      "agent_id": 203,
+      "name": "Level Designer",
+      "file": "203-level-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-772a-a22e-626ddbadbafe",
+      "agent_id": 204,
+      "name": "Narrative Designer",
+      "file": "204-narrative-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b7f-a904-e9feadfde3e3",
+      "agent_id": 205,
+      "name": "Roblox Avatar Creator",
+      "file": "205-roblox-avatar-creator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71c5-be5e-5e67770102e9",
+      "agent_id": 206,
+      "name": "Roblox Experience Designer",
+      "file": "206-roblox-experience-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-79a8-a7f0-e1bdb0df79da",
+      "agent_id": 207,
+      "name": "Roblox Systems Scripter",
+      "file": "207-roblox-systems-scripter.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-728f-bd75-6abc2b2cbb72",
+      "agent_id": 208,
+      "name": "Technical Artist",
+      "file": "208-technical-artist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7829-bfd0-75f82a104793",
+      "agent_id": 209,
+      "name": "Unity Architect",
+      "file": "209-unity-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c62-97bb-227e54023c83",
+      "agent_id": 210,
+      "name": "Unity Editor Tool Developer",
+      "file": "210-unity-editor-tool-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-775e-89f8-b969c324618d",
+      "agent_id": 211,
+      "name": "Unity Multiplayer Engineer",
+      "file": "211-unity-multiplayer-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72e3-afad-bbd37f1823e6",
+      "agent_id": 212,
+      "name": "Unity Shader Graph Artist",
+      "file": "212-unity-shader-graph-artist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7937-be0c-0d949f24dc1d",
+      "agent_id": 213,
+      "name": "Unreal Multiplayer Architect",
+      "file": "213-unreal-multiplayer-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-790a-8e5f-948cb2f0fd5a",
+      "agent_id": 214,
+      "name": "Unreal Systems Engineer",
+      "file": "214-unreal-systems-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74b7-b01e-03c093f3ee70",
+      "agent_id": 215,
+      "name": "Unreal Technical Artist",
+      "file": "215-unreal-technical-artist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-741e-9fb8-8043c48895ae",
+      "agent_id": 216,
+      "name": "Unreal World Builder",
+      "file": "216-unreal-world-builder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7179-94a1-89bf0e2ebfeb",
+      "agent_id": 217,
+      "name": "3D & Scene Developer",
+      "file": "217-3d-scene-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7fac-8348-9d183f116a68",
+      "agent_id": 218,
+      "name": "GIS Analyst",
+      "file": "218-gis-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7487-b723-271ce5120dfa",
+      "agent_id": 219,
+      "name": "BIM/GIS Specialist",
+      "file": "219-bim-gis-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7562-8f87-90c8b70ec058",
+      "agent_id": 220,
+      "name": "Cartography Designer",
+      "file": "220-cartography-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-772a-be9e-c0d8ece9d5ae",
+      "agent_id": 221,
+      "name": "Drone/Reality Mapping Specialist",
+      "file": "221-drone-reality-mapping-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73bc-8609-f703fe9b5eeb",
+      "agent_id": 222,
+      "name": "GeoAI/ML Engineer",
+      "file": "222-geoai-ml-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c0d-ab05-39979e70b580",
+      "agent_id": 223,
+      "name": "Geoprocessing Specialist",
+      "file": "223-geoprocessing-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f76-bb27-e007f7861f6c",
+      "agent_id": 224,
+      "name": "GIS QA Engineer",
+      "file": "224-gis-qa-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a46-80b3-126b0d20a52f",
+      "agent_id": 225,
+      "name": "Solution Engineer",
+      "file": "225-solution-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74ee-baaa-6923c8467c24",
+      "agent_id": 226,
+      "name": "Spatial Data Engineer",
+      "file": "226-spatial-data-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7220-9b90-797d9b9215d7",
+      "agent_id": 227,
+      "name": "Spatial Data Scientist",
+      "file": "227-spatial-data-scientist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70f9-a0ef-310876c6e7c5",
+      "agent_id": 228,
+      "name": "Technical Consultant",
+      "file": "228-technical-consultant.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-761d-9ce9-5009b17e592d",
+      "agent_id": 229,
+      "name": "Web GIS Developer",
+      "file": "229-web-gis-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-723f-9a7a-367f6320819f",
+      "agent_id": 230,
+      "name": "Clinical Evidence Agent",
+      "file": "230-clinical-evidence-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72b5-8769-8a313a464196",
+      "agent_id": 231,
+      "name": "Healthcare Innovation Strategist",
+      "file": "231-healthcare-innovation-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b68-be20-9835de9985a2",
+      "agent_id": 232,
+      "name": "Sovereign Health Systems Agent",
+      "file": "232-sovereign-health-systems-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7642-97ac-5e9a1abb5e54",
+      "agent_id": 233,
+      "name": "AEO Foundations Architect",
+      "file": "233-aeo-foundations-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-75a6-bd27-ff50b2b4f2d0",
+      "agent_id": 234,
+      "name": "Agentic Search Optimizer",
+      "file": "234-agentic-search-optimizer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b8d-a823-29200bfdf0e5",
+      "agent_id": 235,
+      "name": "AI Citation Strategist",
+      "file": "235-ai-citation-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78c9-a914-04fc6aa1d679",
+      "agent_id": 236,
+      "name": "App Store Optimizer",
+      "file": "236-app-store-optimizer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7150-add1-79d17fe68733",
+      "agent_id": 237,
+      "name": "Baidu SEO Specialist",
+      "file": "237-baidu-seo-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7145-a054-90f4ca1f9d2a",
+      "agent_id": 238,
+      "name": "Bilibili Content Strategist",
+      "file": "238-bilibili-content-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-747a-a325-7bb9ce753af7",
+      "agent_id": 239,
+      "name": "Book Co-Author",
+      "file": "239-book-co-author.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7959-ba7a-7a3ed0bfea20",
+      "agent_id": 240,
+      "name": "Carousel Growth Engine",
+      "file": "240-carousel-growth-engine.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7494-96ea-96c17ad8bbb1",
+      "agent_id": 241,
+      "name": "China E-Commerce Operator",
+      "file": "241-china-e-commerce-operator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-746c-8d8b-ccef23bf3c23",
+      "agent_id": 242,
+      "name": "China Market Localization Strategist",
+      "file": "242-china-market-localization-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a91-8243-fbada6ce54ce",
+      "agent_id": 243,
+      "name": "Content Creator",
+      "file": "243-content-creator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7383-973b-16ed1c60c3b7",
+      "agent_id": 244,
+      "name": "Cross-Border E-Commerce Specialist",
+      "file": "244-cross-border-e-commerce-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-738f-8fba-8390fcf7a388",
+      "agent_id": 245,
+      "name": "Developer Community Builder",
+      "file": "245-developer-community-builder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7094-9e2c-c6823bd249c7",
+      "agent_id": 246,
+      "name": "Douyin Strategist",
+      "file": "246-douyin-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73c7-8470-5a778cd67627",
+      "agent_id": 247,
+      "name": "Email Marketing Strategist",
+      "file": "247-email-marketing-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-754e-9213-485e6226390c",
+      "agent_id": 248,
+      "name": "Global Podcast Strategist",
+      "file": "248-global-podcast-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7635-bfe9-6396dee25620",
+      "agent_id": 249,
+      "name": "Growth Hacker",
+      "file": "249-growth-hacker.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-79d8-a080-92165eab3729",
+      "agent_id": 250,
+      "name": "Instagram Curator",
+      "file": "250-instagram-curator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7e04-ac26-e057457744de",
+      "agent_id": 251,
+      "name": "Kuaishou Strategist",
+      "file": "251-kuaishou-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7482-9cc7-3c8d25eeedb3",
+      "agent_id": 252,
+      "name": "LinkedIn Content Creator",
+      "file": "252-linkedin-content-creator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7153-8762-1d15bdaf05cb",
+      "agent_id": 253,
+      "name": "Livestream Commerce Coach",
+      "file": "253-livestream-commerce-coach.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7eb1-ad92-a05cc88ce03e",
+      "agent_id": 254,
+      "name": "Multi-Platform Publisher",
+      "file": "254-multi-platform-publisher.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-722b-88da-fe496cad8183",
+      "agent_id": 255,
+      "name": "Podcast Strategist",
+      "file": "255-podcast-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ab8-b043-245f7c303d33",
+      "agent_id": 256,
+      "name": "PR & Communications Manager",
+      "file": "256-pr-communications-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74d7-8857-00231d646779",
+      "agent_id": 257,
+      "name": "Private Domain Operator",
+      "file": "257-private-domain-operator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c97-ba69-b161a8c4fcae",
+      "agent_id": 258,
+      "name": "Reddit Community Builder",
+      "file": "258-reddit-community-builder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ca5-b382-4ac6262c606b",
+      "agent_id": 259,
+      "name": "SEO Specialist",
+      "file": "259-seo-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7642-9626-91ad0565fba2",
+      "agent_id": 260,
+      "name": "Short-Video Editing Coach",
+      "file": "260-short-video-editing-coach.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72d2-bf73-3b208eafd0f5",
+      "agent_id": 261,
+      "name": "Social Media Strategist",
+      "file": "261-social-media-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78d2-b8d0-7c767a6e6ea0",
+      "agent_id": 262,
+      "name": "TikTok Strategist",
+      "file": "262-tiktok-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b6e-9980-d664df49a75a",
+      "agent_id": 263,
+      "name": "Twitter Engager",
+      "file": "263-twitter-engager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c44-bf82-592b3ca6bc1d",
+      "agent_id": 264,
+      "name": "Video Optimization Specialist",
+      "file": "264-video-optimization-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ca6-a16f-1e8cbbcf474b",
+      "agent_id": 265,
+      "name": "WeChat Official Account Manager",
+      "file": "265-wechat-official-account-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7664-aa0f-e34b5602ef20",
+      "agent_id": 266,
+      "name": "Weibo Strategist",
+      "file": "266-weibo-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-79f6-8c14-f92b4d53a8bb",
+      "agent_id": 267,
+      "name": "X/Twitter Intelligence Analyst",
+      "file": "267-x-twitter-intelligence-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-713e-8af1-033f37ba236d",
+      "agent_id": 268,
+      "name": "Xiaohongshu Specialist",
+      "file": "268-xiaohongshu-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ce6-bcd7-836f751764f4",
+      "agent_id": 269,
+      "name": "Zhihu Strategist",
+      "file": "269-zhihu-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f80-a571-f647370dde4a",
+      "agent_id": 270,
+      "name": "Paid Media Auditor",
+      "file": "270-paid-media-auditor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7366-93d8-0094b7f61df6",
+      "agent_id": 271,
+      "name": "Ad Creative Strategist",
+      "file": "271-ad-creative-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f9d-97f3-927d99b6da73",
+      "agent_id": 272,
+      "name": "Paid Social Strategist",
+      "file": "272-paid-social-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7aff-bba0-6234182811a7",
+      "agent_id": 273,
+      "name": "PPC Campaign Strategist",
+      "file": "273-ppc-campaign-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7dc1-867f-b619914a1e89",
+      "agent_id": 274,
+      "name": "Programmatic & Display Buyer",
+      "file": "274-programmatic-display-buyer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78a3-b0d2-f38be73646a2",
+      "agent_id": 275,
+      "name": "Search Query Analyst",
+      "file": "275-search-query-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d45-a8fc-ef480e483dbb",
+      "agent_id": 276,
+      "name": "Tracking & Measurement Specialist",
+      "file": "276-tracking-measurement-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-777d-8fef-aa3af00b0bd1",
+      "agent_id": 277,
+      "name": "Behavioral Nudge Engine",
+      "file": "277-behavioral-nudge-engine.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78be-943b-748ea089b10c",
+      "agent_id": 278,
+      "name": "DX Engineer",
+      "file": "278-dx-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73a7-bedf-6bb3bb3c7c95",
+      "agent_id": 279,
+      "name": "Feedback Synthesizer",
+      "file": "279-feedback-synthesizer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74d8-8d5e-c2a250c50921",
+      "agent_id": 280,
+      "name": "Product Manager",
+      "file": "280-product-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73c7-bfdb-7a43c7bdd7b6",
+      "agent_id": 281,
+      "name": "Sprint Prioritizer",
+      "file": "281-sprint-prioritizer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ef0-bc0e-9922139588fe",
+      "agent_id": 282,
+      "name": "Trend Researcher",
+      "file": "282-trend-researcher.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7980-8186-32db93db17ec",
+      "agent_id": 283,
+      "name": "Experiment Tracker",
+      "file": "283-experiment-tracker.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-77d9-9dd7-8f1166b428cc",
+      "agent_id": 284,
+      "name": "Jira Workflow Steward",
+      "file": "284-jira-workflow-steward.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7066-9baa-d42dad95fe50",
+      "agent_id": 285,
+      "name": "Meeting Notes Specialist",
+      "file": "285-meeting-notes-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7267-9d03-b3249e891491",
+      "agent_id": 286,
+      "name": "Project Shepherd",
+      "file": "286-project-shepherd.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b20-a0e7-df5e8f6f3754",
+      "agent_id": 287,
+      "name": "Studio Operations",
+      "file": "287-studio-operations.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-708b-b12e-152b767275ea",
+      "agent_id": 288,
+      "name": "Studio Producer",
+      "file": "288-studio-producer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7aea-a8da-05f009df73ef",
+      "agent_id": 289,
+      "name": "Senior Project Manager",
+      "file": "289-senior-project-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7afb-8a56-3b7db0a3d1be",
+      "agent_id": 290,
+      "name": "Research Synthesist",
+      "file": "290-research-synthesist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7778-a2ac-25681ddd3f16",
+      "agent_id": 291,
+      "name": "Account Strategist",
+      "file": "291-account-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7bbc-91b4-4ce1ea2e8c98",
+      "agent_id": 292,
+      "name": "Sales Coach",
+      "file": "292-sales-coach.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70f3-bcbe-bdc5d1069c83",
+      "agent_id": 293,
+      "name": "Deal Strategist",
+      "file": "293-deal-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f9c-a82f-875a196362c9",
+      "agent_id": 294,
+      "name": "Discovery Coach",
+      "file": "294-discovery-coach.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a13-a1b2-608acca4951f",
+      "agent_id": 295,
+      "name": "Sales Engineer",
+      "file": "295-sales-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-780f-9fb8-54ba544a6716",
+      "agent_id": 296,
+      "name": "Offer & Lead Gen Strategist",
+      "file": "296-offer-lead-gen-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7fdb-b7cb-11fcdacf052e",
+      "agent_id": 297,
+      "name": "Outbound Strategist",
+      "file": "297-outbound-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7cc6-aca5-df8777b2b8be",
+      "agent_id": 298,
+      "name": "Pipeline Analyst",
+      "file": "298-pipeline-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74e8-a397-784b55f5a111",
+      "agent_id": 299,
+      "name": "Proposal Strategist",
+      "file": "299-proposal-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7eea-bc81-5034b1aae40b",
+      "agent_id": 300,
+      "name": "AI-Generated Code Security Auditor",
+      "file": "300-ai-generated-code-security-auditor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-750f-bc00-8f4e4c2b2dc0",
+      "agent_id": 301,
+      "name": "Application Security Engineer",
+      "file": "301-application-security-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b9f-bc2d-a6c2de829083",
+      "agent_id": 302,
+      "name": "Security Architect",
+      "file": "302-security-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70d4-9273-a310587bb06d",
+      "agent_id": 303,
+      "name": "Blockchain Security Auditor",
+      "file": "303-blockchain-security-auditor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b22-8122-c66b36464a6e",
+      "agent_id": 304,
+      "name": "Cloud Security Architect",
+      "file": "304-cloud-security-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72a1-b32c-8887d0240450",
+      "agent_id": 305,
+      "name": "Compliance Auditor",
+      "file": "305-compliance-auditor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73c2-8c70-d3ea4574eaf7",
+      "agent_id": 306,
+      "name": "Incident Responder",
+      "file": "306-incident-responder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74cf-8c5a-c67aae5ebbdb",
+      "agent_id": 307,
+      "name": "Penetration Tester",
+      "file": "307-penetration-tester.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73f3-8d27-b3489966db62",
+      "agent_id": 308,
+      "name": "Secrets & Credential Hygiene Engineer",
+      "file": "308-secrets-credential-hygiene-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7e46-86e0-cfe25ebeb8d6",
+      "agent_id": 309,
+      "name": "Senior SecOps Engineer",
+      "file": "309-senior-secops-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7291-88e0-f14eb9b10467",
+      "agent_id": 310,
+      "name": "Threat Detection Engineer",
+      "file": "310-threat-detection-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7788-8e0d-1fd3ee842ee1",
+      "agent_id": 311,
+      "name": "Threat Intelligence Analyst",
+      "file": "311-threat-intelligence-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70c1-a9e0-14aca51cab52",
+      "agent_id": 312,
+      "name": "macOS Spatial/Metal Engineer",
+      "file": "312-macos-spatial-metal-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-732e-a24b-cf663029c48e",
+      "agent_id": 313,
+      "name": "Terminal Integration Specialist",
+      "file": "313-terminal-integration-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78f4-9218-ec4d3ccce060",
+      "agent_id": 314,
+      "name": "visionOS Spatial Engineer",
+      "file": "314-visionos-spatial-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7037-a09c-3da5217929c1",
+      "agent_id": 315,
+      "name": "XR Cockpit Interaction Specialist",
+      "file": "315-xr-cockpit-interaction-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73eb-8995-0370da5e942e",
+      "agent_id": 316,
+      "name": "XR Immersive Developer",
+      "file": "316-xr-immersive-developer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ef3-8fec-d65e12dcbbad",
+      "agent_id": 317,
+      "name": "XR Interface Architect",
+      "file": "317-xr-interface-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7138-be4a-698a80363b47",
+      "agent_id": 318,
+      "name": "Accounts Payable Agent",
+      "file": "318-accounts-payable-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7dff-816d-3757bbf2e6e3",
+      "agent_id": 319,
+      "name": "Agentic Identity & Trust Architect",
+      "file": "319-agentic-identity-trust-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7fa2-a62a-fb6fc3d65f4d",
+      "agent_id": 320,
+      "name": "Agents Orchestrator",
+      "file": "320-agents-orchestrator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-728b-8e58-7451608ae957",
+      "agent_id": 321,
+      "name": "Automation Governance Architect",
+      "file": "321-automation-governance-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-74e0-ac34-2a92632e1285",
+      "agent_id": 322,
+      "name": "Business Strategist",
+      "file": "322-business-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7340-896d-4626d193e7e6",
+      "agent_id": 323,
+      "name": "Change Management Consultant",
+      "file": "323-change-management-consultant.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7e7b-8a39-f5a17297d124",
+      "agent_id": 324,
+      "name": "Chief Financial Officer",
+      "file": "324-chief-financial-officer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a55-b0a8-e902d40c68f7",
+      "agent_id": 325,
+      "name": "Corporate Training Designer",
+      "file": "325-corporate-training-designer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b20-aa54-28355d34e407",
+      "agent_id": 326,
+      "name": "Customer Service",
+      "file": "326-customer-service.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7c45-9a93-2c23c71e3020",
+      "agent_id": 327,
+      "name": "Customer Success Manager",
+      "file": "327-customer-success-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-79a7-95fa-4d2d24696c67",
+      "agent_id": 328,
+      "name": "Data Consolidation Agent",
+      "file": "328-data-consolidation-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-746a-8d41-9cfb08a15616",
+      "agent_id": 329,
+      "name": "Data Privacy Officer",
+      "file": "329-data-privacy-officer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-76db-bdb6-84274fcafbbe",
+      "agent_id": 330,
+      "name": "ESG & Sustainability Officer",
+      "file": "330-esg-sustainability-officer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-793a-87a0-4a165204f609",
+      "agent_id": 331,
+      "name": "Government Digital Presales Consultant",
+      "file": "331-government-digital-presales-consultant.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-748e-92e3-444752a19c53",
+      "agent_id": 332,
+      "name": "Grant Writer",
+      "file": "332-grant-writer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d79-884a-921589386f72",
+      "agent_id": 333,
+      "name": "Aging Parent Care Companion",
+      "file": "333-aging-parent-care-companion.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b8e-98c6-5623a432b674",
+      "agent_id": 334,
+      "name": "Healthcare Customer Service",
+      "file": "334-healthcare-customer-service.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7109-a7ab-f619973b87b5",
+      "agent_id": 335,
+      "name": "Healthcare Marketing Compliance Specialist",
+      "file": "335-healthcare-marketing-compliance-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7665-80d7-4aded4534d98",
+      "agent_id": 336,
+      "name": "Hospitality Guest Services",
+      "file": "336-hospitality-guest-services.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78bd-beb8-389f7052692d",
+      "agent_id": 337,
+      "name": "HR Onboarding",
+      "file": "337-hr-onboarding.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ac2-ae1c-f25cca9cb0fb",
+      "agent_id": 338,
+      "name": "Identity Graph Operator",
+      "file": "338-identity-graph-operator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-736b-8e9a-c36178c96e8b",
+      "agent_id": 339,
+      "name": "Language Translator",
+      "file": "339-language-translator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7089-9ed4-a21232068a35",
+      "agent_id": 340,
+      "name": "Legal Billing & Time Tracking",
+      "file": "340-legal-billing-time-tracking.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d62-b401-7613a2033d51",
+      "agent_id": 341,
+      "name": "Legal Client Intake",
+      "file": "341-legal-client-intake.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7316-9adf-3396ac0ce03c",
+      "agent_id": 342,
+      "name": "Legal Document Review",
+      "file": "342-legal-document-review.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-78d0-87e2-f6b9f71aa75b",
+      "agent_id": 343,
+      "name": "Loan Officer Assistant",
+      "file": "343-loan-officer-assistant.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-745f-b861-1df07e071f55",
+      "agent_id": 344,
+      "name": "LSP/Index Engineer",
+      "file": "344-lsp-index-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7965-bc20-e551c906bd62",
+      "agent_id": 345,
+      "name": "M&A Integration Manager",
+      "file": "345-m-a-integration-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-709e-95a3-0f0eb8028391",
+      "agent_id": 346,
+      "name": "Medical Billing & Coding Specialist",
+      "file": "346-medical-billing-coding-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7af1-89df-fb199221720e",
+      "agent_id": 347,
+      "name": "Operations Manager",
+      "file": "347-operations-manager.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7caf-b746-ace8be74fcda",
+      "agent_id": 348,
+      "name": "Organizational Psychologist",
+      "file": "348-organizational-psychologist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7cef-ba90-9629b744adb0",
+      "agent_id": 349,
+      "name": "Personal Growth Mentor",
+      "file": "349-personal-growth-mentor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d3c-a36b-ac7f943573ac",
+      "agent_id": 350,
+      "name": "Real Estate Buyer & Seller",
+      "file": "350-real-estate-buyer-seller.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7962-ba81-ee760a7f210a",
+      "agent_id": 351,
+      "name": "Recruitment Specialist",
+      "file": "351-recruitment-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b37-b858-2c16d0cba9cb",
+      "agent_id": 352,
+      "name": "Report Distribution Agent",
+      "file": "352-report-distribution-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7edc-8095-693eb1e125a9",
+      "agent_id": 353,
+      "name": "Resume Tailor",
+      "file": "353-resume-tailor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7527-868d-1b706514dfb0",
+      "agent_id": 354,
+      "name": "Retail Customer Returns",
+      "file": "354-retail-customer-returns.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7505-8d22-782378d12bf7",
+      "agent_id": 355,
+      "name": "Sales Data Extraction Agent",
+      "file": "355-sales-data-extraction-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7918-beaa-23029c73c8c4",
+      "agent_id": 356,
+      "name": "Sales Outreach",
+      "file": "356-sales-outreach.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f63-8a30-8b9e4899c873",
+      "agent_id": 357,
+      "name": "Chief of Staff",
+      "file": "357-chief-of-staff.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-77f1-8660-73f1776e4719",
+      "agent_id": 358,
+      "name": "Civil Engineer",
+      "file": "358-civil-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7506-aa77-a5e32cf32c74",
+      "agent_id": 359,
+      "name": "Codebase Archaeologist",
+      "file": "359-codebase-archaeologist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-71df-b294-f579aade9fc7",
+      "agent_id": 360,
+      "name": "Cultural Intelligence Strategist",
+      "file": "360-cultural-intelligence-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7283-9000-68531774aa1a",
+      "agent_id": 361,
+      "name": "Developer Advocate",
+      "file": "361-developer-advocate.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d8c-8eaa-e6927093cbc4",
+      "agent_id": 362,
+      "name": "Document Generator",
+      "file": "362-document-generator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d58-ba12-4a790c510282",
+      "agent_id": 363,
+      "name": "FedRAMP & RMF Compliance Engineer",
+      "file": "363-fedramp-rmf-compliance-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7073-b67c-80d4f2212bc8",
+      "agent_id": 364,
+      "name": "Focus Music Architect",
+      "file": "364-focus-music-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7efc-8f8b-56d3d6a22aa5",
+      "agent_id": 365,
+      "name": "French Consulting Market Navigator",
+      "file": "365-french-consulting-market-navigator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-76c9-afc0-9c8f15deeca8",
+      "agent_id": 366,
+      "name": "Korean Business Navigator",
+      "file": "366-korean-business-navigator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-73b2-8c62-1835a684bbb3",
+      "agent_id": 367,
+      "name": "Master Plan Architect",
+      "file": "367-master-plan-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f90-a8c4-c9ce09d9d9f0",
+      "agent_id": 368,
+      "name": "MCP Builder",
+      "file": "368-mcp-builder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-767f-8888-f95100c55478",
+      "agent_id": 369,
+      "name": "Model QA Specialist",
+      "file": "369-model-qa-specialist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72a6-af28-796224881403",
+      "agent_id": 370,
+      "name": "Pricing Analyst",
+      "file": "370-pricing-analyst.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-77bb-98b8-2acc91f00dc7",
+      "agent_id": 371,
+      "name": "Salesforce Architect",
+      "file": "371-salesforce-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-729b-aad0-af11a3b58e76",
+      "agent_id": 372,
+      "name": "Strategy Duel Agent",
+      "file": "372-strategy-duel-agent.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7958-baf5-615e23438606",
+      "agent_id": 373,
+      "name": "Workflow Architect",
+      "file": "373-workflow-architect.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7d16-a1b1-cb07325e5744",
+      "agent_id": 374,
+      "name": "Study Abroad Advisor",
+      "file": "374-study-abroad-advisor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7dd5-8f3d-0d90d55f3d42",
+      "agent_id": 375,
+      "name": "Supply Chain Strategist",
+      "file": "375-supply-chain-strategist.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7967-aff0-05d43c01d9af",
+      "agent_id": 376,
+      "name": "ZK Steward",
+      "file": "376-zk-steward.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-797a-856b-4ede60bf04e7",
+      "agent_id": 377,
+      "name": "Analytics Reporter",
+      "file": "377-analytics-reporter.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7b21-aec3-7d740f6a2cde",
+      "agent_id": 378,
+      "name": "Executive Summary Generator",
+      "file": "378-executive-summary-generator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7512-98a0-9d5ccc09f275",
+      "agent_id": 379,
+      "name": "Finance Tracker",
+      "file": "379-finance-tracker.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7cb4-9111-3d783acff814",
+      "agent_id": 380,
+      "name": "Infrastructure Maintainer",
+      "file": "380-infrastructure-maintainer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7e81-b2e5-b6ad5dee37bb",
+      "agent_id": 381,
+      "name": "Legal Compliance Checker",
+      "file": "381-legal-compliance-checker.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7460-9e24-4e748397ea98",
+      "agent_id": 382,
+      "name": "Support Responder",
+      "file": "382-support-responder.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f20-9124-398ebfb2568f",
+      "agent_id": 383,
+      "name": "Accessibility Auditor",
+      "file": "383-accessibility-auditor.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-70a0-9d68-97ca9c2aef3f",
+      "agent_id": 384,
+      "name": "API Tester",
+      "file": "384-api-tester.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-790c-af5e-a8518d19e917",
+      "agent_id": 385,
+      "name": "Evidence Collector",
+      "file": "385-evidence-collector.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7bdc-8fa9-8162360040d5",
+      "agent_id": 386,
+      "name": "Performance Benchmarker",
+      "file": "386-performance-benchmarker.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7ff8-b2aa-a8195f53e5c9",
+      "agent_id": 387,
+      "name": "Reality Checker",
+      "file": "387-reality-checker.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7a19-bffc-ddddba7284e7",
+      "agent_id": 388,
+      "name": "Test Automation Engineer",
+      "file": "388-test-automation-engineer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-72d0-9024-4dfe5c8ee75d",
+      "agent_id": 389,
+      "name": "Test Results Analyzer",
+      "file": "389-test-results-analyzer.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7f54-aac9-ec84a635cee2",
+      "agent_id": 390,
+      "name": "Tool Evaluator",
+      "file": "390-tool-evaluator.agent.json"
+    },
+    {
+      "uuid": "01a11df5-a400-7bc8-a867-94c2b8e3893b",
+      "agent_id": 391,
+      "name": "Workflow Optimizer",
+      "file": "391-workflow-optimizer.agent.json"
     }
   ]
 }

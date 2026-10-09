@@ -16,11 +16,22 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Literal, TypedDict, cast
 
-Estado = Literal["pending", "awaiting_approval", "running", "completed", "failed", "cancelled"]
+Estado = Literal[
+    "pending",
+    "awaiting_approval",
+    "awaiting_input",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+    "budget_exceeded",
+]
 
 #: Estados em que a tarefa nao anda mais sozinha. `awaiting_approval` entra porque
 #: esperar por ele e esperar por uma pessoa: o `aguardar` devolve e quem chama decide.
-PARADOS: frozenset[str] = frozenset({"completed", "failed", "cancelled", "awaiting_approval"})
+PARADOS: frozenset[str] = frozenset(
+    {"completed", "failed", "cancelled", "budget_exceeded", "awaiting_approval"}
+)
 
 
 class Uso(TypedDict):

@@ -1307,6 +1307,98 @@
       },
       "type": "object"
     },
+    "custo": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "precos": {
+          "description": "Arquivo JSON da tabela de preços por modelo (moeda; entrada, saída e cache por milhão de tokens; data e fonte da cotação); vazio = custo não medido (ambiente: PHXCLAW_CUSTO_PRECOS)",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "decisao": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "laya": {
+          "additionalProperties": false,
+          "properties": {
+            "//": {
+              "items": {
+                "type": "string"
+              },
+              "type": [
+                "string",
+                "array"
+              ]
+            },
+            "credencial_nome": {
+              "description": "Nome da credencial bearer declarada no http.json (o segredo fica no broker: phxclaw credencial guardar NOME); vazio = sem Authorization (ambiente: PHXCLAW_DECISAO_LAYA_CREDENCIAL_NOME)",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "limiar": {
+              "default": 0.8,
+              "description": "Confiança mínima (answer_confidence, 0 a 1) para a decisão do Laya valer; abaixo, a escada sobe ao próximo degrau (ambiente: PHXCLAW_DECISAO_LAYA_LIMIAR)",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "modelo": {
+              "default": "multilingual",
+              "description": "Checkpoint do Laya pedido ao servidor (multilingual para português) (ambiente: PHXCLAW_DECISAO_LAYA_MODELO)",
+              "enum": [
+                "english",
+                "multilingual",
+                "typed-decisions",
+                null
+              ]
+            },
+            "prazo_ms": {
+              "default": 5000,
+              "description": "Prazo de cada pergunta ao laya-serve, em ms (1 a 60000); estourou, sem decisão e a escada sobe (ambiente: PHXCLAW_DECISAO_LAYA_PRAZO_MS)",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "url": {
+              "description": "URL base do laya-serve (decisor System 1, POST /v1/systemone); vazio = Laya desligado. Loopback e rede privada só com liberar no http.json (ambiente: PHXCLAW_DECISAO_LAYA_URL)",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "desktop": {
       "additionalProperties": false,
       "properties": {
@@ -1949,6 +2041,13 @@
             "null"
           ]
         },
+        "roteamento": {
+          "description": "Arquivo JSON da política de roteamento e troca de provedor; vale só para o modelo rota ou rota:<spec> (ambiente: PHXCLAW_MODELO_ROTEAMENTO)",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "visao": {
           "default": "qwen2.5vl:3b",
           "description": "Modelo de visão da leitura de tela (ambiente: PHXCLAW_MODELO_VISAO)",
@@ -1998,6 +2097,63 @@
           "description": "Executável do Chromium (ambiente: PHXCLAW_CHROMIUM)",
           "type": [
             "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "orcamento": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "fluxo_custo": {
+          "description": "Orçamento padrão em dinheiro por execução de fluxo, na moeda da tabela de preços (ambiente: PHXCLAW_ORCAMENTO_FLUXO_CUSTO)",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "fluxo_tokens": {
+          "description": "Orçamento padrão de tokens por execução de fluxo, somando todos os passos (ambiente: PHXCLAW_ORCAMENTO_FLUXO_TOKENS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tarefa_custo": {
+          "description": "Orçamento padrão em dinheiro por tarefa, na moeda da tabela de preços (exige custo.precos) (ambiente: PHXCLAW_ORCAMENTO_TAREFA_CUSTO)",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "tarefa_tokens": {
+          "description": "Orçamento padrão de tokens (entrada + saída) por tarefa; ao bater, a tarefa para em budget_exceeded (ambiente: PHXCLAW_ORCAMENTO_TAREFA_TOKENS)",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "teto_custo": {
+          "description": "Teto global em dinheiro: nenhum pedido passa dele; acima, a criação é recusada (ambiente: PHXCLAW_ORCAMENTO_TETO_CUSTO)",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "teto_tokens": {
+          "description": "Teto global de tokens: nenhum pedido (tarefa ou fluxo) passa dele; acima, a criação é recusada (ambiente: PHXCLAW_ORCAMENTO_TETO_TOKENS)",
+          "type": [
+            "integer",
             "null"
           ]
         }
@@ -2366,6 +2522,14 @@
           "type": [
             "string",
             "array"
+          ]
+        },
+        "bloquear_inspecao": {
+          "default": true,
+          "description": "Bloqueia na tela o menu de contexto, F12 e os atalhos do inspetor. No navegador é dissuasão, não segurança (o menu do navegador e o view-source alcançam o mesmo); no desktop vale sempre (ambiente: PHXCLAW_UI_BLOQUEAR_INSPECAO)",
+          "type": [
+            "boolean",
+            "null"
           ]
         },
         "bootstrap_css": {

@@ -15,7 +15,8 @@ import { NodeApiError, NodeOperationError } from "n8n-workflow";
  * so monta o pedido e devolve o JSON que o servidor responde.
  *
  * Estados finais que o "Wait for Result" reconhece sao os do `TaskStatus` do servidor
- * (snake_case): `completed`, `failed`, `cancelled`; e os de espera por humano
+ * (snake_case): `completed`, `failed`, `cancelled`, `budget_exceeded` (bateu o orcamento);
+ * e os de espera por humano
  * (`awaiting_approval`, `awaiting_input`) tambem encerram a espera, porque so outro no
  * ("Approve Plan", "Answer Question") os destrava.
  */
@@ -23,6 +24,7 @@ const ESTADOS_QUE_PARAM = new Set([
   "completed",
   "failed",
   "cancelled",
+  "budget_exceeded",
   "awaiting_approval",
   "awaiting_input",
 ]);

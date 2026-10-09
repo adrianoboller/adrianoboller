@@ -278,6 +278,9 @@ struct Disparo {
     nome: String,
     #[serde(default)]
     ate: Option<String>,
+    /// Orcamento desta execucao (tokens, dinheiro), no teto global; ausente = o padrao.
+    #[serde(default)]
+    orcamento: Option<crate::tarefa::Orcamento>,
 }
 
 async fn rodar(
@@ -302,9 +305,16 @@ async fn rodar(
         .ate
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty());
-    let c =
-        crate::api::criar_fluxo_ate(&s, &arq.to_string_lossy(), vec![], |_| Ok(()), ate, projeto)
-            .map_err(|r| erro(r.status, r.erro))?;
+    let c = crate::api::criar_fluxo_ate(
+        &s,
+        &arq.to_string_lossy(),
+        vec![],
+        |_| Ok(()),
+        ate,
+        projeto,
+        d.orcamento,
+    )
+    .map_err(|r| erro(r.status, r.erro))?;
     Ok((StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response())
 }
 

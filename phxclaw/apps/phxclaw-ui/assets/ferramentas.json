@@ -486,7 +486,7 @@
     {
       "capacidade": "team.read",
       "concedida": true,
-      "descricao": "List the 111 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
+      "descricao": "List the 391 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
       "grupo": "team",
       "nome": "team_list"
     },

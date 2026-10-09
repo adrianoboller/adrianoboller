@@ -217,6 +217,68 @@ const FIXAS: &[L] = &[
         ),
     ),
     c(
+        "modelo.roteamento",
+        "PHXCLAW_MODELO_ROTEAMENTO",
+        P,
+        None,
+        (
+            "Arquivo JSON da política de roteamento e troca de provedor; vale só para o modelo rota ou rota:<spec>",
+            "JSON file with the provider routing and fallback policy; applies only to the model rota or rota:<spec>",
+        ),
+    ),
+    // --- decisor Laya (R1): desligado sem url; o destino e a credencial passam pelo
+    // http.json (liberar e credenciais), a mesma politica do no HTTP ---
+    c(
+        "decisao.laya.url",
+        "PHXCLAW_DECISAO_LAYA_URL",
+        T,
+        None,
+        (
+            "URL base do laya-serve (decisor System 1, POST /v1/systemone); vazio = Laya desligado. Loopback e rede privada só com liberar no http.json",
+            "Base URL of laya-serve (System 1 decider, POST /v1/systemone); empty = Laya off. Loopback and private networks only with liberar in http.json",
+        ),
+    ),
+    c(
+        "decisao.laya.modelo",
+        "PHXCLAW_DECISAO_LAYA_MODELO",
+        Tipo::Enum(&["english", "multilingual", "typed-decisions"]),
+        Some("multilingual"),
+        (
+            "Checkpoint do Laya pedido ao servidor (multilingual para português)",
+            "Laya checkpoint requested from the server (multilingual for Portuguese)",
+        ),
+    ),
+    c(
+        "decisao.laya.credencial_nome",
+        "PHXCLAW_DECISAO_LAYA_CREDENCIAL_NOME",
+        T,
+        None,
+        (
+            "Nome da credencial bearer declarada no http.json (o segredo fica no broker: phxclaw credencial guardar NOME); vazio = sem Authorization",
+            "Name of the bearer credential declared in http.json (the secret stays in the broker: phxclaw credencial guardar NAME); empty = no Authorization",
+        ),
+    ),
+    c(
+        "decisao.laya.limiar",
+        "PHXCLAW_DECISAO_LAYA_LIMIAR",
+        R,
+        Some("0.8"),
+        (
+            "Confiança mínima (answer_confidence, 0 a 1) para a decisão do Laya valer; abaixo, a escada sobe ao próximo degrau",
+            "Minimum confidence (answer_confidence, 0 to 1) for a Laya decision to stand; below it, the ladder climbs to the next rung",
+        ),
+    ),
+    c(
+        "decisao.laya.prazo_ms",
+        "PHXCLAW_DECISAO_LAYA_PRAZO_MS",
+        I,
+        Some("5000"),
+        (
+            "Prazo de cada pergunta ao laya-serve, em ms (1 a 60000); estourou, sem decisão e a escada sobe",
+            "Deadline of each question to laya-serve, in ms (1 to 60000); past it, no decision and the ladder climbs",
+        ),
+    ),
+    c(
         "agente.estilo",
         "PHXCLAW_ESTILO",
         T,
@@ -325,6 +387,77 @@ const FIXAS: &[L] = &[
             "Project root (default the current folder); .phxclaw/config.json lives in it",
         ),
         LOCALIZA,
+    ),
+    // --- custo e orcamento (R2/R3 do radar): o preco e do operador, nunca do codigo ---
+    c(
+        "custo.precos",
+        "PHXCLAW_CUSTO_PRECOS",
+        P,
+        None,
+        (
+            "Arquivo JSON da tabela de preços por modelo (moeda; entrada, saída e cache por milhão de tokens; data e fonte da cotação); vazio = custo não medido",
+            "JSON file with the price table per model (currency; input, output and cache per million tokens; quote date and source); empty = cost not measured",
+        ),
+    ),
+    c(
+        "orcamento.tarefa_tokens",
+        "PHXCLAW_ORCAMENTO_TAREFA_TOKENS",
+        I,
+        None,
+        (
+            "Orçamento padrão de tokens (entrada + saída) por tarefa; ao bater, a tarefa para em budget_exceeded",
+            "Default token budget (input + output) per task; when reached, the task stops as budget_exceeded",
+        ),
+    ),
+    c(
+        "orcamento.tarefa_custo",
+        "PHXCLAW_ORCAMENTO_TAREFA_CUSTO",
+        R,
+        None,
+        (
+            "Orçamento padrão em dinheiro por tarefa, na moeda da tabela de preços (exige custo.precos)",
+            "Default money budget per task, in the currency of the price table (requires custo.precos)",
+        ),
+    ),
+    c(
+        "orcamento.fluxo_tokens",
+        "PHXCLAW_ORCAMENTO_FLUXO_TOKENS",
+        I,
+        None,
+        (
+            "Orçamento padrão de tokens por execução de fluxo, somando todos os passos",
+            "Default token budget per workflow run, adding up every step",
+        ),
+    ),
+    c(
+        "orcamento.fluxo_custo",
+        "PHXCLAW_ORCAMENTO_FLUXO_CUSTO",
+        R,
+        None,
+        (
+            "Orçamento padrão em dinheiro por execução de fluxo, na moeda da tabela de preços",
+            "Default money budget per workflow run, in the currency of the price table",
+        ),
+    ),
+    c(
+        "orcamento.teto_tokens",
+        "PHXCLAW_ORCAMENTO_TETO_TOKENS",
+        I,
+        None,
+        (
+            "Teto global de tokens: nenhum pedido (tarefa ou fluxo) passa dele; acima, a criação é recusada",
+            "Global token ceiling: no request (task or workflow) goes above it; above it, creation is refused",
+        ),
+    ),
+    c(
+        "orcamento.teto_custo",
+        "PHXCLAW_ORCAMENTO_TETO_CUSTO",
+        R,
+        None,
+        (
+            "Teto global em dinheiro: nenhum pedido passa dele; acima, a criação é recusada",
+            "Global money ceiling: no request goes above it; above it, creation is refused",
+        ),
     ),
     // --- perfil (uma camada por cima da pasta, como o perfil do VS Code) ---
     a(
@@ -1103,6 +1236,16 @@ const FIXAS: &[L] = &[
         (
             "Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css",
             "LOCAL Bootstrap 5.3 stylesheet for generated screens (never a CDN); empty = vendor/bootstrap-5.3.3/bootstrap.min.css",
+        ),
+    ),
+    c(
+        "ui.bloquear_inspecao",
+        "PHXCLAW_UI_BLOQUEAR_INSPECAO",
+        B,
+        Some("true"),
+        (
+            "Bloqueia na tela o menu de contexto, F12 e os atalhos do inspetor. No navegador é dissuasão, não segurança (o menu do navegador e o view-source alcançam o mesmo); no desktop vale sempre",
+            "Blocks the context menu, F12 and the inspector shortcuts in the screen. In the browser it is deterrence, not security (the browser menu and view-source reach the same); on the desktop it always applies",
         ),
     ),
     c(

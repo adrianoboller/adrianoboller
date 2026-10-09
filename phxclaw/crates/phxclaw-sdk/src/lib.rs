@@ -78,6 +78,14 @@ impl std::fmt::Debug for Cliente {
     }
 }
 
+/// A resposta de `Cliente::rota`, sem interpretar.
+#[derive(Debug, Clone)]
+pub struct RespostaCrua {
+    pub status: u16,
+    pub tipo: String,
+    pub corpo: Vec<u8>,
+}
+
 /// O mesmo caminho do servidor: `PHXCLAW_API_TOKEN`, senao o `api.token` da pasta
 /// (`PHXCLAW_HOME`, ou `var/agente`) que o `servir` grava na primeira vez.
 pub fn token_do_ambiente(pasta: Option<&Path>) -> Option<String> {
@@ -180,6 +188,61 @@ impl Cliente {
             .await
             .map_err(|e| Erro::Transporte(e.to_string()))?;
         serde_json::from_slice(&bytes).map_err(|e| Erro::Formato(e.to_string()))
+    }
+
+    /// Uma rota qualquer da API, com a resposta crua (status, tipo e corpo) mesmo quando
+    /// o status e de erro: o `phxclaw api` mostra o que o servidor disse, e quem decide e o
+    /// handler. `caminho` comeca por `/` e pode trazer a consulta; ele nunca troca o
+    /// servidor (`//outro` e `http://` sao recusados), porque o Bearer vai junto.
+    pub async fn rota(
+        &self,
+        metodo: &str,
+        caminho: &str,
+        corpo: Option<&Value>,
+        cabecalhos: &[(&str, &str)],
+    ) -> Result<RespostaCrua, Erro> {
+        if !caminho.starts_with('/') || caminho.starts_with("//") || caminho.contains("://") {
+            return Err(Erro::Transporte(format!(
+                "caminho {caminho:?}: tem de comecar por / e ficar neste servidor"
+            )));
+        }
+        let url = self
+            .base
+            .join(&caminho[1..])
+            .map_err(|e| Erro::Transporte(format!("{caminho}: {e}")))?;
+        if url.origin() != self.base.origin() {
+            return Err(Erro::Transporte(format!("{caminho}: sai do servidor")));
+        }
+        let metodo = Method::from_bytes(metodo.to_ascii_uppercase().as_bytes())
+            .map_err(|_| Erro::Transporte(format!("metodo invalido: {metodo}")))?;
+        let mut r = self.http.request(metodo, url).bearer_auth(&self.token);
+        for (k, v) in cabecalhos {
+            r = r.header(*k, *v);
+        }
+        if let Some(c) = corpo {
+            r = r.json(c);
+        }
+        let resp = r
+            .send()
+            .await
+            .map_err(|e| Erro::Transporte(e.without_url().to_string()))?;
+        let status = resp.status().as_u16();
+        let tipo = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let corpo = resp
+            .bytes()
+            .await
+            .map_err(|e| Erro::Transporte(e.to_string()))?
+            .to_vec();
+        Ok(RespostaCrua {
+            status,
+            tipo,
+            corpo,
+        })
     }
 
     pub async fn saude(&self) -> Result<bool, Erro> {

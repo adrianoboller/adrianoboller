@@ -1,5 +1,5 @@
 //! Arquivo gerado que envelhece calado: `apps/phxclaw-ui/assets/ferramentas.json` e
-//! `docs/AGENTE_AUTONOMO.md` saem do binario (`phxclaw ferramentas`, `--help`, `equipe
+//! `docs/AGENTE_AUTONOMO.md` saem do binario (`phxclaw ferramentas`, `ajuda --tudo`, `equipe
 //! listar`), e fonte mudado sem regerar reprova aqui -- igual ao que o `equipe.json` ja tem
 //! em `crates/phxclaw-agent/tests/equipe.rs`.
 //!

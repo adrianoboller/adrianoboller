@@ -1,0 +1,86 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-78a3-b0d2-f38be73646a2",
+  "agent_id": 275,
+  "name": "Search Query Analyst",
+  "macroarea": "Terceiros · Mídia Paga",
+  "nucleus": "Paid Media",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Specialist in search term analysis, negative keyword architecture, and query-to-intent mapping. Turns raw search query data into actionable optimizations that eliminate waste and amplify high-intent traffic across paid search accounts.",
+  "responsibilities": "Mines search queries to find the gold your competitors are missing.",
+  "resources": "Descricao completa do papel em config/agents/agency/search-query-analyst.md; ferramentas do cabecalho: WebFetch, WebSearch, Read, Write, Edit, Bash.",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read",
+    "fs.write",
+    "shell.exec",
+    "web.browse",
+    "web.search"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "fs.write",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "shell.exec",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "web.browse",
+      "scopes": [
+        "project"
+      ]
+    },
+    {
+      "name": "web.search",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: as ferramentas sao as do tools: do cabecalho de origem (sem tools: = so leitura), sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo paid-media/paid-media-search-query-analyst.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/search-query-analyst.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "paid-media",
+    "row": 164
+  }
+}

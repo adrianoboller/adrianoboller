@@ -9,13 +9,16 @@
 //! subsistemas ja sabem isolar.
 //!
 //! O que entra no agente, e por qual porta de cada subsistema (nenhuma e nova):
-//! - **servidores MCP**, pela MESMA subida do `PHXCLAW_MCP_CONFIG` (`mcp::carregar_config`),
-//!   com `${CLAUDE_PLUGIN_ROOT}` trocado pela raiz do pacote;
+//! - **servidores MCP**, pela MESMA subida do `PHXCLAW_MCP_CONFIG`
+//!   (`mcp::carregar_config_de_pacote`), com `${CLAUDE_PLUGIN_ROOT}` trocado pela raiz do
+//!   pacote e a capacidade `mcp.<pacote>.<servidor>`, que o operador concede a parte;
 //! - **comandos** (`commands/*.md`), que viram comandos de barra (`comandos.rs`), depois
 //!   dos do projeto -- nome repetido fica com o projeto;
 //! - **skills** (`skills/*/SKILL.md`), pelo importador de skills (`importar_skills`): a
-//!   mesma varredura anti-injecao, o mesmo `ORIGEM.json` com o SHA-256, e a licenca do
-//!   `plugin.json` registrada ao lado;
+//!   mesma varredura anti-injecao, o mesmo `ORIGEM.json` com o SHA-256, e a mesma porta de
+//!   licenca (`licenca`), subindo ate a raiz do pacote: o `license` do `plugin.json` e o
+//!   `LICENSE` da raiz entram na conta, copyleft e desconhecida ficam de fora com aviso, e a
+//!   compativel entra com o texto em `LICENCA.txt`;
 //! - **hooks** (`hooks/hooks.json`), somados aos do projeto (`hooks::somar`) com a raiz do
 //!   pacote em `/hooks` -- e so chegam aqui porque a assinatura da pasta inteira ja
 //!   passou: hook de pacote sem assinatura valida nao existe para o agente;
@@ -52,7 +55,8 @@ pub struct Pacote {
     /// O `hooks.json` do pacote (eventos do Claude Code); `integrar` o liga.
     pub hooks: Option<Value>,
     pub mcp: ConfigMcp,
-    /// A licenca declarada no `plugin.json` (vai para o `ORIGEM.json` das skills).
+    /// A licenca declarada no `plugin.json`, como veio. Quem decide se o texto do pacote pode
+    /// ser copiado e a porta de licenca (`licenca::conferir`), que le o mesmo campo.
     pub licenca: Option<String>,
 }
 
@@ -235,9 +239,11 @@ pub fn ler(dir: &Path, trust: &TrustStore) -> Result<Pacote, String> {
     })
 }
 
-/// As ferramentas MCP do pacote, pela mesma subida do `PHXCLAW_MCP_CONFIG`.
+/// As ferramentas MCP do pacote, pela mesma subida do `PHXCLAW_MCP_CONFIG`, com a
+/// capacidade no espaco do pacote (`mcp.<pacote>.<servidor>`): servidor de pacote com o nome
+/// de um do operador nao herda a concessao dele.
 pub fn ferramentas(p: &Pacote) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
-    crate::mcp::carregar_config(&p.mcp, &p.raiz)
+    crate::mcp::carregar_config_de_pacote(&p.mcp, &p.raiz, &p.nome)
 }
 
 /// O primeiro paragrafo nao vazio de um texto, para a missao de um subagente sem
@@ -256,8 +262,12 @@ fn primeiro_paragrafo(corpo: &str) -> String {
 }
 
 /// Capacidades de um subagente a partir dos nomes de ferramenta do Claude Code
-/// (`tools: Read, Write, Bash`): so o que a casa sabe mapear; o resto e aviso.
-fn capacidades_das_ferramentas(tools: &[String], avisos: &mut Vec<String>) -> Vec<String> {
+/// (`tools: Read, Write, Bash`): so o que a casa sabe mapear; o resto e aviso. O importador
+/// do agency-agents (`importar_papeis`) usa esta mesma tabela: duas divergiriam.
+pub(crate) fn capacidades_das_ferramentas(
+    tools: &[String],
+    avisos: &mut Vec<String>,
+) -> Vec<String> {
     let mut caps = std::collections::BTreeSet::new();
     for t in tools {
         let cap = match t.trim().to_ascii_lowercase().as_str() {
@@ -288,6 +298,17 @@ fn papel_de(
     indice: u32,
 ) -> Result<(AgentManifest, Vec<String>), String> {
     use crate::importar_skills::{Valor, ler_cabecalho, separar};
+    // O corpo vira `responsibilities` e o `prompt_do_papel` o imprime: e texto de terceiro
+    // como o dos papeis importados, e passa pela MESMA varredura (antes do cabecalho) e
+    // pelo MESMO teto. Reprovado, o papel nao entra -- fica so o aviso de bloqueio.
+    let achados = crate::instrucoes::varrer(texto);
+    if !achados.is_empty() {
+        return Err(format!(
+            "[BLOCKED: {}/agents/{nome_arquivo}.md contained potential prompt injection ({}). Content not loaded.]",
+            pacote.nome,
+            achados.join(", ")
+        ));
+    }
     let (cab, corpo) = separar(texto)?;
     let cab = cab.map(ler_cabecalho).unwrap_or_default();
     let texto_de = |k: &str| match cab.get(k) {
@@ -330,7 +351,10 @@ fn papel_de(
         "nucleus": pacote.nome,
         "role_type": "subagente de pacote",
         "mission": missao,
-        "responsibilities": corpo.trim(),
+        "responsibilities": phxclaw_agent_core::truncate_for_model(
+            corpo.trim(),
+            crate::equipe::TETO_DESCRICAO_DO_PAPEL,
+        ),
         "execution": "local",
         "models_allowed": texto_de("model").map(|m| vec![m]).unwrap_or_default(),
         "capabilities": capacidades,
@@ -360,20 +384,20 @@ pub fn integrar(p: &Pacote, skills: Option<&SkillFolder>, bwrap: Option<PathBuf>
         skills,
         componente(&p.raiz, &Value::Null, "skills", "skills"),
     ) {
+        // A porta sobe ate a raiz do pacote (e nao ate um `.git` acima da pasta de pacotes):
+        // e la que moram o `plugin.json` e o `LICENSE` de quem escreveu. Desconhecida nao se
+        // aceita aqui -- carga de pacote nao tem operador presente para decidir.
         let r = crate::importar_skills::importar(
             &dir,
             destino,
-            &crate::importar_skills::Opcoes { com_scripts: false },
+            &crate::importar_skills::Opcoes {
+                com_scripts: false,
+                limite_licenca: Some(p.raiz.clone()),
+                aceitar_licenca_desconhecida: false,
+            },
         );
         for i in &r.importadas {
             c.skills.push((i.nome.clone(), i.sha256.clone()));
-            if let Some(l) = &p.licenca {
-                // A licenca do pacote fica ao lado da origem da skill.
-                let _ = std::fs::write(
-                    destino.root().join(&i.nome).join("LICENCA.txt"),
-                    format!("pacote {} {}: {l}\n", p.nome, p.versao),
-                );
-            }
         }
         for (arq, m) in &r.recusadas {
             c.avisos

@@ -5,7 +5,7 @@ medir. É curto de propósito: o detalhe de cada comando é a ajuda do próprio 
 aqui pelo gerador.
 
 <!-- gerado:cabecalho:inicio -->
-Trechos marcados gerados em 2026-10-09 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-09 13:49).
+Trechos marcados gerados em 2026-10-09 por `python3 tools/gerar_guia_operador.py`, do binario `PhxClaw 0.70.0` (compilado em 2026-10-09 17:13).
 <!-- gerado:cabecalho:fim -->
 
 **Nada entre marcadores `<!-- gerado:… -->` se edita à mão.** Comando, opção, variável de
@@ -316,6 +316,39 @@ sandbox o Helix abre qualquer caminho, e foi assim que a chave-mestra do cofre a
 (medido em 09/10). Os testes do IDE e os servidores de linguagem também rodam com a pasta do
 agente escondida. Em máquina sem `bwrap` (Windows), o terminal web fica indisponível.
 
+### Segurança da tela: o que protege e o que só dificulta
+
+**O que protege de verdade** (vale sempre, não se desliga):
+
+- **CSP estrita** em toda resposta do `servir` e da ponte (`pwa.rs`, um ponto só):
+  `script-src 'self'` — nenhum script em linha, nenhum `eval` —, `object-src 'none'`,
+  `base-uri 'none'`, `frame-ancestors 'none'` (a tela não entra em moldura de outro site),
+  `connect-src 'self'` (a página só fala com o próprio agente). Junto: `nosniff`,
+  `Referrer-Policy: no-referrer`, câmera/microfone/localização fechados, COOP e CORP
+  `same-origin`, e `Cache-Control: no-store` em todo dado (tarefa, configuração, erro). O
+  estilo em linha é aceito (`style-src 'unsafe-inline'`): o phx-grid monta largura e recuo
+  por `style=""`, e sem isso a grade perde o desenho — medido, 81 recusas só em duas telas.
+  CSS injetado não executa nada.
+- **RBAC e o portão no servidor**: o papel é conferido no agente, não na tela.
+- **Segredo nunca no cliente**: a tela não recebe chave nenhuma; a configuração mostra se o
+  segredo existe, nunca o valor.
+- **No desktop (Tauri)**, o build de release não tem DevTools (a feature `devtools` não está
+  ligada), a página não tem a permissão de abrir o inspetor e o menu de contexto nativo é
+  cancelado pela própria página (sem inspetor, não há como desfazer isso de dentro). Ali o
+  bloqueio é de verdade.
+
+**O que só dificulta: `ui.bloquear_inspecao`** (ligado por padrão). No navegador ele cancela
+o clique direito, o F12, Ctrl/Cmd+Shift+I/J/C e Ctrl/Cmd+U. **Isso dificulta, mas não
+impede**: o menu do próprio navegador abre o inspetor, `view-source:` na barra mostra o
+código, e qualquer cliente HTTP (curl) baixa a mesma página. Não conte com ele para esconder
+nada — tudo o que a tela tem, quem a abre tem. Dentro de campo de texto o menu de contexto
+continua (colar e corrigir são edição); Tab, leitor de tela e Ctrl+C não são tocados. Para
+desligar no navegador: `"ui": {"bloquear_inspecao": false}` no `config.json` (ou
+`PHXCLAW_UI_BLOQUEAR_INSPECAO=0`). No desktop ele vale sempre.
+
+Servindo a tela na rede **sem TLS**, o navegador ignora o COOP e avisa no console: é o recado
+certo — fora do `127.0.0.1`, use HTTPS.
+
 ### Usuários, projetos e papéis da API (RBAC)
 
 Sem usuários, a API de `phxclaw servir` tem uma porta só: o Bearer do `api.token`, como
@@ -399,6 +432,14 @@ Prometheus, com o mesmo Bearer das outras rotas (com usuários, papel `leitor` o
 | `phxclaw_tokens_total` | counter | `tipo` (`entrada`/`saida`) |
 | `phxclaw_ferramenta_duracao_segundos` | histogram | `le` |
 | `phxclaw_tarefa_duracao_segundos` | histogram | `le` |
+| `phxclaw_tarefa_custo_total` | counter | `estado` — dinheiro, na moeda da tabela `custo.precos` |
+| `phxclaw_tarefa_custo_nao_medido_total` | counter | `estado` — tarefas sem custo medido |
+| `phxclaw_fluxo_custo_total` | counter | `estado` — dinheiro de todos os passos do fluxo |
+| `phxclaw_fluxo_custo_nao_medido_total` | counter | `estado` |
+
+O `estado` inclui `budget_exceeded` (parou no orçamento, seção 12). A moeda não é rótulo
+(é texto do operador): quem lê o custo lê a moeda na tabela. Tarefa sem custo medido não
+soma zero — entra no contador `_nao_medido_`.
 
 Todo rótulo é de conjunto fechado: nada de nome de ferramenta, argumento, objetivo ou nome
 de credencial (há teste que reprova rótulo fora da lista). Os contadores são do processo:
@@ -488,6 +529,55 @@ Servidor declarado em PHXCLAW_MCP_CONFIG: token le PHXCLAW_MCP_TOKEN do AMBIENTE
 ```
 <!-- gerado:ajuda:mcp:fim -->
 
+### O teto de quem vem de fora (MCP, pacote, plugin, skill)
+
+A capacidade de uma extensão é dada **pela casa**, nunca pelo que a extensão diz de si. O
+servidor MCP que se anuncia «somente leitura» (`readOnlyHint`, descrição) continua com
+`mcp.<servidor>`, fora do Plan Mode e fora do padrão. As portas, provadas em
+`crates/phxclaw-agent/tests/teto_extensao.rs`:
+
+| Porta | Capacidade que o portão confere |
+|---|---|
+| servidor MCP do operador (`PHXCLAW_MCP_CONFIG`) | `mcp.<servidor>` |
+| servidor MCP de pacote assinado (`.mcp.json` do pacote) | `mcp.<pacote>.<servidor>` |
+| plugin assinado com `agent.tool` | a primária do manifesto, **recusada** se for de leitura ou do espaço `mcp.*` |
+| skill importada | nenhuma: `allowed-tools` do cabeçalho é texto |
+| subagente de pacote | a interseção do que ele declara com o que o pai tem |
+
+**Mudou em 09/10/2026:** o servidor MCP de pacote tinha a mesma capacidade de um do operador
+com o mesmo nome, e a concessão de um valia para o outro. Quem concedia `mcp.<servidor>` para
+um servidor de pacote passa a conceder `mcp.<pacote>.<servidor>` (o nome do pacote vem do
+`plugin.json`, com o que não for letra, número, `-` ou `_` trocado por `_`).
+
+### Gatilho por notificação MCP (`mcp` no `gatilhos.json`)
+
+Um servidor MCP **do operador** avisa que um recurso mudou e o PhxClaw roda a versão
+**publicada** de um fluxo, com o aviso como `{{entrada}}`:
+
+```json
+{ "mcp": [ { "nome": "docs-mudaram", "servidor": "arquivos",
+             "recursos": ["file:///srv/docs/contrato.md"], "lista": false,
+             "fluxo": "fluxos/revisar.json", "janela_ms": 2000, "max_por_minuto": 6 } ] }
+```
+
+- `servidor` é um nome do arquivo de `PHXCLAW_MCP_CONFIG`, e o agente do servidor precisa ter
+  `mcp.<servidor>` concedida; sem ela, nada sobe e a recusa fica em
+  `<pasta>/gatilhos/mcp-<nome>.evidence.jsonl`.
+- `recursos` são assinados com `resources/subscribe`; aviso de outra URI é ignorado. `lista`
+  liga `notifications/resources/list_changed`. O servidor tem de anunciar `resources.subscribe`
+  (e `listChanged`), senão a subida recusa dizendo isso.
+- Cada item: `{gatilho, servidor, evento, uri, parametros, vezes}`. A mesma URI dentro de
+  `janela_ms` (100 ms a 1 h) vira um disparo só, com a última versão e quantas vieram.
+- `max_por_minuto` (1 a 60) é o teto de disparos. O que passa dele espera vaga, e o que ainda
+  estiver pendente quando a sessão cair é descartado e contado no log.
+- Mais de 600 mensagens do servidor num minuto derruba a assinatura e mata o processo. O
+  laço volta depois de um recuo de 5 s, que dobra a cada queda até 15 min.
+- O aviso é dado de fora: com forma de credencial, o disparo é recusado pela guarda de
+  entrada do motor de fluxo e não vira tarefa.
+- **Só stdio nesta versão.** Servidor declarado por `url` é recusado ao subir, porque o
+  runtime ainda não abre o GET em SSE por onde chega o aviso fora de um pedido. Aviso perdido
+  com o fio caído não volta: quem precisa de «nada se perde» usa o poll.
+
 ### Serviços pagos (ElevenLabs, Gemini, xAI)
 
 <!-- gerado:ajuda:elevenlabs:inicio -->
@@ -567,11 +657,63 @@ Saida de `phxclaw ajuda skills`:
 Importa SKILL.md de outros agentes (scripts desligados, origem com SHA-256)
 
 USO:
-  phxclaw skills importar DIR [--com-scripts] [--pasta DIR]
+  phxclaw skills importar DIR [--com-scripts] [--aceitar-licenca-desconhecida] [--pasta DIR]
 
-Le todo SKILL.md abaixo de DIR (Claude Code, Codex, OpenClaw, Hermes), traduz os nomes de ferramenta conhecidos e grava na pasta de skills. scripts/ nao se copia sem --com-scripts; ORIGEM.json guarda a origem e o SHA-256.
+Le todo SKILL.md abaixo de DIR (Claude Code, Codex, OpenClaw, Hermes), traduz os nomes de ferramenta conhecidos e grava na pasta de skills. scripts/ nao se copia sem --com-scripts; ORIGEM.json guarda a origem e o SHA-256. Cada skill passa pela porta de licenca (veja `licenca`): copyleft e recusada, desconhecida so com --aceitar-licenca-desconhecida (decisao no ORIGEM.json), compativel entra com o aviso em LICENCA.txt.
 ```
 <!-- gerado:ajuda:skills:fim -->
+
+### Licença de quem vem de fora (`licenca conferir`)
+
+Todo texto de terceiro que se **copia** para dentro do PhxClaw (Apache-2.0) passa por uma porta
+só, `crates/phxclaw-agent/src/licenca.rs`: o `skills importar`, as skills de pacote (pelo mesmo
+importador, subindo até a raiz do pacote) e o importador de papéis do agency-agents
+(`importar_papeis.rs`). Para quem copia por outro caminho, a mesma porta responde na linha de
+comando.
+
+- **De onde sai a licença.** A porta sobe da pasta importada até a raiz do repositório de
+  origem (a pasta com `.git`; sem ela, a própria origem; `--limite` muda o teto) e lê os
+  arquivos `LICENSE`/`LICENCE`/`COPYING`/`UNLICENSE` de cada pasta do caminho, o `NOTICE`, a
+  linha `SPDX-License-Identifier`, o `license:` do cabeçalho da skill e o `license` do
+  `plugin.json`. Identifica pelo SPDX quando há; senão pelas frases canônicas do texto.
+  **Nunca pelo nome do arquivo**: `LICENSE-MIT` com o texto da GPL é GPL.
+- **Vence a mais restritiva** do caminho (copyleft > desconhecida > compatível), não a mais
+  próxima: um `license: MIT` de modelo numa skill dentro de um repositório AGPL não abre a
+  porta. O preço, aceito: skill de fato MIT dentro de repositório copyleft fica de fora, e a
+  recusa nomeia as duas declarações.
+- **Compatível** (MIT, MIT-0, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Unlicense,
+  CC0-1.0, Zlib) entra **com o aviso**: o `LICENCA.txt` ao lado do que se importou leva o
+  texto inteiro de cada licença e `NOTICE` achados, byte a byte, e as linhas de copyright; o
+  `ORIGEM.json` da skill guarda o mesmo em `licenca`. Não existe opção para tirar o aviso.
+- **Copyleft** (GPL, AGPL, LGPL, MPL, EPL, CC-BY-SA, EUPL, CDDL, OSL, CPL e qualquer
+  `-or-later`) é **recusada sempre**, dizendo a licença e o arquivo: copiar o texto faria a
+  obra combinada herdar o copyleft. Nenhuma opção aceita copyleft. Expressão SPDX se avalia:
+  `MIT OR GPL-3.0` entra (o licenciado escolhe), `MIT AND GPL-3.0` não.
+- **Desconhecida** (nenhuma licença achada, ou texto que não se reconhece) é recusada por
+  padrão. `--aceitar-licenca-desconhecida` importa assim mesmo e grava a decisão — opção,
+  operador (`$USER`), quando e a recusa atravessada — no `ORIGEM.json` e no `LICENCA.txt`.
+  Pacote carregado no arranque não tem essa opção: não há operador presente para decidir.
+
+`phxclaw licenca conferir DIR --json` imprime a conferência (`classe`, `licencas`, `entra`,
+`motivo`, `declaracoes`, `textos`, `copyright`, `decisao_do_operador`) e sai **0 quando entra
+e 2 quando recusa**; é a porta para importadores escritos fora do Rust. Quem chama com
+`--aceitar-licenca-desconhecida` recebe a `decisao_do_operador` pronta e a grava junto do que
+importar.
+
+<!-- gerado:ajuda:licenca:inicio -->
+Saida de `phxclaw ajuda licenca`:
+
+```text
+Confere a licenca de uma pasta de terceiro antes de copiar (porta unica)
+
+USO:
+  phxclaw licenca conferir DIR [--json] [--aceitar-licenca-desconhecida] [--limite DIR]
+
+Sobe de DIR ate a raiz do repositorio (pasta com .git) ou --limite, le LICENSE/COPYING, NOTICE, SPDX-License-Identifier e o license do plugin.json, e classifica pelo SPDX ou pelo texto (nunca pelo nome do arquivo). Vence a mais restritiva. Compativel com Apache-2.0 (MIT, Apache-2.0, BSD, ISC, 0BSD, Unlicense, CC0-1.0, Zlib) entra; copyleft (GPL, AGPL, LGPL, MPL, EPL, CC-BY-SA, -or-later) e recusada sempre; desconhecida so com a opcao. Sai 0 quando entra e 2 quando recusa; --json e o que os importadores de fora leem.
+
+Tambem aceito como: license
+```
+<!-- gerado:ajuda:licenca:fim -->
 
 <!-- gerado:ajuda:indexar:inicio -->
 Saida de `phxclaw ajuda indexar`:
@@ -779,12 +921,12 @@ Tambem aceito como: replay
 Saida de `phxclaw ajuda avaliar`:
 
 ```text
-Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto e nota
+Compara modelos pelo agente: p50/p95, tokens/s, CPU, energia, acerto, nota e custo
 
 USO:
-  phxclaw avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR]
+  phxclaw avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR] | avaliar --provedores A,B --bateria ARQ|DIR [--saida DIR] [--pasta DIR]
 
-Roda cada caso de DIR (*.json com gabarito, ou *.jsonl gravado) N vezes por modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; vencedor so quando as faixas nao se cruzam. Alem do acerto, a nota parcial de ferramentas (conjunto e sequencia por LCS, 0 a 1, deterministica, nunca por juiz) e o agrupamento pelo sha256 do prompt e das skills de cada execucao. Energia so de RAPL ou NVIDIA: sem eles, «não medida». Cada execucao fica gravada em SAIDA/gravacoes.
+Roda cada caso de DIR (*.json com gabarito, ou *.jsonl gravado) N vezes por modelo, pelo agente inteiro. Cada numero sai com faixa min-max, N e data; vencedor so quando as faixas nao se cruzam. Alem do acerto, a nota parcial de ferramentas (conjunto e sequencia por LCS, 0 a 1, deterministica, nunca por juiz) e o agrupamento pelo sha256 do prompt e das skills de cada execucao. Energia so de RAPL ou NVIDIA: sem eles, «não medida». Cada execucao fica gravada em SAIDA/gravacoes. Custo por acerto: o custo de todas as execucoes (as que falharam tambem) sobre as que acertaram, pela tabela custo.precos; sem preco, «não medido». Com --provedores e --bateria, a bateria comum: o mesmo gabarito por provedor, medindo acerto, custo por acerto, duracao, tentativas e intervencao, com intervalo de 95% por bootstrap; vencedor so com os intervalos separados. O phxclaw-model-arena registra os pares (informativo, nao decide). Provedor que nao respondeu sai NÃO MEDIDO.
 
 Tambem aceito como: eval
 ```
@@ -916,8 +1058,290 @@ topo → o tema do sistema (`prefers-color-scheme`) → o escuro. Só o clique g
 chave de `config.json` para isso: é preferência de quem olha, não do servidor
 (`apps/phxclaw-ui/assets/tema.js`).
 
+## 11. Roteamento e troca de provedor (`modelo.roteamento`)
+
+Vale **só para quem pede**: o modelo `rota` (a política escolhe tudo) ou `rota:<spec>` (o
+`<spec>` vem primeiro e a política dá a reserva), por exemplo
+`phxclaw config definir modelo.padrao rota:ollama:qwen2.5:3b`. Qualquer outro modelo continua
+indo direto ao provedor, e a medição (`phxclaw avaliar`) continua medindo um modelo só. Sem
+`modelo.roteamento` definido, `rota` é erro que diz a chave que falta.
+
+`phxclaw config definir modelo.roteamento /caminho/rota.json`, com:
+
+```json
+{
+  "provedores": [
+    {"spec": "ollama:qwen2.5:3b", "custo": 0},
+    {"spec": "openai:gpt-5", "custo": 2},
+    {"spec": "anthropic:claude-sonnet-4-5", "custo": 3}
+  ],
+  "por_tipo": {
+    "codigo": ["anthropic:claude-sonnet-4-5", "openai:gpt-5"],
+    "geral": ["ollama:qwen2.5:3b", "openai:gpt-5"]
+  },
+  "classificar": {
+    "regras": [{"palavras": ["cargo", "rust", "compilar"], "valor": "codigo", "confianca": 0.9}],
+    "modelo": "ollama:qwen2.5:1.5b",
+    "limiar": 0.7,
+    "padrao": "geral"
+  },
+  "preferir_barato": false,
+  "trocar_em": ["timeout", "429", "5xx", "transporte"],
+  "trocas_max": 2,
+  "prazo_s": 120
+}
+```
+
+| campo | o que faz | padrão |
+|---|---|---|
+| `provedores` | a lista única de provedores, na ordem; todo spec citado em outro campo tem de estar aqui | obrigatório |
+| `custo` | custo **relativo** declarado, só para ordenar com `preferir_barato` (dinheiro é `custo.precos`) | 0 |
+| `por_tipo` | a cadeia de cada tipo de tarefa; sem tipo, vale a ordem de `provedores` | vazio |
+| `classificar` | o decisor do tipo: `regras` (palavras no objetivo), depois o Laya se `"laya": true` (seção 11.1), e, se o incerto ficar abaixo do `limiar`, o `modelo` em modo restrito; resposta fora das chaves de `por_tipo` é «sem decisão» e cai no `padrao` | sem classificação |
+| `trocar_em` | as falhas que trocam de provedor: `timeout`, `429`, `5xx`, `transporte`, `resposta_invalida` | as quatro primeiras |
+| `trocas_max` | trocas por chamada (teto 8) | 2 |
+| `prazo_s` | prazo por tentativa, além do do provedor | o do provedor |
+
+**O que nunca troca**, qualquer que seja a política: erro 4xx do pedido (fora 408 e 429),
+política negada e credencial faltando — trocar esconderia o defeito do argumento ou
+contornaria a política por outro provedor. Campo desconhecido no arquivo é erro, e provedor
+da política que não monta (sem chave) derruba a montagem dizendo qual: reserva que some
+calada no dia em que é precisa não é reserva.
+
+**Onde ver quem atendeu:** cada chamada vira um passo `modelo` da tarefa (`ok`, `trocou` ou
+`falhou`, com «atendeu X; trocou: A -> 429») e uma linha `modelo.roteamento` no
+`evidence.jsonl`, com a cadeia, as tentativas e o motivo da parada. O tipo da tarefa é
+decidido uma vez por objetivo e lembrado nas voltas seguintes do laço.
+
+### 11.1 Decisor Laya (`decisao.laya.*`)
+
+O [Laya](https://github.com/NandhaKishorM/laya) é um modelo de decisão «System 1»: recebe um
+texto e uma pergunta de forma fechada (escolha entre opções, nota numa escala) e devolve a
+resposta com a probabilidade de cada opção, num único forward pass, sem gerar texto. O
+PhxClaw fala com o servidor dele, o `laya-serve`, pelo protocolo `POST /v1/systemone` (o do
+Jev). **Licença e atribuição:** o Laya é da Convai Innovations, sob Apache-2.0; o PhxClaw não
+embute código nem pesos dele — só o cliente HTTP (`crates/phxclaw-agent/src/decisao/laya.rs`),
+escrito aqui contra o formato documentado no README e no `laya/serve.py` do commit `1adc59f`
+(versão 0.4.1). Quem instala o `laya-serve` e baixa o checkpoint aceita a licença do Laya e a
+dos pesos no Hugging Face (`convaiinnovations/laya`).
+
+**Desligado por padrão.** Sem `decisao.laya.url`, nada muda. Para ligar no classificador da
+rota, `"laya": true` em `classificar` (o degrau entra entre as `regras` e o `modelo`):
+
+```sh
+# o servidor (fora do PhxClaw; CPU)
+pip install "laya[serve]==0.4.1"
+LAYA_HOST=127.0.0.1 LAYA_PORT=8000 LAYA_DEVICE=cpu LAYA_MODELS=multilingual laya-serve
+# o PhxClaw
+phxclaw config definir decisao.laya.url http://127.0.0.1:8000
+```
+
+e, no `http.json` da pasta do agente, o destino liberado — loopback e rede privada só saem
+com `liberar`, pela **mesma** política do nó HTTP (seção do `http_request`), sem exceção
+própria para o Laya:
+
+```json
+{"liberar": ["http://127.0.0.1:8000"]}
+```
+
+<!-- gerado:chaves:decisao:inicio -->
+De `phxclaw config mostrar --json` (catalogo do binario, pasta vazia): 5 chave(s) em `decisao`.
+
+| Chave | Variavel | Tipo | Padrao | Natureza | O que e |
+|---|---|---|---|---|---|
+| `decisao.laya.credencial_nome` | `PHXCLAW_DECISAO_LAYA_CREDENCIAL_NOME` | texto | — | config | Nome da credencial bearer declarada no http.json (o segredo fica no broker: phxclaw credencial guardar NOME); vazio = sem Authorization |
+| `decisao.laya.limiar` | `PHXCLAW_DECISAO_LAYA_LIMIAR` | real | 0.8 | config | Confiança mínima (answer_confidence, 0 a 1) para a decisão do Laya valer; abaixo, a escada sobe ao próximo degrau |
+| `decisao.laya.modelo` | `PHXCLAW_DECISAO_LAYA_MODELO` | enum: english \| multilingual \| typed-decisions | multilingual | config | Checkpoint do Laya pedido ao servidor (multilingual para português) |
+| `decisao.laya.prazo_ms` | `PHXCLAW_DECISAO_LAYA_PRAZO_MS` | inteiro | 5000 | config | Prazo de cada pergunta ao laya-serve, em ms (1 a 60000); estourou, sem decisão e a escada sobe |
+| `decisao.laya.url` | `PHXCLAW_DECISAO_LAYA_URL` | texto | — | config | URL base do laya-serve (decisor System 1, POST /v1/systemone); vazio = Laya desligado. Loopback e rede privada só com liberar no http.json |
+<!-- gerado:chaves:decisao:fim -->
+
+A credencial é o **nome** de uma credencial `bearer` declarada no `http.json` com a origem do
+servidor; o segredo vai para o broker por `phxclaw credencial guardar NOME` e sai como
+`Authorization: Bearer` (é o `LAYA_API_KEY` do servidor). A chave se chama `credencial_nome`, e
+não `credencial`, porque o `config.json` recusa valor em chave com nome de segredo.
+
+O que vale saber:
+
+- **A confiança é o `answer_confidence`** (a probabilidade da resposta dada), nunca o
+  `confidence`, que no Laya é 1 − entropia normalizada: o README avisa que limiar herdado do
+  Jev não transfere. Servidor em `LAYA_JEV_STRICT` não manda `answer_confidence` e por isso
+  **não decide** aqui. O checkpoint `multilingual` sai **sem temperatura ajustada** (README do
+  Laya, Calibration): o `0.8` é ponto de partida, e o limiar certo se mede no seu dado, no
+  número de opções que a sua política usa.
+- **Toda falha é «sem decisão», com o motivo, e a escada sobe:** rede, prazo, 401, 413 (mais
+  de 100 opções — conferido antes de sair), 422 (pergunta que o Laya recusa), 5xx, resposta
+  sem `answer_confidence` e opção fora da lista. Nada vira palpite.
+- **Formas:** escolha vai como `choice` com as opções em `criteria`; predicado, como `choice`
+  de duas opções (`sim`/`não`); nota, como `score` de cinco níveis descritos (0, 0,25, 0,5,
+  0,75, 1), e o `score` esperado volta dividido por 4.
+- **A decisão nunca concede permissão:** a saída passa pela mesma conferência de forma dos
+  outros decisores e chega ao portão só por `sobre_o_portao`, que endurece e nunca afrouxa.
+
+**Medido em 09/10/2026** (`laya` 0.4.1 do PyPI, checkpoint `multilingual` revisão `7b928d8`,
+torch 2.14.1+cpu, 4 vCPU compartilhadas com compilações de outras frentes): 20 objetivos em
+português nos tipos `codigo`/`pesquisa`/`geral`, gabarito escrito antes
+(`crates/phxclaw-agent/tests/dados/laya_gabarito_pt.json`), pelo próprio `DecisorLaya`. Para
+refazer, com o `laya-serve` de pé:
+`LAYA_PROVA_URL=http://127.0.0.1:8000 LAYA_PROVA_GABARITO=crates/phxclaw-agent/tests/dados/laya_gabarito_pt.json cargo test -p phxclaw-agent --test decisao_laya -- --ignored --nocapture`
+(uma linha JSON por objetivo: esperado, obtido, `answer_confidence`, ms).
+
+| Medida | Valor |
+| --- | --- |
+| acerto | 16/20 = 0,80 (Wilson 95%: 0,584–0,919); `codigo` 7/7, `pesquisa` 4/7, `geral` 5/6 |
+| com limiar 0,8 | decide 13/20, acerta 11/13 (Wilson 95%: 0,578–0,957) — dois erros com `answer_confidence` 0,92 e 0,995 |
+| latência (cliente → resposta) | p50 246 ms, p95 289 ms (carga 5,1); 2ª corrida p50 524 ms, p95 827 ms (carga 6,7); respostas idênticas nas duas |
+| checkpoint em disco | 643.835.514 B (`model.safetensors`) + 34.363.188 B (tokenizer) ≈ 678 MB |
+| memória do `laya-serve` | 1,79 GB residente estável, 2,41 GB de pico (`VmHWM`) |
+| ambiente Python (torch CPU + transformers + laya[serve]) | 1,2 GB |
+
+Medida de uma corrida pequena: diz que o caminho funciona e onde o modelo erra
+(`pesquisa` vira `codigo`), não que 0,80 é a taxa do seu tráfego. **O padrão continua
+desligado:** os pesos cabem na letra da regra do dono para rede neural («só CPU, modelos
+pequenos, até centenas de MB»), mas a memória do servidor passa de 1 GB, e ligar o Laya por
+padrão é decisão dele, não deste guia.
+
+## 12. Custo em dinheiro e orçamento (`custo.precos`, `orcamento.*`)
+
+**O preço é seu, nunca do código.** `phxclaw config definir custo.precos /caminho/precos.json`
+(`PHXCLAW_CUSTO_PRECOS`), com:
+
+```json
+{
+  "moeda": "USD",
+  "modelos": {
+    "anthropic:claude-sonnet-4-5": {"entrada": 3.0, "saida": 15.0, "cache": 0.3,
+                                    "data": "2026-10-01", "fonte": "https://.../pricing"},
+    "ollama:qwen2.5:3b": {"entrada": 0, "saida": 0, "data": "2026-10-09", "fonte": "máquina própria"}
+  }
+}
+```
+
+Preço por **milhão** de tokens; o nome do modelo é o mesmo `provedor:modelo` do `--modelo`.
+Uma moeda por tabela (código ISO de três letras); data `AAAA-MM-DD` e fonte são
+obrigatórias — o relatório diz de que dia e de onde veio cada preço, porque preço muda e
+número digitado envelhece calado. Campo desconhecido, preço negativo ou fonte vazia é erro
+da montagem, dito com o modelo e o campo.
+
+- **Modelo sem preço: custo «não medido», nunca zero.** Zero é o preço que você declarou
+  (o Ollama local pode valer 0); ausente é o que ninguém sabe. Uma chamada sem preço deixa o
+  total da tarefa não medido.
+- **O cache não se aplica:** nenhum provedor deste agente informa ao motor quantos tokens
+  vieram do cache; a entrada é cobrada inteira pelo preço cheio. O custo sai igual ou acima
+  do real, nunca abaixo.
+- **Com a rota (seção 11)**, o preço é o do provedor que **atendeu** a chamada (o diário do
+  roteamento), não o de `rota`.
+- **Onde aparece:** `custo` no `task.json` (cada chamada, com a cotação, e o total), a linha
+  `custo:` no fim do `phxclaw agente`, uma linha `custo.chamada` por chamada no
+  `evidence.jsonl` (só com tabela), o `gasto` da tarefa do fluxo (todos os passos) e o
+  `/metrics`.
+
+**Orçamento** por tarefa e por fluxo, em tokens (entrada + saída) e em dinheiro:
+
+| Chave | O que é |
+|---|---|
+| `orcamento.tarefa_tokens` / `orcamento.tarefa_custo` | padrão de cada tarefa |
+| `orcamento.fluxo_tokens` / `orcamento.fluxo_custo` | padrão de cada execução de fluxo, somando os passos |
+| `orcamento.teto_tokens` / `orcamento.teto_custo` | teto global: nenhum pedido passa dele |
+
+Por pedido: `"orcamento": {"tokens": 50000, "custo": 0.5}` no `POST /v1/tasks` e no
+`POST /v1/fluxos/rodar`. Pedido acima do teto global é **recusado (400) dizendo o teto**;
+a dimensão que o pedido omite recebe o padrão, e o teto vale nela do mesmo jeito.
+
+- **Ao bater, a tarefa para** no estado `budget_exceeded`, com a mensagem «gastou X, teto de
+  Y», e uma linha `orcamento.parada` na evidência. A conferência vem depois da chamada que
+  custou (o custo só se sabe com a resposta): o excesso máximo é uma chamada, e o número
+  dito é o real. A ferramenta pedida na resposta que estourou não roda.
+- **As filhas contam:** subagentes, passos de fluxo e sub-fluxos cobram a conta da
+  tarefa-mãe e do fluxo; abrir filhas não contorna o orçamento.
+- **Dinheiro sem preço não se confere:** orçamento em dinheiro para um modelo sem preço (ou,
+  com a rota, se **qualquer** provedor da cadeia não tem preço) é recusado na criação,
+  dizendo qual; `orcamento.*_custo` definido sem `custo.precos` é erro da montagem.
+
+**A bateria entre provedores** (R5): `phxclaw avaliar --provedores A,B --bateria ARQ`, com
+`ARQ` = `{"casos": [{"id", "objetivo", "gabarito"}...], "rodadas": 3, "tentativas": 1,
+"reamostras": 1000, "semente": N}` (ou uma pasta de casos do `avaliar`). Mede acerto, custo
+por acerto (todas as tentativas, inclusive as que falharam, sobre os acertos), duração,
+tentativas e intervenção (perguntas a uma pessoa; a bateria roda sem ninguém e conta),
+cada uma com o intervalo de 95% por bootstrap dos casos. **Vencedor só quando os
+intervalos não se cruzam.** O `phxclaw-model-arena` registra os pares (campeão = o
+primeiro provedor) com a janela e o hash dele; o veredito do arena (média) é informativo e
+não decide. Provedor que não responde a nenhuma chamada sai **NÃO MEDIDO**. As chaves dos
+provedores pagos entram por `phxclaw … chave` (seção 2), nunca por arquivo.
+
+## 13. Auto-evolução (`phxclaw evoluir`)
+
+**Propõe e espera o Go — nunca faz merge** (decisão do dono, 09/10/2026). Um ciclo:
+
+1. **Escolhe UM item** do backlog (`docs/absorcao/phxclaw.json`): `parcial` antes de `nao`,
+   depois o nome; fora os `itens_vetados` da política e os que já têm proposta esperando Go.
+   `--item NOME` escolhe à mão (item vetado é recusado do mesmo jeito). `phxclaw evoluir itens`
+   mostra a ordem e os vetados, com o motivo de cada um.
+2. **Clone raso** do commit atual do produto numa tarefa-mãe da pasta do agente, e a
+   `git_worktree` de sempre no ramo `evolucao/<item>-<AAAAMMDD-HHMMSS>` — que existe só no
+   clone. O que está sem commit na sua árvore **não entra**.
+3. **Plano primeiro, depois o laço normal do agente**, com a configuração de subagente (nada
+   concedido a mais; sem `ask_user`, porque ninguém acompanha o ciclo). A tarefa só vê a
+   pasta do projeto na worktree e não roda git; o commit é feito pela mãe, pelo `git_write`
+   (com a varredura de segredos).
+4. **Portão do alcance, em código:** o diff inteiro (`--no-renames`) contra os `vetados` de
+   `config/evolucao-politica.json`. Caminho vetado, arquivo fora do projeto, link simbólico ou
+   submódulo → **recusado**, e o ramo não nasce. A política que não veta a si mesma nem
+   `crates/phxclaw-agent/src/evolucao.rs` é recusada inteira.
+5. **Portões no sandbox do `rust_project`:** `fmt` na raiz do projeto, `clippy` (verde só com
+   **zero avisos**) e `test` em cada crate tocado; o primeiro vermelho para o ciclo. Depois, a
+   **revisão do próprio diff** pelo motor do `code_review`: achado de severidade
+   `revisao_bloqueia_em` (padrão `alta`) ou maior, ou revisão que falha, é vermelho.
+6. **Tudo verde:** o ramo nasce no seu repositório por `git bundle` (uma ref nova, nunca
+   sobrescrita; `main` e a árvore intocados) e o relatório fica em
+   `.phxclaw/evolucao/<id>.md` (item e porquê, modelo que rodou, plano, diff resumido,
+   portões com segundos, revisão). Estado: **esperando Go**. O clone sai sempre.
+
+<!-- gerado:ajuda:evoluir:inicio -->
+Saida de `phxclaw ajuda evoluir`:
+
+```text
+Auto-evolucao: propoe um ramo verde e espera o Go (nunca mescla)
+
+USO:
+  phxclaw evoluir [--item NOME] [--modelo M] [--projeto DIR] [--pasta DIR] | itens | listar | aprovar ID | rejeitar ID [--motivo TEXTO]
+
+Escolhe um item parcial/nao do backlog fora dos vetados de config/evolucao-politica.json, implementa numa worktree pelo laco do agente (plano primeiro), confere o diff contra os caminhos vetados, roda fmt, clippy (zero avisos) e testes dos crates tocados e a revisao do proprio diff. So com tudo verde nasce o ramo evolucao/ID, com relatorio em .phxclaw/evolucao/; aprovar so marca e mostra o comando de merge. Sai 1 se nao ficou verde.
+
+Tambem aceito como: evolve
+```
+<!-- gerado:ajuda:evoluir:fim -->
+
+| Comando | O que faz |
+|---|---|
+| `phxclaw evoluir [--item N] [--modelo M]` | um ciclo; sai 1 se não ficou verde |
+| `phxclaw evoluir listar` | os registros, mais novos primeiro |
+| `phxclaw evoluir aprovar ID` | **só marca** aprovado e imprime o `git merge --no-ff` para você rodar; recusa se o ramo andou depois dos portões |
+| `phxclaw evoluir rejeitar ID --motivo T` | marca rejeitado; o ramo fica (apagar é seu) |
+
+**Modelo:** `--modelo`, senão `modelo.padrao`. A SP000015 pede modelo forte por API; sem chave
+(`phxclaw anthropic chave` / `phxclaw openai chave`) o ciclo roda com o que houver e o relatório
+diz qual rodou — e diz também quando há chave guardada e ela não foi usada.
+
+**Aprendizado:** cada desfecho (verde, vermelho, recusado, aprovado, rejeitado) vira uma linha em
+`.phxclaw/evolucao/desfechos.jsonl`: verde e aprovado como **PENDENTE**, os outros como
+**INFRUTÍFERO** com causa e prevenção. Nada vira FRUTÍFERO sozinho, e a escolha do item **não
+lê** esse arquivo: nada aprendido muda o comportamento sem Go.
+
+**Custo:** o clone deste monorepo pesa ~47 MB + ~110 MB de checkout (medido em 09/10/2026, 39 s),
+e os portões compilam o workspace dentro dele — reserve vários GB de disco por ciclo. Não há
+gatilho por agenda: rode por `cron`/`systemd` se quiser periodicidade.
+
 ## O que este guia não cobre
 
+- `phxclaw evoluir` **não rodou um ciclo real** contra este repositório com modelo de verdade
+  (09/10/2026): sem chave paga, sem Ollama, e com ~5 GB livres não cabe o `target/` de um
+  workspace inteiro. Está provado com modelo roteirizado num repositório git temporário
+  (`crates/phxclaw-agent/tests/evolucao.rs`).
+
+- A bateria entre provedores (seção 12) contra provedor **real** está **NÃO MEDIDA**
+  (09/10/2026): nesta máquina não há chave paga nem Ollama instalado; ela foi provada só com
+  provedores falsos locais (`crates/phxclaw-agent/tests/custo_orcamento.rs`).
 - O gerador só **exercita** `ajuda`, `config` e `ferramentas`: o guia diz o contrato, não
   prova que ele funciona contra o serviço real. OAuth do Google, Linear, ElevenLabs, Gemini e
   xAI não foram exercitados contra a conta real na escrita deste guia.

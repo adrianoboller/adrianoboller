@@ -201,6 +201,7 @@
     "tarefas.estado.completed": { "pt": "CONCLUÍDA", "en": "COMPLETED" },
     "tarefas.estado.failed": { "pt": "FALHOU", "en": "FAILED" },
     "tarefas.estado.cancelled": { "pt": "CANCELADA", "en": "CANCELLED" },
+    "tarefas.estado.budget_exceeded": { "pt": "ORÇAMENTO ESGOTADO", "en": "BUDGET EXCEEDED" },
     "grade.itens_por_pagina": { "pt": "itens por página", "en": "items per page" },
     "grade.arraste_agrupar": { "pt": "Arraste o cabeçalho de uma coluna para cá para agrupar", "en": "Drag a column header here to group by it" },
     "grade.linhas": { "pt": "linhas", "en": "rows" },
