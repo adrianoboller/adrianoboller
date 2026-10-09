@@ -294,9 +294,27 @@ fn a_resposta_sai_byte_a_byte_igual_com_e_sem_o_observador() {
         )
         .unwrap(),
     );
-    let escrito = |r: Result<Json>| match r {
-        Ok(j) => format!("ok {}", j.escrever()),
-        Err(e) => format!("erro {} {}", e.codigo(), e),
+    // O `ms` e o relogio da maquina, nao a resposta: dois despachos iguais
+    // saem com 1 e 2 conforme a carga (pedido 768). Ele vira `?`, e todo o
+    // resto continua comparado byte a byte -- campo a mais, a menos ou
+    // diferente continua derrubando a prova.
+    let sem_relogio = |t: String| {
+        let mut fora = String::with_capacity(t.len());
+        let mut resto = t.as_str();
+        while let Some(i) = resto.find("\"ms\":") {
+            let (antes, depois) = resto.split_at(i + 5);
+            fora.push_str(antes);
+            fora.push('?');
+            resto = depois.trim_start_matches(|c: char| c.is_ascii_digit());
+        }
+        fora.push_str(resto);
+        fora
+    };
+    let escrito = |r: Result<Json>| {
+        sem_relogio(match r {
+            Ok(j) => format!("ok {}", j.escrever()),
+            Err(e) => format!("erro {} {}", e.codigo(), e),
+        })
     };
     let com_observador: Vec<String> = pedidos
         .iter()
