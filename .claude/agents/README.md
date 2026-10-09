@@ -66,3 +66,8 @@ e busca — um revisor que pode editar deixa de ser revisor. `prova-real`,
 entregável deles é código, teste, tela ou documento. **Só o integrador
 comita**, por caminho explícito — nenhum agente empurra para o `origin`
 sozinho.
+
+## Contratados em 09/10/2026
+
+- `zelador.md` — papel D, que existia só como script e cláusula; agora tem agente.
+- `cognicao.md` — papel K, cognição própria e rede neural local em CPU, criado a partir da pesquisa de novas fontes.
