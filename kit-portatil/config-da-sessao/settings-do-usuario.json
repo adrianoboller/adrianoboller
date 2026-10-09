@@ -1,0 +1,21 @@
+{
+  "enabledPlugins": {
+    "vercel-plugin@vercel": true,
+    "oh-my-claudecode@omc": true,
+    "supabase@anthropic-plugin-directory": true
+  },
+  "extraKnownMarketplaces": {
+    "vercel": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/vercel/vercel-plugin.git"
+      }
+    },
+    "omc": {
+      "source": {
+        "source": "git",
+        "url": "https://github.com/Yeachan-Heo/oh-my-claudecode.git"
+      }
+    }
+  }
+}
