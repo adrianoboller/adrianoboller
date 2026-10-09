@@ -38,12 +38,48 @@ fn bin_do_pg() -> Option<PathBuf> {
     versoes.pop()
 }
 
+/// Root nao pode rodar o `postgres`; quem nao e root nao pode dar a pasta
+/// ao usuario `postgres` -- o executor do GitHub nao e root, e o teste caia
+/// no `chown` antes de provar qualquer coisa. Entao o cluster e de quem
+/// roda: sendo root, o `postgres` (por `runuser`); fora disso, o proprio
+/// usuario, sem `chown`. O que se prova -- o TLS contra um PostgreSQL de
+/// verdade -- e o mesmo nos dois casos.
+fn sou_root() -> bool {
+    std::fs::read_to_string("/proc/self/status")
+        .ok()
+        .and_then(|t| {
+            t.lines()
+                .find(|l| l.starts_with("Uid:"))
+                .and_then(|l| l.split_whitespace().nth(2).map(|u| u == "0"))
+        })
+        .unwrap_or(false)
+}
+
 fn como_postgres(args: &[&str]) -> std::process::Output {
-    Command::new("runuser")
-        .args(["-u", "postgres", "--"])
-        .args(args)
-        .output()
-        .unwrap()
+    if sou_root() {
+        Command::new("runuser")
+            .args(["-u", "postgres", "--"])
+            .args(args)
+            .output()
+            .unwrap()
+    } else {
+        Command::new(args[0]).args(&args[1..]).output().unwrap()
+    }
+}
+
+/// Da a pasta ao `postgres` so quando quem roda e root (ver `sou_root`).
+fn dar_ao_postgres(caminho: &Path) {
+    if !sou_root() {
+        return;
+    }
+    ok(
+        Command::new("chown")
+            .args(["-R", "postgres:postgres"])
+            .arg(caminho)
+            .output()
+            .unwrap(),
+        "chown",
+    );
 }
 
 fn ok(s: std::process::Output, oque: &str) {
@@ -172,7 +208,7 @@ fn certificados(d: &Path, prefixo: &str) {
 
 fn subir() -> Option<Cluster> {
     let bin = bin_do_pg()?;
-    if Command::new("runuser").arg("--help").output().is_err() {
+    if sou_root() && Command::new("runuser").arg("--help").output().is_err() {
         return None;
     }
     let pasta = DirTemp::novo("pg-tls");
@@ -184,14 +220,7 @@ fn subir() -> Option<Cluster> {
         .unwrap()
         .port();
     std::fs::write(dir.join("senha"), "senha-do-superusuario\n").unwrap();
-    ok(
-        Command::new("chown")
-            .args(["-R", "postgres:postgres"])
-            .arg(&dir)
-            .output()
-            .unwrap(),
-        "chown",
-    );
+    dar_ao_postgres(&dir);
     let dados = dir.join("dados");
     ok(
         como_postgres(&[
@@ -232,14 +261,7 @@ fn subir() -> Option<Cluster> {
             .unwrap(),
         "chmod",
     );
-    ok(
-        Command::new("chown")
-            .args(["-R", "postgres:postgres"])
-            .arg(&dir)
-            .output()
-            .unwrap(),
-        "chown",
-    );
+    dar_ao_postgres(&dir);
     ok(
         como_postgres(&[
             bin.join("pg_ctl").to_str().unwrap(),
