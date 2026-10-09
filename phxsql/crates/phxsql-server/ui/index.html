@@ -2829,6 +2829,9 @@ async function abrirApp() {
   // um login que so monitora -- seriam duas recusas 403 no console a cada
   // entrada, por uma tela que ninguem pediu.
   const telaPedida = !!(window.PhxTelas && rota.tela && PhxTelas._CATALOGO[rota.tela]);
+  // A TV de parede: menus e barras somem antes de a tela abrir, para a
+  // parede nunca mostrar o painel por um instante.
+  if (telaPedida && rota.tv) $("#app").dataset.tv = "1";
   await montarArvore(!telaPedida);
   // O campo "Database" do login abre a arvore ja na primeira tabela
   // desse banco, em vez de deixar o usuario procurar.
@@ -14285,13 +14288,16 @@ function telaTelemetria() {
  *
  * O aquario pede `aquario_retrato`, `aquario_log` e `aquario_contagens`, que
  * so exigem `monitorar` -- a TV de parede entra com um login que nao
- * administra nada. Login e IP nunca aparecem aqui (decisao do dono): quem
- * administra os ve na telemetria. */
+ * administra nada. Login e IP so aparecem no CARTAO de encerrar, e so a quem
+ * o servidor diz que pode encerrar (`completo`); a TV ve o pseudonimo. Com
+ * `&tv=1` (A13) a tela cobre a pagina e os menus somem. */
 function telaAquario() {
   folha(txt("tela.aq_titulo", "Aquário"),
         txt("tela.aq_subtitulo", "cada tarefa viva é uma bolha: a cor diz a gravidade, a altura diz o peso, e ela estoura ao terminar"),
         `<div id="aqTela"></div>`);
-  const ctl = PhxAquario.tela($("#aqTela"), { api, periodo: 2000 });
+  const tv = !!(window.PhxTelas && PhxTelas.rotaDaUrl().tv);
+  const ctl = PhxAquario.tela($("#aqTela"), { api, periodo: 2000, tv,
+    quem: (est.usuario && est.usuario.login) || "" });
   if (window.PhxTelas) PhxTelas.laco(() => ctl.parar(), () => ctl.retomar());
   // Trocar o idioma repinta a tela inteira: os rotulos das faixas e dos
   // graficos sao pintados uma vez.

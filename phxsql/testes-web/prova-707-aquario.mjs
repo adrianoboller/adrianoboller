@@ -25,6 +25,22 @@
  *   console  nenhum erro de console nem de pagina;
  *   contraste  rotulo das faixas, legenda e linha do log >= 4,5:1 nos dois temas.
  *
+ * E as fatias A12 e A13 (papel E, 09/10/2026):
+ *   cartao   o administrador clica na bolha de um `checksum` longo, o cartao
+ *            mostra o alvo NA PAGINA (sem confirm()), «Encerrar a operacao»
+ *            faz o pedido da vitima voltar CANCELADO, e «Derrubar a conexao»
+ *            fecha o soquete dela -- medido pelo `close` do lado de fora;
+ *   monitor  com o login so de `monitorar` (fora do modo TV) a bolha nao abre
+ *            cartao nenhum, e o `telemetria_encerrar` e o `encerrar_sessao`
+ *            forjados pela pagina voltam ACESSO_NEGADO;
+ *   tv       `&tv=1`: menu, barra de ferramentas, barra do topo e arvore
+ *            invisiveis; o usuario chega PSEUDONIMIZADO (o mesmo para as
+ *            quatro conexoes da carga, e nunca o login);
+ *   volta    «Voltar 5 min» para de pedir o retrato, poe o selo em REPRISE e
+ *            mostra a bolha de uma tarefa que JA estourou; «Ao vivo» volta;
+ *   velho    o `phxsqld` morto por SIGKILL com as TVs abertas (os dois
+ *            temas): o selo vira VELHO, e o tempo ate isso e MEDIDO (<= 3 s).
+ *
  * Sai com codigo 1 se qualquer medida reprovar. Capturas em target/. */
 import { chromium } from '/opt/node22/lib/node_modules/playwright/index.mjs';
 import { spawnSync } from 'node:child_process';
@@ -64,6 +80,9 @@ async function conexao(porta, { de = '127.0.0.1', login = null } = {}) {
   s.setEncoding('utf8');
   s.on('error', () => {});
   await new Promise((res, rej) => { s.once('connect', res); s.once('error', rej); });
+  // A queda da conexao vista de FORA (a licao do BULKINSERT): o `close` do
+  // soquete, e nao a palavra do servidor.
+  const fechada = new Promise(res => s.once('close', () => res(Date.now())));
   let buf = ''; const espera = [];
   s.on('data', d => {
     buf += d; let i;
@@ -77,8 +96,48 @@ async function conexao(porta, { de = '127.0.0.1', login = null } = {}) {
     const r = await pedir({ op: 'login', usuario: login, senha: SENHA });
     if (!r.ok) throw new Error(`login ${login}: ${JSON.stringify(r)}`);
   }
-  return { pedir, fechar: () => s.destroy() };
+  return { pedir, fechar: () => s.destroy(), fechada };
 }
+
+/* A entrada do modo TV: o mesmo formulario, mas sem esperar a arvore
+ * VISIVEL -- na TV ela esta escondida de proposito. */
+async function entrarTv(page, url) {
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => typeof est === 'object' && est.demo === false, { timeout: 15000 });
+  await page.fill('#u', 'tv');
+  await page.fill('#s', SENHA);
+  await page.fill('#t', TOKEN);
+  await page.click('#btEntrar');
+  // `attached`, e prazo de 40 s: com a carga segurando a trava, a arvore que
+  // o login monta por baixo leva o que leva -- e na TV ela nem aparece.
+  await page.waitForSelector('#app.ativo[data-pronto="1"]', { state: 'attached', timeout: 40000 });
+}
+
+/* Clica NO CENTRO da bolha, com o mouse de verdade. A bolha nada: tenta
+ * algumas vezes ate o clique cair nela (ou ate `pronto` dizer que basta). */
+async function clicarNaBolha(page, id, pronto) {
+  for (let i = 0; i < 6; i++) {
+    const caixa = await page.locator(`#aqTela .aq-b[data-id="${id}"] .aq-forma`).boundingBox().catch(() => null);
+    if (!caixa) return false;
+    await page.mouse.click(caixa.x + caixa.width / 2, caixa.y + caixa.height / 2);
+    await dormir(300);
+    if (await pronto()) return true;
+  }
+  return false;
+}
+
+const RAZAO = `(() => {
+  const rgba = s => (s.match(/[\\d.]+/g) || [0, 0, 0]).map(Number);
+  const lum = c => { const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; };
+    return .2126 * f(c[0]) + .7152 * f(c[1]) + .0722 * f(c[2]); };
+  const razao = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); };
+  const fundoDe = el => { for (let e = el; e; e = e.parentElement) {
+    const c = getComputedStyle(e).backgroundColor; const v = rgba(c);
+    if (!(c.startsWith('rgba') && v[3] === 0)) return v; } return [255, 255, 255]; };
+  return el => razao(rgba(getComputedStyle(el).color), fundoDe(el));
+})()`;
+
+const tvsAbertas = [];
 
 const h = hash(SENHA);
 const servidor = await subir({
@@ -131,7 +190,10 @@ try {
     (async () => {
       while (cargaViva) {
         await c.pedir({ op: 'agrupar', database: DB, tabela: TAB, por: ['valor'], agregados: [{ funcao: 'soma', coluna: 'id', apelido: 's' }] });
-        await dormir(50 + 150 * k);
+        // folga entre as somas: com 300 mil linhas a 5 s cada, quatro lacos
+        // colados seguravam a trava o tempo todo e a ARVORE do login levava
+        // mais de 20 s -- medido em 09/10, na corrida da A12.
+        await dormir(700 + 400 * k);
       }
     })();
   }
@@ -311,8 +373,100 @@ try {
     const completo = ultimo && (ultimo.tarefas || []).some(t => t.usuario === CARGA_LOGIN && t.ip === CARGA_IP);
     const html = await page.evaluate(() => document.documentElement.outerHTML);
     nota(completo, 'o retrato do administrador traz login e IP (a prova tem o dado)', completo);
-    nota(!html.includes(CARGA_LOGIN) && !html.includes(CARGA_IP), 'nem o administrador ve login/IP no aquario',
+    nota(!html.includes(CARGA_LOGIN) && !html.includes(CARGA_IP), 'sem cartao aberto, nem o administrador ve login/IP no aquario',
       `${html.includes(CARGA_LOGIN)}/${html.includes(CARGA_IP)}`);
+
+    // ------------------------------------------------ A12: o cartao
+    passo('cartao');
+    const dialogos = [];
+    page.on('dialog', d => { dialogos.push(d.message()); d.dismiss().catch(() => {}); });
+    const VITIMA_IP = '127.0.0.4';
+    const vitima = await conexao(6370, { de: VITIMA_IP, login: CARGA_LOGIN });
+    const tSoma = Date.now();
+    const soma = vitima.pedir({ op: 'checksum', database: DB, tabela: TAB }).then(r => ({ r, ms: Date.now() - tSoma }));
+    // a tarefa da vitima no retrato que a TELA recebeu
+    let alvo = null;
+    for (let i = 0; i < 40 && !alvo; i++) {
+      await dormir(250);
+      alvo = (ultimo && (ultimo.tarefas || []).find(t => t.op === 'checksum' && t.ip === VITIMA_IP)) || null;
+    }
+    nota(!!alvo, 'a soma longa da vitima aparece no retrato', alvo ? alvo.tarefa : 'nao apareceu');
+    const visivel = sel => page.evaluate(s => { const e = document.querySelector(s);
+      return !!e && !e.hidden && e.getBoundingClientRect().height > 0; }, sel);
+    let abriu = false;
+    if (alvo) {
+      await page.waitForSelector(`#aqTela .aq-b[data-id="${alvo.tarefa}"]`, { timeout: 8000 }).catch(() => {});
+      abriu = await clicarNaBolha(page, alvo.tarefa, () => visivel('#aqTela .aqt-cartao'));
+    }
+    const ficha = await page.evaluate(() => document.querySelector('#aqTela .aqt-cartao')?.innerText || '');
+    nota(abriu && ficha.includes(alvo.tarefa) && ficha.includes(CARGA_LOGIN) && ficha.includes(VITIMA_IP) && ficha.includes('checksum'),
+      'clique na bolha abre o cartao com o alvo (tarefa, login, IP, op)', ficha.replace(/\s+/g, ' ').slice(0, 220));
+    const sel = alvo && await page.evaluate(id => document.querySelector(`#aqTela .aq-b[data-id="${id}"]`)?.classList.contains('aq-sel'), alvo.tarefa);
+    nota(!!sel, 'a bolha escolhida fica marcada', String(sel));
+    // contraste do cartao e do selo
+    const cc = await page.evaluate(src => { const r = eval(src);
+      return { ficha: r(document.querySelector('#aqTela .aqt-ficha .aqt-r')), valor: r(document.querySelector('#aqTela .aqt-ficha .aqt-v')),
+               perde: r(document.querySelector('#aqTela .aqt-perde')), selo: r(document.querySelector('#aqTela .aqt-selo')),
+               botao: r(document.querySelector('#aqTela .aqt-k-encerrar')) }; }, RAZAO);
+    for (const [k, r] of Object.entries(cc)) nota(r >= 4.5, `contraste do cartao: ${k}`, r.toFixed(2) + ':1');
+    const fundoBotao = await page.evaluate(() => getComputedStyle(document.querySelector('#aqTela .aqt-k-encerrar')).backgroundColor);
+    nota(/rgba\(0, 0, 0, 0\)|transparent/.test(fundoBotao), 'botao de encerrar e contorno, nao fundo cheio', fundoBotao);
+    await page.screenshot({ path: join(SAIDA, `aquario-cartao-${tema}.png`) });
+    if (abriu) {
+      await page.click('#aqTela .aqt-k-encerrar');
+      await page.waitForSelector('#aqTela .aqt-res[data-desfecho]', { timeout: 10000 }).catch(() => {});
+    }
+    const desfecho = await page.evaluate(() => document.querySelector('#aqTela .aqt-res')?.getAttribute('data-desfecho') || '');
+    nota(['encerrando', 'marcada'].includes(desfecho), 'encerrar pelo cartao: o servidor aceita', desfecho);
+    const fimSoma = await Promise.race([soma, dormir(30000).then(() => null)]);
+    nota(!!fimSoma && !fimSoma.r.ok && /CANCELADO/.test(`${fimSoma.r.nome} ${fimSoma.r.erro}`),
+      'a soma da vitima volta CANCELADA', fimSoma ? `${fimSoma.ms} ms ${fimSoma.r.nome || ''} ${(fimSoma.r.erro || '').slice(0, 60)}` : 'nao voltou em 30 s');
+    // o alvo terminou: o cartao continua dizendo o que era, e oferece derrubar
+    await dormir(2500);
+    const tDerruba = Date.now();
+    const podeDerrubar = await visivel('#aqTela .aqt-k-derrubar');
+    if (podeDerrubar) await page.click('#aqTela .aqt-k-derrubar');
+    const caiu = await Promise.race([vitima.fechada, dormir(8000).then(() => 0)]);
+    nota(podeDerrubar && caiu > 0, 'derrubar pelo cartao: a conexao da vitima cai (close do soquete)',
+      caiu ? `${caiu - tDerruba} ms` : 'nao caiu em 8 s');
+    nota(dialogos.length === 0, 'nenhum confirm()/alert() do navegador', dialogos.join(' | ') || 'nenhum');
+    await page.click('#aqTela .aqt-k-fechar').catch(() => {});
+
+    // --------------------------------------------- A13: a volta de 5 min
+    passo('volta');
+    const linhas = await page.evaluate(() => api('aquario_log', { desde: Date.now() - 280000, max: 2000 }).then(r => r.linhas));
+    const estourada = linhas.filter(l => l.evento === 'estourou' && l.tabela === TAB && l.ms >= 1000).pop();
+    await page.click('#aqTela .aqt-bt-volta');
+    await page.waitForSelector('#aqTela .aqt-selo[data-estado="reprise"]', { timeout: 5000 }).catch(() => {});
+    const r0 = (() => { let n = 0; return { ini: () => n, inc: () => n++ }; })();
+    const contaRetrato = r => { if (r.url().endsWith('/api') && /"op":"aquario_retrato"/.test(r.postData() || '')) r0.inc(); };
+    page.on('request', contaRetrato);
+    // poe o trilho no meio da vida da tarefa que ja estourou
+    let achouVelha = false, comoVelha = 'sem estourou da tabela nos ultimos 5 min';
+    if (estourada) {
+      const meio = estourada.quando_ms - Math.floor(estourada.ms / 2);
+      const res = await page.evaluate(m => {
+        const tr = document.querySelector('#aqTela .aqt-trilho');
+        const q = document.querySelector('#aqTela .aqt-quando');
+        const ini = Date.parse(q.dateTime) - (+tr.value);
+        tr.value = String(m - ini); tr.dispatchEvent(new Event('input'));
+        return { ini, valor: tr.value };
+      }, meio);
+      await dormir(800);
+      const bolhas = await page.evaluate(() => [...document.querySelectorAll('#aqTela .aq-b:not(.aq-fim)')]
+        .map(g => ({ id: g.getAttribute('data-id'), t: g.querySelector('title')?.textContent || '' })));
+      achouVelha = bolhas.some(b => b.id.startsWith('volta:') && b.t.includes(TAB));
+      comoVelha = `trilho ${res.valor} ms; ${bolhas.length} bolhas, ${bolhas.filter(b => b.id.startsWith('volta:')).length} do log`;
+    }
+    nota(achouVelha, 'voltar 5 min mostra a bolha que ja estourou', comoVelha);
+    await dormir(2500);
+    nota(r0.ini() === 0, 'na reprise o retrato nao e pedido (a tela congela)', `${r0.ini()} em ~3 s`);
+    await page.screenshot({ path: join(SAIDA, `aquario-volta-${tema}.png`) });
+    await page.click('#aqTela .aqt-bt-vivo');
+    await page.waitForSelector('#aqTela .aqt-selo[data-estado="fresco"]', { timeout: 6000 }).catch(() => {});
+    const vivoDeNovo = await page.evaluate(() => document.querySelector('#aqTela .aqt-selo').dataset.estado);
+    nota(vivoDeNovo === 'fresco' && r0.ini() > 0, 'ao vivo de novo: retrato pedido e selo fresco', `${vivoDeNovo}, ${r0.ini()} retratos`);
+    page.off('request', contaRetrato);
 
     passo('alca');
     // -- a alca da telemetria
@@ -338,6 +492,45 @@ try {
     nota(erros.length === 0, 'console sem erro (administrador)', erros.slice(0, 3).join(' | ') || 'nenhum');
     await ctx.close();
 
+    // ------------------------------- A12: quem so monitora (fora da TV)
+    passo('monitor');
+    const ctxMon = await nav.newContext({ viewport: { width: 1600, height: 900 } });
+    await ctxMon.route(u => !u.href.startsWith(servidor.url), r => r.abort());
+    await ctxMon.addInitScript(t => { try { localStorage.setItem('phxsql-tema', t); } catch {} }, tema);
+    const mon = await ctxMon.newPage();
+    const errosMon = [];
+    mon.on('console', m => { if (m.type() === 'error') errosMon.push(m.text()); });
+    mon.on('pageerror', e => errosMon.push(String(e)));
+    let retratoMon = null;
+    mon.on('response', async r => {
+      if (!r.url().endsWith('/api') || !(r.request().postData() || '').includes('"op":"aquario_retrato"')) return;
+      try { const j = await r.json(); if (j.ok) retratoMon = j.resultado; } catch {}
+    });
+    await entrar(mon, servidor.url + '?tela=aquario', { usuario: 'tv', senha: SENHA, token: TOKEN });
+    await mon.waitForSelector('#aqTela .aq-b', { timeout: 20000 });
+    await dormir(3000);
+    const umaBolha = retratoMon && (retratoMon.tarefas || []).find(t => t.tabela === TAB);
+    let abriuMon = false;
+    if (umaBolha) {
+      abriuMon = await clicarNaBolha(mon, umaBolha.tarefa, () => mon.evaluate(() => {
+        const e = document.querySelector('#aqTela .aqt-cartao'); return !!e && !e.hidden; }));
+    }
+    const tab = await mon.evaluate(() => document.querySelectorAll('#aqTela .aq-b[tabindex]').length);
+    nota(!!umaBolha && !abriuMon && tab === 0, 'monitorar: a bolha nao abre cartao (nem por teclado)',
+      `${umaBolha ? umaBolha.tarefa : 'sem bolha'} abriu=${abriuMon} tabindex=${tab}`);
+    const errosAntes = errosMon.length;
+    const forjados = await mon.evaluate(([id, n]) => Promise.all([
+      api('telemetria_encerrar', { id }).then(() => 'ACEITO', e => e.nome),
+      api('encerrar_sessao', { id: n, tipo: 'conexao' }).then(() => 'ACEITO', e => e.nome),
+    ]), [umaBolha ? umaBolha.tarefa : 'dados:1#1', umaBolha ? +String(umaBolha.tarefa).split(/[:#]/)[1] : 1]);
+    nota(forjados.every(n => n === 'ACESSO_NEGADO'), 'monitorar: encerrar forjado pela pagina e recusado', forjados.join(', '));
+    // os dois forjados voltam 403, e o navegador escreve cada um no console;
+    // fora eles, nada
+    const errosDepois = errosMon.slice(errosAntes);
+    nota(errosAntes === 0 && errosDepois.length === 2 && errosDepois.every(e => /status of 403/.test(e)),
+      'console sem erro (monitor), fora as duas recusas 403 forjadas', errosMon.slice(0, 3).join(' | ') || 'nenhum');
+    await ctxMon.close();
+
     passo('tv');
     // ------------------------------------------------- a TV: so monitorar
     const ctxTv = await nav.newContext({ viewport: { width: 1920, height: 1080 } });
@@ -356,7 +549,7 @@ try {
       if (!r.url().endsWith('/api') || !(r.request().postData() || '').includes('"op":"aquario_retrato"')) return;
       try { const j = await r.json(); if (j.ok) retratoTv = j.resultado; } catch {}
     });
-    await entrar(tv, servidor.url + '?tela=aquario', { usuario: 'tv', senha: SENHA, token: TOKEN });
+    await entrarTv(tv, servidor.url + '?tela=aquario&tv=1');
     await tv.waitForSelector('#aqTela .aq-b', { timeout: 20000 });
     await dormir(5000);
     const htmlTv = await tv.evaluate(() => document.documentElement.outerHTML);
@@ -366,11 +559,54 @@ try {
     nota(!htmlTv.includes(CARGA_LOGIN) && !htmlTv.includes(CARGA_IP), 'TV: login e IP fora do DOM',
       `${htmlTv.includes(CARGA_LOGIN)}/${htmlTv.includes(CARGA_IP)}`);
     await tv.screenshot({ path: join(SAIDA, `aquario-tv-${tema}.png`) });
+    // -- A13: sem menu, sem barra
+    const barras = await tv.evaluate(() => ['.barra', '.menubar', '#ferramentas', '.lateral', '#btLateral']
+      .map(s => { const e = document.querySelector(s); const r = e && e.getBoundingClientRect();
+        return `${s}=${!!e && getComputedStyle(e).display !== 'none' && r.width > 0 && r.height > 0}`; }));
+    const cobre = await tv.evaluate(() => { const r = document.querySelector('#aqTela').getBoundingClientRect();
+      return r.width >= innerWidth - 1 && r.height >= innerHeight - 1; });
+    nota(barras.every(b => b.endsWith('=false')) && cobre, 'TV: nenhum menu nem barra, o aquario cobre a tela',
+      barras.join(' ') + ` cobre=${cobre}`);
+    // -- o usuario pseudonimizado: estavel por pessoa, nunca o login
+    const pseud = [...new Set((retratoTv?.tarefas || []).filter(t => t.tabela === TAB).map(t => t.pseudonimo))];
+    const titulos = await tv.evaluate(() => [...document.querySelectorAll('#aqTela .aq-b title')].map(t => t.textContent).join(' | '));
+    nota(pseud.length === 1 && /^[0-9a-f]{8}$/.test(pseud[0] || '') && pseud[0] !== CARGA_LOGIN && titulos.includes(pseud[0]),
+      'TV: o usuario chega pseudonimizado, o mesmo nas quatro conexoes', `${pseud.join(',')} na tela=${titulos.includes(pseud[0])}`);
+    const seloTv = await tv.evaluate(() => document.querySelector('#aqTela .aqt-selo').dataset.estado);
+    nota(seloTv === 'fresco', 'TV: selo de frescor no ar, fresco', seloTv);
+    const cartaoTv = await tv.evaluate(() => { const e = document.querySelector('#aqTela .aqt-cartao'); return !!e && !e.hidden; });
+    nota(!cartaoTv, 'TV: sem cartao de encerrar', String(cartaoTv));
     // A TV entra sem direito de administrar: o Painel que o login abre por
     // baixo pode recusar, e isso aparece como aviso na tela, nao no console.
     nota(errosTv.length === 0, 'console sem erro (TV)', (errosTv.slice(0, 3).join(' | ') || 'nenhum') + ' ' + recusasTv.join(' | '));
-    await ctxTv.close();
+    // A TV fica no ar: e nela que o servidor vai morrer, no fim.
+    tvsAbertas.push({ tema, tv, errosTv, ctxTv });
   }
+  // ------------------------------------------ A13: o servidor derrubado
+  passo('servidor derrubado');
+  for (const t of tvsAbertas) {
+    await t.tv.bringToFront();
+    t.antes = await t.tv.evaluate(() => document.querySelector('#aqTela .aqt-selo').dataset.estado);
+    t.nErros = t.errosTv.length;
+  }
+  const tMorte = Date.now();
+  process.kill(servidor.pid, 'SIGKILL');
+  const medidas = await Promise.all(tvsAbertas.map(async t => {
+    const ok = await t.tv.waitForFunction(() => document.querySelector('#aqTela .aqt-selo').dataset.estado === 'velho'
+      && document.querySelector('#aqTela').classList.contains('aqt-velho'), null, { timeout: 10000, polling: 50 })
+      .then(() => true, () => false);
+    return { tema: t.tema, ok, ms: Date.now() - tMorte, texto: await t.tv.evaluate(() => document.querySelector('#aqTela .aqt-selo').textContent) };
+  }));
+  for (const [i, m] of medidas.entries()) {
+    const t = tvsAbertas[i];
+    nota(t.antes === 'fresco' && m.ok && m.ms <= 3000, `servidor derrubado: VELHO em <= 3 s (TV ${m.tema})`,
+      `antes=${t.antes}, ${m.ms} ms, «${m.texto}»`);
+    await t.tv.screenshot({ path: join(SAIDA, `aquario-tv-velho-${m.tema}.png`) });
+    // so a recusa de rede do servidor morto pode aparecer no console
+    const novos = t.errosTv.slice(t.nErros).filter(e => !/ERR_CONNECTION_REFUSED|Failed to load resource|Failed to fetch/.test(e));
+    nota(novos.length === 0, `TV ${m.tema}: depois da queda, so erro de rede`, novos.slice(0, 2).join(' | ') || 'nenhum outro');
+  }
+  for (const t of tvsAbertas) await t.ctxTv.close();
 } catch (e) {
   nota(false, 'excecao', e && e.stack || e);
 } finally {

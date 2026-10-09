@@ -1089,6 +1089,8 @@ window.PhxTelas = (function () {
     return {
       tela, db: q.get("db") || "", tab: q.get("tab") || "",
       destacada: q.get("destacada") === "1" && !!CATALOGO[tela],
+      // A TV de parede (pedido 707, A13): so o aquario tem modo TV.
+      tv: q.get("tv") === "1" && tela === "aquario",
     };
   }
 

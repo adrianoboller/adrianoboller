@@ -16,11 +16,26 @@
  *
  * ## O que a TV mostra (decisao do dono, 09/10/2026)
  *
- * So OPERACAO, TABELA e COR. A ligacao copia do retrato exatamente os campos
- * que desenha — tarefa, op, tabela, cor, faixa, motivo, ms — e NUNCA toca em
- * `usuario` ou `ip`, nem quando o servidor os manda ao administrador: quem
- * administra os ve pelo portao da telemetria, na tela dela. O que nao e lido
- * nao vaza, nem por engano de uma tela futura.
+ * So OPERACAO, TABELA, COR e o usuario PSEUDONIMIZADO. A fisica copia do
+ * retrato exatamente os campos que desenha — tarefa, op, tabela, cor, faixa,
+ * motivo, ms, pseudonimo — e NUNCA toca em `usuario` ou `ip`. O pseudonimo e
+ * do servidor (HMAC do login com um sal que so ele tem): a tela nao sabe
+ * desfaze-lo, e por isso pode mostra-lo.
+ *
+ * O unico lugar que le `usuario` e `ip` e o CARTAO DE ENCERRAR (A12), e ele so
+ * existe quando o servidor diz `completo` — a mesma pergunta com que ele
+ * recusaria o `telemetria_encerrar`. Quem so monitora nao recebe os campos,
+ * nao ve o cartao e, se forjar o pedido, e recusado no servidor.
+ *
+ * ## Modo TV e frescor (A13)
+ *
+ * `tv: true` cobre a pagina inteira e nunca abre o cartao. O SELO de frescor
+ * diz ha quanto tempo chegou o ultimo retrato; passou de 3 s, ou o ultimo
+ * pedido falhou, a tela inteira se declara VELHA — painel congelado mente
+ * pior que painel vazio. A VOLTA DE 5 MIN pausa o ao vivo e reconstroi o
+ * tanque pelo `aquario.log`: cada `estourou` diz quando a tarefa acabou e
+ * quanto durou, e isso basta para saber quem estava no tanque em cada
+ * instante.
  *
  * ## Quatro cuidados
  *
@@ -302,7 +317,7 @@ window.PhxAquario = (function () {
           e.porId.set(id, b);
         }
         // so estes campos do retrato; login e IP nao existem para este modulo
-        b.op = t.op; b.tabela = t.tabela; b.motivo = t.motivo;
+        b.op = t.op; b.tabela = t.tabela; b.motivo = t.motivo; b.pessoa = t.pseudonimo || "";
         b.cor = CORES[t.cor] ? t.cor : "verde";
         b.faixa = faixa; b.ms = t.ms || 0;
         b.bruto = raioAlvo(b.ms);
@@ -378,6 +393,9 @@ window.PhxAquario = (function () {
 .aq .aq-b .aq-rot{fill:var(--texto,#e6ecf7);text-anchor:middle;font-size:10px;pointer-events:none;
   paint-order:stroke;stroke:var(--fundo,#010418);stroke-width:2px;text-transform:none}
 .aq .aq-b.aq-fim .aq-forma{fill-opacity:0}
+.aq.aq-clic .aq-b:not(.aq-fim){cursor:pointer}
+.aq .aq-b:focus{outline:none}
+.aq .aq-b:focus-visible .aq-forma,.aq .aq-b.aq-sel .aq-forma{stroke-width:4px}
 .aq .aq-vazio{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
   color:var(--mudo,#8b98b4)}
 .aq.aq-sem .aq-vazio{display:flex}
@@ -387,8 +405,50 @@ window.PhxAquario = (function () {
 .aqt{display:flex;flex-direction:column;gap:10px;font-family:"Exo 2",system-ui,sans-serif;
   color:var(--texto,#e6ecf7);text-transform:none;min-width:0}
 .aqt *{text-transform:none}
-.aqt-estado{font-size:12.5px;color:var(--texto-2,#a8b0c0);min-height:1.4em}
+.aqt-topo{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;min-width:0}
+.aqt-estado{font-size:12.5px;color:var(--texto-2,#a8b0c0);min-height:1.4em;flex:1;min-width:200px}
 .aqt-estado.aqt-mal{color:var(--vermelho,#ff5f5f)}
+/* O SELO de frescor: contorno, nunca fundo cheio, e a palavra VELHO escrita
+   -- a cor nao e o unico sinal. */
+.aqt-selo{flex:none;font-size:12px;font-weight:600;letter-spacing:.03em;padding:3px 9px;border-radius:999px;
+  border:1px solid var(--linha-forte,#2b3a56);color:var(--texto-2,#a8b0c0);font-variant-numeric:tabular-nums}
+.aqt-selo[data-estado="fresco"]{border-color:var(--ok,#6cc98c);color:var(--ok,#6cc98c)}
+.aqt-selo[data-estado="velho"]{border:2px dashed var(--vermelho,#ff5f5f);color:var(--vermelho,#ff5f5f)}
+.aqt-selo[data-estado="reprise"]{border:2px dotted var(--acao-consultar,#5fa6e8);color:var(--acao-consultar,#5fa6e8)}
+.aqt.aqt-velho .aqt-agua{border:2px dashed var(--vermelho,#ff5f5f)}
+.aqt.aqt-velho .aqt-agua .aq svg{filter:grayscale(.85) brightness(.5)}
+.aqt.aqt-reprise .aqt-agua{border:2px dotted var(--acao-consultar,#5fa6e8)}
+.aqt-volta{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.aqt-volta[hidden],.aqt-reprise[hidden]{display:none}
+.aqt-reprise{display:flex;align-items:center;gap:8px}
+.aqt .aqt-trilho{width:180px;flex:none;padding:0;accent-color:var(--acao-consultar,#5fa6e8)}
+.aqt-quando{font-size:12px;color:var(--texto-2,#a8b0c0);font-variant-numeric:tabular-nums;min-width:7ch}
+.aqt .botao.aqt-bt{width:auto;padding:4px 10px;font-size:11.5px;font-weight:600}
+.aqt-tanque{position:relative}
+
+/* O CARTAO de encerrar (A12): sobre o tanque, na propria pagina -- e a
+   confirmacao, e nao um confirm() do navegador, que nao diz o que se perde. */
+.aqt-cartao{position:absolute;top:10px;right:10px;z-index:5;width:min(420px,calc(100% - 20px));
+  max-height:calc(100% - 20px);overflow:auto;background:var(--painel,#0a1122);
+  border:1px solid var(--acao-excluir,#ff5f5f);border-radius:8px;padding:12px 14px;
+  box-shadow:0 6px 24px rgba(0,0,0,.45);display:flex;flex-direction:column;gap:8px}
+.aqt-cartao[hidden]{display:none}
+.aqt-cartao h4{margin:0;font-size:14px;font-weight:700;color:var(--texto,#e6ecf7)}
+.aqt-ficha{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 10px;font-size:12px;margin:0}
+.aqt-ficha .aqt-r{color:var(--texto-3,#848da0)}
+.aqt-ficha .aqt-v{color:var(--texto,#e6ecf7);overflow-wrap:anywhere}
+.aqt-promessa,.aqt-perde{font-size:12px;line-height:1.45;margin:0;color:var(--texto-2,#a8b0c0)}
+.aqt-perde{border-left:3px solid var(--acao-excluir,#ff5f5f);padding-left:8px}
+.aqt-acoes{display:flex;flex-wrap:wrap;gap:8px}
+.aqt-res{font-size:12.5px;margin:0;color:var(--texto,#e6ecf7)}
+.aqt-res.aqt-mal{color:var(--vermelho,#ff5f5f)}
+.aqt-assina{font-size:11px;color:var(--texto-3,#848da0);margin:0}
+
+/* MODO TV (A13): a pagina inteira e o aquario. Os menus e as barras somem
+   por #app[data-tv], no index.html; aqui o aquario cobre o resto. */
+.aqt.aqt-tv{position:fixed;inset:0;z-index:60;padding:14px 18px;background:var(--fundo,#010418);overflow:auto}
+.aqt.aqt-tv .aqt-tanque,.aqt.aqt-tv .aqt-log{height:calc(100vh - 80px);max-height:none}
+.aqt.aqt-tv .aqt-selo{font-size:15px;padding:5px 12px}
 .aqt-corpo{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(240px,1fr) minmax(250px,1fr);
   gap:12px;align-items:stretch;min-width:0}
 @media (max-width:1180px){.aqt-corpo{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
@@ -479,6 +539,23 @@ window.PhxAquario = (function () {
     const motor = criarMotor(caixa, op);
     const nos = new Map();     // id -> { g, forma, dupla, rot, tit }
     const stats = { quadros: 0, msFrame: 0 };
+    // A bolha CLICAVEL so existe quando quem esta olhando pode encerrar: a
+    // tela pergunta ao retrato (`completo`), nunca decide sozinha.
+    let clic = false, selecionada = "";
+    function aoEscolher(ev) {
+      if (!clic || !op.aoClicar) return;
+      const g = ev.target && ev.target.closest && ev.target.closest(".aq-b");
+      if (!g || g.classList.contains("aq-fim")) return;
+      if (ev.type === "keydown" && ev.key !== "Enter" && ev.key !== " ") return;
+      ev.preventDefault();
+      op.aoClicar(g.getAttribute("data-id"));
+    }
+    gBolhas.addEventListener("click", aoEscolher);
+    gBolhas.addEventListener("keydown", aoEscolher);
+    function tornarClicavel(g) {
+      if (clic) { g.setAttribute("tabindex", "0"); g.setAttribute("role", "button"); }
+      else { g.removeAttribute("tabindex"); g.removeAttribute("role"); }
+    }
 
     function medir() {
       caixa.w = host.clientWidth || caixa.w; caixa.h = host.clientHeight || caixa.h;
@@ -505,6 +582,7 @@ window.PhxAquario = (function () {
       const dupla = el("circle", { class: "aq-dupla" });
       const rot = el("text", { class: "aq-rot", y: 3 });
       g.append(tit, forma, dupla, rot);
+      tornarClicavel(g);
       gBolhas.append(g);
       n = { g: g, forma: forma, dupla: dupla, rot: rot, tit: tit, cor: b.cor };
       nos.set(b.id, n);
@@ -538,13 +616,22 @@ window.PhxAquario = (function () {
         if (c.forma === "circulo") n.forma.setAttribute("r", r.toFixed(1));
         else n.forma.setAttribute("points", pontos(c.forma, r));
         // borda dupla clara do azul escuro: e o que o torna visivel (3,04:1)
-        if (c.dupla) {
+        if (b.id === selecionada && !b.estourando) {
+          // a escolhida do cartao ganha um anel de fora, tracejado na cor do
+          // texto: e a mesma bolha que o cartao descreve
+          n.dupla.setAttribute("r", (r + 5).toFixed(1));
+          n.dupla.setAttribute("stroke", "var(--texto,#e6ecf7)"); n.dupla.setAttribute("stroke-width", 1.5);
+          n.dupla.setAttribute("stroke-dasharray", "3 3");
+          n.dupla.style.display = "";
+        } else if (c.dupla) {
           n.dupla.setAttribute("r", Math.max(0, r - 5).toFixed(1));
           n.dupla.setAttribute("stroke", cor); n.dupla.setAttribute("stroke-width", 1.5);
+          n.dupla.removeAttribute("stroke-dasharray");
           n.dupla.style.display = "";
         } else n.dupla.style.display = "none";
         n.g.setAttribute("opacity", b.estourando ? (1 - b.idade / M.estouroMs).toFixed(2) : "1");
         n.g.classList.toggle("aq-fim", !!b.estourando);
+        n.g.classList.toggle("aq-sel", b.id === selecionada && !b.estourando);
         if (!b.estourando) {
           // rotulo e DADO: texto cru, sem caixa alta imposta
           // Cabe o que cabe na bolha, e o corte se ANUNCIA com reticencias:
@@ -555,7 +642,8 @@ window.PhxAquario = (function () {
           n.rot.textContent = r < M.rotuloMin ? ""
             : nome.length <= cabe ? nome : nome.slice(0, Math.max(1, cabe - 1)) + "…";
           const tx = String(b.op || "") + " " + String(b.tabela || "") +
-            " (" + ROTULO_DA_COR[b.cor]() + ")" + (b.motivo ? " — " + motivo(b.motivo) : "");
+            " (" + ROTULO_DA_COR[b.cor]() + ")" + (b.motivo ? " — " + motivo(b.motivo) : "") +
+            (b.pessoa ? " · " + preencher(txt("tela.aq_pessoa", "pessoa {p}"), { p: b.pessoa }) : "");
           n.tit.textContent = tx;
           n.g.setAttribute("aria-label", tx);
         }
@@ -593,6 +681,13 @@ window.PhxAquario = (function () {
       iniciar: function () { if (!raf) { ultimo = 0; raf = requestAnimationFrame(quadro); } },
       rodando: function () { return raf !== 0; },
       soltar: function () { api.parar(); if (observador) observador.disconnect(); },
+      clicavel: function (sim) {
+        if (clic === !!sim) return;
+        clic = !!sim;
+        host.classList.toggle("aq-clic", clic);
+        for (const n of nos.values()) tornarClicavel(n.g);
+      },
+      selecionar: function (id) { selecionada = id || ""; },
     };
     if (op.auto !== false) api.iniciar();
     return api;
@@ -725,25 +820,85 @@ window.PhxAquario = (function () {
           { p: cobre, quando: data(total.ultimo) + " " + hora(total.ultimo) });
   }
 
-  /** `tela(host, { api, compacto, periodo })` — o aquario ligado ao servidor.
+  /* O selo passa a VELHO quando o ultimo retrato bom tem mais que isto (o
+   * desenho, §6: «passou de 3 s»). A volta pede a cada 2 s; com a resposta
+   * de um servidor vivo a idade nunca passa de ~2,1 s. */
+  const LIMITE_VELHO_MS = 3000;
+  /* A volta de cinco minutos: a janela e a velocidade da reprise (10×, os
+   * cinco minutos em trinta segundos). */
+  const VOLTA_MS = 5 * MIN, REPRISE_PASSO_MS = 100, REPRISE_VEZES = 10;
+
+  /* Duracao para quem le: ms ate 1 s, segundos com uma casa ate 1 min. */
+  function dur(ms) {
+    ms = +ms || 0;
+    if (ms < 1000) return Math.round(ms) + " ms";
+    if (ms < 60000) return (ms / 1000).toFixed(1) + " s";
+    return Math.floor(ms / 60000) + " min " + Math.round((ms % 60000) / 1000) + " s";
+  }
+
+  /* O desfecho do `telemetria_encerrar`, pela CHAVE do estado que o servidor
+   * devolve -- nunca pela frase do `aviso`, que e prosa do servidor. */
+  const DESFECHO = {
+    encerrando: () => txt("tela.aq_k_res_encerrando", "encerrando: a operação aborta no próximo ponto seguro."),
+    marcada: () => txt("tela.aq_k_res_marcada", "marcada: a marca vale no primeiro ponto seguro que vier."),
+    nao_cancelavel: () => txt("tela.aq_k_res_nao_cancelavel", "não cancelável agora: está dentro do ponto crítico e vai terminar."),
+    ociosa: () => txt("tela.aq_k_res_ociosa", "não havia operação em curso."),
+  };
+
+  /** `tela(host, { api, compacto, periodo, tv, quem })` — o aquario ligado ao
+   *  servidor.
    *
-   *  `compacto` e a ALCA da telemetria: so o tanque, sem log nem graficos.
+   *  `compacto` e a ALCA da telemetria: so o tanque, sem log, graficos, volta
+   *  nem cartao (quem administra encerra pela ficha da telemetria, ao lado).
+   *  `tv` e a parede: cobre a pagina e nunca abre o cartao. `quem` e o login
+   *  de quem assina o encerramento, mostrado a ele mesmo no cartao.
    *  Devolve `{ parar, retomar, soltar, pedidos }`: `pedidos` conta as
    *  chamadas feitas, e e a medida da prova «aba escondida faz 0 pedidos». */
   function tela(host, cfg) {
     const c = cfg || {};
     const api = c.api;
     const periodo = c.periodo || 2000;
+    const completa = !c.compacto;
     garantirCss();
     host.classList.add("aqt");
+    host.classList.toggle("aqt-tv", !!c.tv);
+    const topo = `<div class="aqt-topo">
+           <div class="aqt-estado" role="status" aria-live="polite"></div>
+           ${completa ? `<div class="aqt-volta">
+             <button type="button" class="botao consultar aqt-bt aqt-bt-volta">${esc(txt("tela.aq_volta", "Voltar 5 min"))}</button>
+             <span class="aqt-reprise" hidden>
+               <button type="button" class="botao consultar aqt-bt aqt-bt-tocar"></button>
+               <input type="range" class="aqt-trilho" min="0" max="${VOLTA_MS}" step="1000" value="0"
+                      aria-label="${esc(txt("tela.aq_volta_al", "instante da reprise"))}">
+               <time class="aqt-quando"></time>
+               <button type="button" class="botao secundario aqt-bt aqt-bt-vivo">${esc(txt("tela.aq_ao_vivo", "Ao vivo"))}</button>
+             </span>
+           </div>` : ""}
+           <span class="aqt-selo" data-estado="espera"
+                 title="${esc(preencher(txt("tela.aq_selo_al", "frescor do retrato: passou de {s} s sem um retrato novo, a tela se declara VELHA"), { s: LIMITE_VELHO_MS / 1000 }))}"></span>
+         </div>`;
+    const cartao = `<section class="aqt-cartao" hidden role="dialog" aria-labelledby="aqtCartaoTit">
+               <h4 id="aqtCartaoTit">${esc(txt("tela.aq_k_titulo", "Encerrar esta tarefa?"))}</h4>
+               <div class="aqt-ficha"></div>
+               <p class="aqt-promessa"></p>
+               <p class="aqt-perde"></p>
+               <div class="aqt-acoes">
+                 <button type="button" class="botao excluir aqt-bt aqt-k-encerrar">${esc(txt("tela.tl_encerrar", "Encerrar a operação"))}</button>
+                 <button type="button" class="botao excluir aqt-bt aqt-k-derrubar">${esc(txt("tela.tl_derrubar", "Derrubar a conexão"))}</button>
+                 <button type="button" class="botao secundario aqt-bt aqt-k-fechar">${esc(txt("tela.fechar", "Fechar"))}</button>
+               </div>
+               <p class="aqt-res" role="status" aria-live="polite"></p>
+               <p class="aqt-assina"></p>
+             </section>`;
     host.innerHTML = c.compacto
-      ? `<div class="aqt-estado" role="status" aria-live="polite"></div>
+      ? `${topo}
          <div class="aqt-tanque"><div class="aqt-agua"></div><aside class="aqt-fundo" hidden></aside></div>`
-      : `<div class="aqt-estado" role="status" aria-live="polite"></div>
+      : `${topo}
          <div class="aqt-corpo">
            <div class="aqt-tanque">
              <div class="aqt-agua"></div>
              <aside class="aqt-fundo" hidden></aside>
+             ${cartao}
            </div>
            <section class="aqt-log" aria-label="${esc(txt("tela.aq_log_titulo", "Linha do tempo"))}">
              <h4 class="aqt-cab">${esc(txt("tela.aq_log_titulo", "Linha do tempo"))}</h4>
@@ -772,17 +927,53 @@ window.PhxAquario = (function () {
 
     const $ = s => host.querySelector(s);
     const estado = $(".aqt-estado");
+    const selo = $(".aqt-selo");
     const agua = $(".aqt-agua");
     const fundo = $(".aqt-fundo");
-    const fisica = criar(agua, { auto: false });
+    const fisica = criar(agua, { auto: false, aoClicar: id => abrirCartao(id) });
 
     const ctl = { pedidos: 0, parado: false, vivo: true };
     let relogio = 0, volta = 0, log = [], emVoo = false;
+    // O frescor: o instante LOCAL da ultima resposta boa (a idade se mede no
+    // relogio de quem olha, e nao no do servidor, que pode estar adiantado),
+    // e se o ultimo pedido falhou.
+    const nasceu = Date.now();
+    let okEm = 0, falhou = false, tique = 0;
+    // O ultimo retrato inteiro, e por id as tarefas dele: o cartao le daqui.
+    let ultimo = null, porId = new Map();
+    const rep = { on: false, ini: 0, fim: 0, t: 0, tocando: false, faixas: [], relogio: 0 };
+    const cart = { id: "", alvo: null, feito: false };
+    const caixaCartao = $(".aqt-cartao");
 
     async function pedir(op, p) {
       ctl.pedidos++;
       return api(op, p || {});
     }
+
+    /* ----------------------------------------------------------- o selo */
+
+    function pintarSelo() {
+      if (rep.on) {
+        host.classList.remove("aqt-velho");
+        selo.dataset.estado = "reprise";
+        selo.textContent = preencher(txt("tela.aq_selo_reprise", "REPRISE · {hora}"), { hora: hora(rep.t) });
+        return;
+      }
+      const idade = Date.now() - (okEm || nasceu);
+      const velho = falhou || idade > LIMITE_VELHO_MS;
+      host.classList.toggle("aqt-velho", velho);
+      selo.dataset.estado = velho ? "velho" : okEm ? "fresco" : "espera";
+      const s = Math.floor(idade / 1000);
+      selo.textContent = !okEm
+        ? (velho ? txt("tela.aq_selo_nunca", "VELHO · nenhum retrato recebido")
+                 : txt("tela.aq_selo_espera", "aguardando o primeiro retrato"))
+        : velho ? preencher(txt("tela.aq_selo_velho", "VELHO · último retrato há {s} s"), { s })
+        : preencher(txt("tela.aq_selo_fresco", "atualizado há {s} s"), { s });
+    }
+    function ligarTique() { if (!tique) tique = setInterval(pintarSelo, 250); pintarSelo(); }
+    function desligarTique() { clearInterval(tique); tique = 0; }
+
+    /* ------------------------------------------------------------- fundo */
 
     function pintarFundo(sedimento) {
       fundo.textContent = "";
@@ -801,15 +992,22 @@ window.PhxAquario = (function () {
       }
     }
 
+    /* Pode encerrar? A pergunta e do SERVIDOR (`completo`, o portao da
+     * telemetria), e a TV nunca abre o cartao, nem com login de quem pode. */
+    const podeEncerrar = () => !!(caixaCartao && !c.tv && ultimo && ultimo.completo === true);
+
     function pintarRetrato(r) {
       const voce = r.voce || "";
+      ultimo = r;
+      porId = new Map((r.tarefas || []).filter(t => t.tarefa !== voce).map(t => [t.tarefa, t]));
+      fisica.clicavel(podeEncerrar() && !rep.on);
+      if (rep.on) return;     // a reprise congela o tanque; o retrato so guarda
       // Os campos que a bolha desenha, e nenhum outro: `usuario` e `ip`, que
-      // o servidor manda ao administrador, ficam no objeto da resposta e
-      // morrem com ele.
-      const tarefas = (r.tarefas || [])
-        .filter(t => t.tarefa !== voce)
+      // o servidor manda ao administrador, ficam no retrato e so o cartao os
+      // le.
+      const tarefas = [...porId.values()]
         .map(t => ({ id: t.tarefa, op: t.op, tabela: t.tabela, cor: t.cor,
-                     faixa: t.faixa, motivo: t.motivo, ms: t.ms }));
+                     faixa: t.faixa, motivo: t.motivo, ms: t.ms, pseudonimo: t.pseudonimo }));
       fisica.atualizar(tarefas);
       pintarFundo(r.sedimento);
       estado.classList.remove("aqt-mal");
@@ -817,7 +1015,134 @@ window.PhxAquario = (function () {
         ? txt("tela.aq_desligada", "a telemetria está desligada: o aquário não recebe tarefas nem conta")
         : preencher(txt("tela.aq_estado", "{n} tarefas vivas · atualizado às {hora}"),
             { n: tarefas.length, hora: hora(r.agora_ms || Date.now()) });
+      if (cart.id) pintarCartao();
     }
+
+    /* ------------------------------------------------- o cartao (A12) */
+
+    function abrirCartao(id) {
+      if (!podeEncerrar() || rep.on) return;
+      const t = porId.get(id);
+      if (!t) return;
+      // O alvo CONGELA no clique: o cartao descreve a tarefa que a pessoa
+      // viu, e o id leva o serial -- o servidor recusa se ela ja terminou, em
+      // vez de matar o pedido seguinte da mesma conexao.
+      cart.id = id; cart.alvo = t; cart.feito = false;
+      fisica.selecionar(id);
+      const res = $(".aqt-res");
+      res.textContent = ""; res.classList.remove("aqt-mal"); res.removeAttribute("data-desfecho");
+      $(".aqt-k-encerrar").disabled = false; $(".aqt-k-derrubar").disabled = false;
+      pintarCartao();
+      caixaCartao.hidden = false;
+      $(".aqt-k-fechar").focus();
+    }
+    function fecharCartao() {
+      if (!caixaCartao) return;
+      cart.id = ""; cart.alvo = null;
+      fisica.selecionar("");
+      caixaCartao.hidden = true;
+    }
+
+    /* A conexao que o «derrubar» fecha: `dados:N` e a conexao N da porta de
+     * dados; `web:abcd1234`, a sessao do navegador. As outras origens (job,
+     * servico) nao tem conexao para derrubar. */
+    function conexaoDe(t) {
+      const m = /^(dados|web):([^#]+)#/.exec(String(t.tarefa || ""));
+      if (!m) return null;
+      return m[1] === "dados" ? { id: +m[2], tipo: "conexao" } : { id: m[2], tipo: "web" };
+    }
+
+    function pintarCartao() {
+      const vivo = porId.get(cart.id);
+      const t = vivo || cart.alvo;
+      if (!t) return;
+      if (vivo) cart.alvo = vivo;
+      const ficha = $(".aqt-ficha");
+      ficha.textContent = "";
+      const linha = (rot, valor) => {
+        if (valor == null || valor === "") return;
+        const a = document.createElement("span"); a.className = "aqt-r"; a.textContent = rot;
+        const b = document.createElement("span"); b.className = "aqt-v"; b.textContent = String(valor);
+        ficha.append(a, b);
+      };
+      const cx = conexaoDe(t);
+      linha(txt("tela.aq_k_tarefa", "tarefa"), t.tarefa);
+      linha(txt("tela.tl_c_operacao", "operação em curso"), t.op);
+      linha(txt("tela.tl_c_alvo", "alvo"), [t.database, t.tabela].filter(Boolean).join("."));
+      linha(txt("tela.tl_c_usuario", "usuário"), t.usuario);
+      linha(txt("tela.tl_c_estacao", "estação (IP)"), t.ip);
+      linha(txt("tela.tl_c_origem", "origem"), t.origem);
+      linha(txt("tela.tl_c_conexao", "conexão"), t.ligacao != null
+        ? preencher(txt("tela.tl_c_numero", "nº {n}"), { n: t.ligacao }) : "");
+      linha(txt("tela.tl_c_estado", "estado"), t.estado);
+      linha(txt("tela.tl_c_fase", "fase"), t.fase);
+      linha(txt("tela.tl_c_op_dura", "operação dura há"), dur(t.ms));
+      linha(txt("tela.tl_c_na_fila", "desse tempo, na fila da trava"), dur(t.espera_ms));
+      linha(txt("tela.aq_k_cor", "cor"), (ROTULO_DA_COR[t.cor] ? ROTULO_DA_COR[t.cor]() : t.cor) +
+        (t.motivo ? " — " + motivo(t.motivo) : ""));
+      // O que a promessa vale: as frases da ficha da telemetria, pela chave.
+      $(".aqt-promessa").textContent = !vivo
+        ? txt("tela.aq_k_terminou", "esta tarefa já terminou: não há mais o que encerrar nela.")
+        : t.cancelavel ? txt("tela.tl_nota_cancelavel", "cancelável agora: a marca é lida entre duas unidades de trabalho, e o que já foi gravado fica gravado.")
+        : t.tem_ponto ? txt("tela.tl_nota_tem_ponto", "esta operação tem ponto de cancelamento, mas não está nele neste instante — tipicamente porque espera a trava de dados. A marca vale para o primeiro ponto seguro que vier.")
+        : txt("tela.tl_nota_sem_ponto", "não cancelável: a operação não tem ponto de cancelamento e vai terminar. Abandonar uma gravação no meio deixaria o arquivo mentindo.");
+      $(".aqt-perde").textContent = txt("tela.aq_k_perde_encerrar",
+        "Encerrar a operação aborta a instrução; dentro de uma transação, a transação inteira fica condenada e as escritas dela se perdem no ROLLBACK.") +
+        " " + txt("tela.aq_k_perde_derrubar", "Derrubar a conexão fecha o soquete: a transação aberta é desfeita e as travas dela, soltas.");
+      $(".aqt-assina").textContent = preencher(txt("tela.aq_k_assina", "assinado por {quem}, no log de acessos"),
+        { quem: c.quem || "—" });
+      $(".aqt-k-encerrar").hidden = !vivo || cart.feito;
+      $(".aqt-k-derrubar").hidden = !cx;
+    }
+
+    async function encerrar() {
+      const t = cart.alvo, res = $(".aqt-res");
+      if (!t) return;
+      $(".aqt-k-encerrar").disabled = true;
+      res.classList.remove("aqt-mal");
+      try {
+        const r = await pedir("telemetria_encerrar", { id: t.tarefa });
+        cart.feito = true;
+        res.setAttribute("data-desfecho", r.estado || "");
+        res.textContent = DESFECHO[r.estado] ? DESFECHO[r.estado]() : String(r.estado || "");
+        res.classList.toggle("aqt-mal", r.estado === "nao_cancelavel");
+      } catch (e) {
+        res.setAttribute("data-desfecho", "erro");
+        res.classList.add("aqt-mal");
+        res.textContent = String(e && e.message || e);
+        $(".aqt-k-encerrar").disabled = false;
+      }
+      pintarCartao();
+    }
+
+    async function derrubar() {
+      const t = cart.alvo, res = $(".aqt-res");
+      const cx = t && conexaoDe(t);
+      if (!cx) return;
+      $(".aqt-k-derrubar").disabled = true;
+      res.classList.remove("aqt-mal");
+      try {
+        await pedir("encerrar_sessao", cx);
+        cart.feito = true;
+        res.setAttribute("data-desfecho", "derrubada");
+        res.textContent = txt("tela.tl_conexao_encerrada", "conexão encerrada");
+      } catch (e) {
+        res.setAttribute("data-desfecho", "erro");
+        res.classList.add("aqt-mal");
+        res.textContent = String(e && e.message || e);
+        $(".aqt-k-derrubar").disabled = false;
+      }
+      pintarCartao();
+    }
+
+    if (caixaCartao) {
+      $(".aqt-k-encerrar").addEventListener("click", encerrar);
+      $(".aqt-k-derrubar").addEventListener("click", derrubar);
+      $(".aqt-k-fechar").addEventListener("click", fecharCartao);
+      caixaCartao.addEventListener("keydown", e => { if (e.key === "Escape") fecharCartao(); });
+    }
+
+    /* ------------------------------------------------------------- o log */
 
     function pintarLog() {
       const ol = $(".aqt-lista");
@@ -886,6 +1211,108 @@ window.PhxAquario = (function () {
       }
     }
 
+    /* --------------------------------------------- a volta de 5 min (A13) */
+
+    /* O tanque no instante `t` (relogio do SERVIDOR, o mesmo do log): quem
+     * estourou depois de `t` e tinha nascido antes, mais as vivas do ultimo
+     * retrato que ja tinham nascido. A cor e a do FIM -- o log grava a cor com
+     * que a tarefa terminou, e as linhas `nasceu`/`retrato` ainda nao existem
+     * para dizer a do meio. */
+    function tanqueEm(t) {
+      return rep.faixas.filter(x => x.ini <= t && t < x.fim)
+        .map(x => ({ id: x.id, op: x.op, tabela: x.tabela, cor: x.cor, faixa: x.faixa,
+                     motivo: x.motivo, ms: t - x.ini }));
+    }
+    function pintarReprise() {
+      const tarefas = tanqueEm(rep.t);
+      fisica.atualizar(tarefas);
+      $(".aqt-trilho").value = String(rep.t - rep.ini);
+      const q = $(".aqt-quando");
+      q.dateTime = new Date(rep.t).toISOString(); q.textContent = hora(rep.t);
+      $(".aqt-bt-tocar").textContent = rep.tocando ? txt("tela.aq_pausar", "Pausar") : txt("tela.aq_reproduzir", "Reproduzir");
+      estado.classList.remove("aqt-mal");
+      estado.textContent = preencher(txt("tela.aq_reprise_estado", "reprise: {n} tarefas no tanque às {hora} — o servidor continua gravando"),
+        { n: tarefas.length, hora: hora(rep.t) });
+      pintarSelo();
+    }
+    function andarReprise() {
+      rep.relogio = 0;
+      if (!rep.on || !rep.tocando) return;
+      if (!ctl.parado && !document.hidden) {
+        rep.t = Math.min(rep.fim, rep.t + REPRISE_PASSO_MS * REPRISE_VEZES);
+        if (rep.t >= rep.fim) rep.tocando = false;
+        pintarReprise();
+      }
+      if (rep.tocando) rep.relogio = setTimeout(andarReprise, REPRISE_PASSO_MS);
+    }
+    async function voltar5min() {
+      if (rep.on || !ultimo) return;
+      fecharCartao();
+      // Pausar congela a tela: o retrato para de ser pedido, e o tanque passa
+      // a ser o do log.
+      clearTimeout(relogio); relogio = 0;
+      rep.on = true; rep.tocando = false;
+      host.classList.add("aqt-reprise");
+      fisica.clicavel(false);
+      rep.fim = ultimo.agora_ms || Date.now();
+      rep.ini = rep.fim - VOLTA_MS;
+      rep.t = rep.ini;
+      let linhas = [];
+      try {
+        const r = await pedir("aquario_log", { desde: rep.ini, ate: rep.fim, max: 5000 });
+        linhas = r.linhas || [];
+      } catch (e) {
+        estado.classList.add("aqt-mal");
+        estado.textContent = preencher(txt("tela.aq_falhou", "o servidor não respondeu: {erro}"),
+          { erro: String(e && e.message || e) });
+      }
+      const voce = ultimo.voce || "";
+      rep.faixas = linhas
+        .filter(l => l.evento === "estourou" && l.ms != null)
+        .map((l, i) => ({ id: "volta:" + l.quando_ms + ":" + i, op: l.op, tabela: l.tabela, cor: l.cor,
+                          faixa: l.faixa, motivo: l.motivo, ini: l.quando_ms - l.ms, fim: l.quando_ms }))
+        .concat((ultimo.tarefas || []).filter(t => t.tarefa !== voce).map(t => ({
+          id: t.tarefa, op: t.op, tabela: t.tabela, cor: t.cor, faixa: t.faixa, motivo: t.motivo,
+          ini: rep.fim - (t.ms || 0), fim: Infinity })));
+      $(".aqt-reprise").hidden = false;
+      $(".aqt-bt-volta").hidden = true;
+      rep.tocando = true;
+      pintarReprise();
+      clearTimeout(rep.relogio); rep.relogio = setTimeout(andarReprise, REPRISE_PASSO_MS);
+    }
+    function aoVivo() {
+      if (!rep.on) return;
+      rep.on = false; rep.tocando = false;
+      clearTimeout(rep.relogio); rep.relogio = 0;
+      host.classList.remove("aqt-reprise");
+      $(".aqt-reprise").hidden = true;
+      $(".aqt-bt-volta").hidden = false;
+      // o que o retrato guardou durante a reprise volta ao tanque ja
+      if (ultimo) pintarRetrato(ultimo);
+      pintarSelo();
+      if (ativo() && !relogio) relogio = setTimeout(girar, 0);
+    }
+    if (completa) {
+      $(".aqt-bt-volta").addEventListener("click", voltar5min);
+      $(".aqt-bt-vivo").addEventListener("click", aoVivo);
+      $(".aqt-bt-tocar").addEventListener("click", () => {
+        if (!rep.on) return;
+        if (!rep.tocando && rep.t >= rep.fim) rep.t = rep.ini;
+        rep.tocando = !rep.tocando;
+        pintarReprise();
+        clearTimeout(rep.relogio);
+        rep.relogio = rep.tocando ? setTimeout(andarReprise, REPRISE_PASSO_MS) : 0;
+      });
+      $(".aqt-trilho").addEventListener("input", e => {
+        if (!rep.on) return;
+        rep.tocando = false;
+        rep.t = rep.ini + (+e.target.value || 0);
+        pintarReprise();
+      });
+    }
+
+    /* ------------------------------------------------------------ a volta */
+
     /* Uma volta: retrato sempre; contagens a cada duas (o grafico do dia
      * anda pelo minuto parcial, que muda a cada pedido); log a cada tres. */
     async function girar() {
@@ -896,12 +1323,19 @@ window.PhxAquario = (function () {
       if (!ativo() || emVoo) return;
       emVoo = true;
       try {
-        pintarRetrato(await pedir("aquario_retrato"));
-        if (!c.compacto) {
+        const r = await pedir("aquario_retrato");
+        okEm = Date.now(); falhou = false;
+        pintarRetrato(r);
+        pintarSelo();
+        if (completa) {
           if (volta % 2 === 0) await lerContagens();
           if (volta % 3 === 0) await lerLog();
         }
       } catch (e) {
+        // O pedido que falhou declara o retrato VELHO na hora: esperar os
+        // 3 s de idade seria mostrar como vivo o que ja se sabe que nao e.
+        falhou = true;
+        pintarSelo();
         estado.classList.add("aqt-mal");
         estado.textContent = preencher(txt("tela.aq_falhou", "o servidor não respondeu: {erro}"),
           { erro: String(e && e.message || e) });
@@ -912,11 +1346,12 @@ window.PhxAquario = (function () {
       if (ativo() && !relogio) relogio = setTimeout(girar, periodo);
     }
 
-    /* Trabalha so quem esta a vista: tela viva, nao pausada pela multitela e
-     * com a aba do navegador na frente. O portao vem ANTES do pedido. */
+    /* Trabalha so quem esta a vista: tela viva, nao pausada pela multitela,
+     * com a aba do navegador na frente e fora da reprise. O portao vem ANTES
+     * do pedido. */
     function ativo() {
       if (!host.isConnected) { if (ctl.vivo) soltar(); return false; }
-      return ctl.vivo && !ctl.parado && !document.hidden;
+      return ctl.vivo && !ctl.parado && !document.hidden && !rep.on;
     }
 
     function retomar() {
@@ -924,26 +1359,39 @@ window.PhxAquario = (function () {
       ctl.parado = false;
       if (document.hidden) return;
       fisica.iniciar();
+      ligarTique();
+      if (rep.on) {
+        if (rep.tocando && !rep.relogio) rep.relogio = setTimeout(andarReprise, REPRISE_PASSO_MS);
+        return;
+      }
       if (!relogio) relogio = setTimeout(girar, 0);
     }
     function parar() {
       ctl.parado = true;
       clearTimeout(relogio); relogio = 0;
+      clearTimeout(rep.relogio); rep.relogio = 0;
+      desligarTique();
       fisica.parar();
     }
     function aoMudarVisibilidade() {
-      if (document.hidden) { clearTimeout(relogio); relogio = 0; fisica.parar(); }
-      else if (!ctl.parado) retomar();
+      if (document.hidden) {
+        clearTimeout(relogio); relogio = 0;
+        clearTimeout(rep.relogio); rep.relogio = 0;
+        desligarTique();
+        fisica.parar();
+      } else if (!ctl.parado) retomar();
     }
     function soltar() {
       ctl.vivo = false;
       clearTimeout(relogio); relogio = 0;
+      clearTimeout(rep.relogio); rep.relogio = 0;
+      desligarTique();
       fisica.soltar();
       document.removeEventListener("visibilitychange", aoMudarVisibilidade);
     }
     document.addEventListener("visibilitychange", aoMudarVisibilidade);
 
-    if (!c.compacto) {
+    if (completa) {
       let espera = 0;
       $(".aqt-busca").addEventListener("input", () => {
         clearTimeout(espera); espera = setTimeout(pintarLog, 120);
@@ -962,5 +1410,6 @@ window.PhxAquario = (function () {
   if (typeof document !== "undefined" && document.head) garantirCss();
 
   return { criar: criar, criarMotor: criarMotor, sobreposicoes: sobreposicoes, tela: tela,
-           FAIXAS: FAIXAS, MOTIVOS: MOTIVOS, _somar: somar, _meiaNoite: meiaNoite };
+           FAIXAS: FAIXAS, MOTIVOS: MOTIVOS, LIMITE_VELHO_MS: LIMITE_VELHO_MS,
+           _somar: somar, _meiaNoite: meiaNoite };
 })();

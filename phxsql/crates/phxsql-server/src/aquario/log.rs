@@ -495,6 +495,18 @@ impl LogDoAquario {
                 truncado = true;
                 return false;
             }
+            let mut j = j;
+            // A FAIXA da bolha, na leitura e nao no arquivo: ela e funcao da
+            // op (a mesma `faixa_da_op` do retrato), e a volta de 5 minutos
+            // (A13) poe a bolha que ja estourou na faixa em que ela nadou,
+            // sem a tela ter lista de operacoes propria.
+            let faixa = j
+                .campo("op")
+                .and_then(Json::texto)
+                .map(super::contagem::faixa_da_op);
+            if let Some(f) = faixa {
+                j.definir("faixa", Json::texto_de(f));
+            }
             linhas.push(j);
             true
         })?;
@@ -781,6 +793,27 @@ mod testes {
                 "{ruim}"
             );
         }
+    }
+
+    /// A volta de 5 minutos (A13) poe a bolha que ja estourou na faixa em que
+    /// ela nadou: a consulta diz a faixa pela MESMA `faixa_da_op` do retrato,
+    /// e o arquivo nao a guarda (e funcao da op). Tirar o `definir("faixa")`
+    /// faz a primeira conferencia cair; grava-la no arquivo, a ultima.
+    #[test]
+    fn a_consulta_diz_a_faixa_pela_op_e_o_arquivo_nao_a_guarda() {
+        let (d, log) = aberto("faixa");
+        log.tarefa_terminou(&lento("inserir", 1_000, 2_000), verde)
+            .unwrap();
+        log.gravar(&Linha::contagem(9_000, Json::Nulo)).unwrap();
+        let l = linhas_de(&log.consultar(&Json::Nulo).unwrap());
+        assert_eq!(
+            l[0].texto_ou("faixa", ""),
+            super::super::contagem::faixa_da_op("inserir")
+        );
+        assert_eq!(l[0].texto_ou("faixa", ""), "insert");
+        assert!(l[1].campo("faixa").is_none(), "linha sem op ganhou faixa");
+        let texto = std::fs::read_to_string(d.join(NOME_DO_ARQUIVO)).unwrap();
+        assert!(!texto.contains("\"faixa\""), "{texto}");
     }
 
     /// O rodizio: 8 arquivos no maximo, e a consulta atravessa do corrente

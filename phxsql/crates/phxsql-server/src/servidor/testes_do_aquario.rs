@@ -902,6 +902,20 @@ fn a_tv_ve_operacao_tabela_e_cor_e_nunca_login_nem_ip() {
     for proibido in ["login-secreto", "198.51.100.77", "\"usuario\"", "\"ip\""] {
         assert!(!t.contains(proibido), "{proibido} vazou para a TV: {t}");
     }
+    // O usuario chega PSEUDONIMIZADO: o HMAC do login com o sal deste
+    // servidor -- e nao o login, nem o hash sem segredo.
+    let esperado = crate::telemetria::pseudonimo(s.telemetria.sal_do_pseudonimo(), "login-secreto");
+    assert_eq!(tarefas[0].texto_ou("pseudonimo", ""), esperado, "{t}");
+    let sem_sal = phxsql_core::hash::sha256(b"login-secreto");
+    assert!(
+        !esperado.starts_with(&format!("{:02x}{:02x}", sem_sal[0], sem_sal[1])),
+        "o pseudonimo e o SHA-256 sem sal, que se desfaz por dicionario"
+    );
+    // A TV nao ve se a conexao e cancelavel nem o numero dela: isso e do
+    // cartao de encerrar, que so o administrador tem.
+    for proibido in ["\"ligacao\"", "\"cancelavel\"", "\"tem_ponto\""] {
+        assert!(!t.contains(proibido), "{proibido} foi para a TV: {t}");
+    }
 
     // O administrador logado, no mesmo servidor, com a mesma tarefa no ar.
     let dir_adm = dir_temp("tv-adm");
@@ -924,6 +938,35 @@ fn a_tv_ve_operacao_tabela_e_cor_e_nunca_login_nem_ip() {
     assert!(
         t.contains("login-secreto") && t.contains("198.51.100.77"),
         "{t}"
+    );
+    // O cartao de encerrar (A12) tem o que mostrar antes de confirmar.
+    for campo in ["\"ligacao\":77", "\"cancelavel\"", "\"tem_ponto\""] {
+        assert!(t.contains(campo), "{campo} faltou ao administrador: {t}");
+    }
+}
+
+/// O pseudonimo e estavel por usuario, separa usuarios, e muda com o sal: o
+/// mesmo login em dois servidores (ou dois arranques) nao se liga. Trocar o
+/// HMAC por um hash sem segredo faz a ultima conferencia cair.
+#[test]
+fn o_pseudonimo_e_estavel_por_usuario_e_depende_do_sal() {
+    use crate::telemetria::pseudonimo;
+    let sal = [7u8; 32];
+    assert_eq!(pseudonimo(&sal, "joana"), pseudonimo(&sal, "joana"));
+    assert_ne!(pseudonimo(&sal, "joana"), pseudonimo(&sal, "maria"));
+    assert_ne!(pseudonimo(&sal, "joana"), pseudonimo(&[8u8; 32], "joana"));
+    assert_eq!(pseudonimo(&sal, "joana").len(), 8);
+    assert!(!pseudonimo(&sal, "joana").contains("joana"));
+    let t = crate::telemetria::Telemetria::nova(true);
+    assert_eq!(
+        t.sal_do_pseudonimo(),
+        t.sal_do_pseudonimo(),
+        "o sal mudou no meio do processo"
+    );
+    assert_ne!(
+        t.sal_do_pseudonimo(),
+        crate::telemetria::Telemetria::nova(true).sal_do_pseudonimo(),
+        "dois servidores com o mesmo sal"
     );
 }
 

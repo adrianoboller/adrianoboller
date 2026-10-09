@@ -736,6 +736,7 @@ impl Atividade {
         limiares: &crate::config::Painel,
         base: &crate::aquario::base::BaseDeConsultas,
         completo: bool,
+        sal: &[u8],
     ) -> Json {
         let c = self.corrente_copiada();
         let classe = self.classe_viva(
@@ -784,11 +785,34 @@ impl Atividade {
                 crate::aquario::classe::nomes_dos_alarmes(alarmes),
             ));
         }
+        // O usuario PSEUDONIMIZADO (decisao do dono, 09/10): a TV distingue
+        // «a mesma pessoa em quatro conexoes» de «quatro pessoas» sem saber
+        // quem e. Vai a todos, porque nao identifica ninguem.
+        if !c.usuario.is_empty() {
+            pares.push(("pseudonimo", Json::texto_de(pseudonimo(sal, &c.usuario))));
+        }
         if completo {
             if !c.usuario.is_empty() {
                 pares.push(("usuario", Json::texto_de(&c.usuario)));
             }
             pares.push(("ip", Json::texto_de(&self.ip)));
+            // O que o cartao de encerrar (A12) mostra ANTES de confirmar: a
+            // conexao que cai e o que a promessa vale -- so a quem pode
+            // encerrar, pela mesma pergunta que o servidor faz para recusar.
+            if self.ligacao != 0 {
+                pares.push(("ligacao", Json::de_u64(self.ligacao)));
+            }
+            if !c.fase.is_empty() {
+                pares.push(("fase", Json::texto_de(&c.fase)));
+            }
+            pares.push((
+                "cancelavel",
+                Json::Bool(self.cancelavel.load(Ordering::Relaxed)),
+            ));
+            pares.push((
+                "tem_ponto",
+                Json::Bool(self.tem_ponto.load(Ordering::Relaxed)),
+            ));
         }
         Json::objeto(pares)
     }
@@ -1252,6 +1276,28 @@ pub struct Telemetria {
     /// A camada de ocorrencias do servidor dono deste registro (495, F2).
     /// Cada atividade que entra leva uma copia fraca dela.
     ocorrencias: Mutex<std::sync::Weak<crate::ocorrencias::Ocorrencias>>,
+    /// O sal do [`pseudonimo`]: sorteado na primeira vez que alguem pede o
+    /// retrato, e so em memoria. Nunca vai a disco nem a resposta.
+    sal_do_pseudonimo: std::sync::OnceLock<Vec<u8>>,
+}
+
+/// O pseudonimo de um login para o aquario (pedido 707, A13; decisao do dono
+/// de 09/10: «usuario pseudonimizado»).
+///
+/// HMAC-SHA256 com o sal do servidor, e nao SHA-256 puro: os logins sao
+/// poucos e adivinhaveis, e o hash sem segredo se desfaz por dicionario --
+/// quem olha a TV testaria `admin`, `joana`, `maria` e acharia o dono de cada
+/// bolha. Com o sal secreto, nao ha dicionario. Estavel enquanto o processo
+/// vive; o arranque sorteia outro, e a mesma pessoa vira outro pseudonimo no
+/// dia seguinte -- o que e a favor da LGPD, e nao contra: a TV nao precisa
+/// seguir ninguem entre dias.
+pub fn pseudonimo(sal: &[u8], login: &str) -> String {
+    let h = phxsql_core::hash::hmac_sha256(sal, login.as_bytes());
+    let mut s = String::with_capacity(8);
+    for b in &h[..4] {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
 }
 
 impl Default for Telemetria {
@@ -1282,7 +1328,14 @@ impl Telemetria {
             pintura: Mutex::new(crate::config::Painel::default()),
             aquario: crate::aquario::Aquario::default(),
             ocorrencias: Mutex::new(std::sync::Weak::new()),
+            sal_do_pseudonimo: std::sync::OnceLock::new(),
         }
+    }
+
+    /// O sal do [`pseudonimo`], sorteado no primeiro uso.
+    pub fn sal_do_pseudonimo(&self) -> &[u8] {
+        self.sal_do_pseudonimo
+            .get_or_init(|| phxsql_core::senha::bytes_aleatorios(32))
     }
 
     /// O servidor diz qual e a camada de ocorrencias dele. Chamado uma vez,
@@ -1892,7 +1945,17 @@ impl Telemetria {
         let tarefas: Vec<Json> = atividades
             .iter()
             .filter(|a| a.estado() != Estado::Ociosa)
-            .map(|a| a.bolha_do_aquario(agora_ms, stress, ha_fila, &pintura, base, completo))
+            .map(|a| {
+                a.bolha_do_aquario(
+                    agora_ms,
+                    stress,
+                    ha_fila,
+                    &pintura,
+                    base,
+                    completo,
+                    self.sal_do_pseudonimo(),
+                )
+            })
             .collect();
         let sedimento: Vec<Json> = crate::aquario::alarme::sedimento()
             .into_iter()

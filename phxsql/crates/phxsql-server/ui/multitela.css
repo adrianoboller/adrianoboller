@@ -147,6 +147,17 @@ main.corpo{position:relative}
   grid-template-columns:1fr;grid-template-areas:"barra" "corpo"}
 #app[data-destacada="1"] .fita{color:var(--laranja)}
 
+/* ---------------------------------------------------------------- modo TV
+   `?tela=aquario&tv=1` (pedido 707, A13): a parede nao tem quem clique em
+   menu. Somem menus, barras e arvore -- e o aquario cobre o resto. */
+#app[data-tv="1"] .barra,
+#app[data-tv="1"] .menubar,
+#app[data-tv="1"] #ferramentas,
+#app[data-tv="1"] .lateral,
+#app[data-tv="1"] .pega-arvore,
+#app[data-tv="1"] .veu-arvore,
+#app[data-tv="1"] #btLateral{display:none}
+
 /* O recado sobre o que muda em cada navegador, e sobre o que este modo nao
    faz. Aparece na tela e nao num alerta: dizer e o pedido, interromper nao. */
 .multitela-nota{margin:0 0 12px;padding:8px 12px;border:1px solid var(--linha);
