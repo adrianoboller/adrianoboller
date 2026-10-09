@@ -1,0 +1,31 @@
+{
+  "modelo": {
+    "nome": "previsao-do-tempo-com-aviso",
+    "descricao": "Busca a previsão das próximas horas para uma coordenada e avisa numa conversa se vale levar guarda-chuva. Cite a atribuição que a fonte devolve.",
+    "etiquetas": ["clima", "agenda", "canal"],
+    "credenciais": ["canal-mensagens"]
+  },
+  "fluxo": {
+    "nome": "previsao-do-tempo-com-aviso",
+    "variaveis": { "conversa": "ID-DA-CONVERSA", "lat": -26.92, "lon": -49.07 },
+    "passos": [
+      {
+        "id": "tempo",
+        "ferramenta": "weather",
+        "args": { "lat": "{{var.lat}}", "lon": "{{var.lon}}", "hours": 12 },
+        "tentativas": 2
+      },
+      {
+        "id": "aviso",
+        "depende": ["tempo"],
+        "tarefa": "Diga em uma frase se vai chover nas próximas horas e se vale levar guarda-chuva. Termine com a atribuição da fonte: {{tempo}}"
+      },
+      {
+        "id": "enviar",
+        "depende": ["aviso"],
+        "ferramenta": "channel_send",
+        "args": { "to": "{{var.conversa}}", "text": "{{aviso}}" }
+      }
+    ]
+  }
+}

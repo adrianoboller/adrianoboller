@@ -10,6 +10,7 @@
   <link rel="icon" href="./assets/favicon-48.png" type="image/png" sizes="48x48" />
   <link rel="stylesheet" href="./assets/app.css" />
   <link rel="stylesheet" href="./assets/tarefas.css" />
+  <link rel="stylesheet" href="./assets/fluxos.css" />
   <!-- phx-grid (do dono, JS puro, sem dependencia): versao e origem em assets/vendor/phx-grid/VERSAO.
        Carrega sob demanda (grades.carregar), na primeira tela com grade. -->
   <link rel="stylesheet" href="./assets/grades.css" />
@@ -105,6 +106,7 @@
         <button class="nav active" data-tela="geral" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><em data-txt="menu.geral">Visão geral</em></button>
         <span class="nav-grupo" data-txt="casca.menu.trabalho">TRABALHO</span>
         <button class="nav" data-tela="tarefas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><em data-txt="menu.tarefas">Tarefas</em></button>
+        <button class="nav" data-tela="fluxos"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="6" height="5" rx="1.2"/><rect x="15.5" y="3" width="6" height="5" rx="1.2"/><rect x="15.5" y="16" width="6" height="5" rx="1.2"/><path d="M8.5 6.5c3.5 0 3.5-1 7-1M8.5 6.5c3.5 0 3.5 12 7 12"/></svg></span><em data-txt="menu.fluxos">Fluxos</em></button>
         <button class="nav" data-tela="ide"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="19" height="16" rx="2"/><path d="m6.5 9 3.5 3-3.5 3M12.5 15h5"/></svg></span><em>IDE</em><b id="seloIde"></b></button>
         <span class="nav-grupo" data-txt="casca.menu.capacidades">CAPACIDADES</span>
         <button class="nav" data-tela="agentes"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M15.5 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg></span><em data-txt="menu.agentes">Agentes</em><b id="seloAgentes"></b></button>
@@ -313,6 +315,51 @@
       </div>
      </section>
 
+     <!-- Fluxos (fluxos.js): a lista da pasta fluxos/ do agente e o editor em grafo, em SVG a
+          mao. Validar, salvar e executar passam pelas rotas /v1/fluxos/* (fluxos_tela.rs), que
+          chamam o motor; a posicao dos nos fica no campo «ui» do JSON, que o motor ignora. -->
+     <section class="tela tela-fluxos" id="tela-fluxos" data-tela="fluxos" aria-label="Fluxos" data-txt-al="menu.fluxos" hidden>
+      <header class="tela-head">
+        <div><span class="eyebrow" data-txt="fluxos.sobretitulo">FLUXOS / MOTOR DE FLUXO</span><h1 data-txt="menu.fluxos">Fluxos</h1>
+          <p id="fluxosStatus" class="tela-sub" data-fonte="api /v1/fluxos" role="status" aria-live="polite"></p><button class="acao consulta tentar" type="button" data-tentar hidden data-txt="erro.tentar">TENTAR DE NOVO</button></div>
+        <button id="fluxosRecarregar" class="acao consulta" type="button" data-txt="fluxos.recarregar">RECARREGAR LISTA</button>
+      </header>
+      <div class="fluxos-corpo">
+        <nav id="fluxosLista" class="fluxos-lista" aria-label="Fluxos da pasta" data-txt-al="fluxos.lista" data-fonte="api /v1/fluxos"></nav>
+        <section id="fluxosEditor" class="fluxos-editor" aria-labelledby="fluxosNome" hidden>
+          <header class="fluxos-barra">
+            <div class="fluxos-titulo"><h2 id="fluxosNome"></h2><code id="fluxosArquivo"></code><span id="fluxosSujo" class="fluxos-sujo" data-txt="fluxos.alterado" hidden>ALTERADO</span></div>
+            <div class="acoes">
+              <button id="fluxosNovoPasso" class="acao inclui" type="button" data-txt="fluxos.novo_passo">+ PASSO</button>
+              <button id="fluxosValidar" class="acao consulta" type="button" data-txt="fluxos.validar">VALIDAR</button>
+              <button id="fluxosSalvar" class="acao altera" type="button" data-txt="fluxos.salvar">SALVAR</button>
+              <button id="fluxosReorganizar" class="acao altera" type="button" data-txt="fluxos.reorganizar">REORGANIZAR</button>
+              <button id="fluxosRodar" class="acao inclui" type="button" data-txt="fluxos.rodar">EXECUTAR</button>
+              <button id="fluxosUltima" class="acao consulta" type="button" data-txt="fluxos.ultima">ÚLTIMA EXECUÇÃO</button>
+            </div>
+          </header>
+          <p id="fluxosVeredito" class="fluxos-veredito" role="status" aria-live="polite"></p>
+          <p id="fluxosExecucao" class="fluxos-execucao" role="status" aria-live="polite"></p>
+          <div class="fluxos-area">
+            <div class="fluxos-palco">
+              <div id="fluxosQuadro" class="fluxos-quadro" aria-label="Grafo do fluxo" data-txt-al="fluxos.grafo" role="region">
+                <svg id="fluxosSvg" class="fluxos-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+              </div>
+              <div class="fluxos-zoom" role="group" aria-label="Zoom" data-txt-al="fluxos.zoom">
+                <button id="fluxosMenos" class="acao consulta" type="button" aria-label="Diminuir o zoom" data-txt-al="fluxos.zoom_menos">−</button>
+                <span id="fluxosZoom" class="fluxos-zoom-valor">100%</span>
+                <button id="fluxosMais" class="acao consulta" type="button" aria-label="Aumentar o zoom" data-txt-al="fluxos.zoom_mais">+</button>
+                <button id="fluxosAjustar" class="acao consulta" type="button" data-txt="fluxos.ajustar">AJUSTAR</button>
+              </div>
+              <svg id="fluxosMinimapa" class="fluxos-minimapa" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Minimapa do grafo" data-txt-al="fluxos.minimapa"></svg>
+            </div>
+            <aside id="fluxosPainel" class="fluxos-painel" aria-label="Passo selecionado" data-txt-al="fluxos.painel"></aside>
+          </div>
+          <ul id="fluxosLegenda" class="fluxos-legenda" aria-label="Estados da execução" data-txt-al="fluxos.legenda" hidden></ul>
+        </section>
+      </div>
+     </section>
+
      <section class="tela" id="tela-config" data-tela="config" aria-label="Configuração" data-txt-al="menu.config" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="config.sobretitulo">CONFIGURAÇÃO / CONFIG.JSON</span><h1 data-txt="menu.config">Configuração</h1>
@@ -374,6 +421,7 @@
   <script src="./assets/grades.js"></script>
   <script src="./assets/app.js"></script>
   <script src="./assets/tarefas.js"></script>
+  <script src="./assets/fluxos.js"></script>
   <script src="./assets/config.js"></script>
   <!-- async: o IDE e os paineis ficam fora do caminho do DOMContentLoaded do celular. -->
   <script src="./assets/ide.js" async></script>

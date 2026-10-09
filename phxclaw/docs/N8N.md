@@ -432,7 +432,7 @@ assinatura: sem chave, quem edita recalcula; o HMAC fica para o `FORMATO_PACOTE`
 | Binario por arquivo na pasta da tarefa, nao modo `filesystem`/S3 configuravel | a pasta da tarefa ja e a porta de disco das ferramentas (`confine`) |
 
 Fora, com o motivo: prazo da espera humana, upload de arquivo no formulario (multipart),
-fila com workers e `/metrics` (pedem numero de bancada).
+fila com workers (pede numero de bancada). O `/metrics` entrou em 09/10 (secao 9).
 
 ### 8f. Revisao da onda 3 (09/10/2026): QA, DBA e seguranca
 
@@ -483,3 +483,283 @@ criterio e o motor unico `phxclaw_types::segredo::texto_tem_credencial`.
 - **Detector de segredo unico:** `phxclaw_types::segredo::nome_de_segredo` (a uniao das duas
   listas); o `gravacao::chave_secreta` delega a ele. O `config.json` ainda usa a lista propria
   do `carga` (pendencia, com o teste que falha hoje).
+
+### Editor em grafo: a tela Fluxos (F4, 09/10/2026)
+
+O `editor_canvas` do n8n, sem biblioteca de grafo (o xyflow foi recusado na triagem R20 de
+01/10): `apps/phxclaw-ui/assets/fluxos.js` + `fluxos.css`, SVG a mao, JS puro.
+
+- **O que a tela faz.** Lista os fluxos da pasta `fluxos/` do agente (a mesma do `phxclaw fluxo
+  listar` e do sub-fluxo), o invalido incluso com o motivo do motor. Ao abrir, desenha o grafo em
+  camadas (caminho mais longo pela ordem topologica, quatro varridas de baricentro contra
+  cruzamento; ciclo nao empilha, quebra-se na ligacao que o fecha), com o tipo do passo como
+  rotulo e as portas (`verdadeiro`, `falso`, `erro`) escritas na ligacao como gravadas. Zoom
+  (`+`/`-`, Ctrl+roda, AJUSTAR), o quadro rola por dentro, minimapa clicavel.
+- **Edicao.** Arrastar (ou setas no no em foco) move o passo; a posicao vai para
+  `"ui": {"posicoes": {...}}` no proprio JSON. O `Fluxo` nao tem esse campo: o serde o ignora e a
+  `assinatura` nao o ve -- mover um no nao invalida execucao parada numa espera (provado pela
+  assinatura igual antes e depois, no roteiro e em `fluxos_tela::testes`). Ligar/desligar pelo
+  painel ou pela propria ligacao (teclado: Enter); `+ PASSO` (esqueleto do tipo com os campos
+  vazios -- o veredito diz o que falta) e EXCLUIR PASSO (leva junto as ligacoes e a posicao);
+  parametros do passo em JSON no painel; VALIDAR,
+  SALVAR (com `If-Match`) e EXECUTAR / EXECUTAR ATE AQUI (o `--ate` do motor).
+- **Ultima execucao por cima.** A tarefa `fluxo: NOME` mais nova de `/v1/tasks`, o relatorio no
+  `answer`: contorno com a cor de ESTADO da marca (`--ok`, `--aviso`, `--vermelho`, `--texto-3`),
+  a forma do traco (cheio, tracejado, pontilhado) e o rotulo numa aba -- o estado se le sem cor.
+  O clique no passo mostra a entrada (a saida de cada dependencia pela porta declarada), a saida e
+  as portas, como gravadas.
+- **Rotas novas (`crates/phxclaw-agent/src/fluxos_tela.rs`).** `GET /v1/fluxos`,
+  `GET /v1/fluxos/arquivo?nome=`, `POST /v1/fluxos/validar` (leitura e veredito); `PUT
+  /v1/fluxos/arquivo` (grava SO arquivo que ja existe na pasta, SO texto que o `fluxos::ler`
+  aceita, SO sobre a revisao lida: 428 sem `If-Match`, 409 com a atual, 422 com o motivo do
+  motor) e `POST /v1/fluxos/rodar` `{nome, ate?}` (o mesmo `criar_fluxo_com` do webhook, via
+  `api::criar_fluxo_ate`). Nome confinado como o `pwa::ler`: componente normal, `.json`, nunca
+  `.pins.json`, caminho real dentro da pasta.
+- **Prova.** `tests/desktop/ui_fluxos.mjs` contra o agente real: 47/47, larguras 1280 e 400, dois
+  temas, contraste minimo medido 4,52:1 (rotulo do tipo no tema claro), capturas
+  `tests/desktop/out/ui_fluxos_*.png`. RED medido: sem o `<script>` da tela o roteiro cai; abrindo
+  pelo AJUSTAR (era o primeiro desenho) o texto do no ia a 7 px na tela e a checagem de
+  legibilidade reprova; com o vao entre camadas de 60 px, «verdadeiro» ia para baixo da aba do
+  no e a checagem das portas reprova.
+- **Fora (pendencia).** Criar ARQUIVO de fluxo novo pela tela (o `PUT` so grava o que ja existe:
+  criar arquivo e decisao de escopo da rota); desfazer/refazer; renomear id de passo (quebraria as referencias
+  `{{id}}` -- precisa de reescrita pelo motor); a ultima execucao e achada pelo `nome` do fluxo
+  (dois arquivos com o mesmo nome dividem o historico); o editor de parametros e JSON cru, nao
+  formulario por tipo de no.
+
+## 9. Usuarios, projetos e papeis (RBAC) e `/metrics` (09/10/2026)
+
+Decisao do dono de 09/10 (`docs/diretivas/DECISOES_DO_DONO_20261009.md`, item 2): o RBAC do
+n8n entra. Codigo em `crates/phxclaw-agent/src/rbac.rs` e `metricas.rs`; operacao no
+`docs/GUIA_DO_OPERADOR.md` (secao 2, «Usuarios, projetos e papeis da API» e «Metricas
+Prometheus»).
+
+| n8n | PhxClaw | Prova |
+| --- | --- | --- |
+| owner / admin / member (instancia) | `owner` / `admin` / `member` + `leitor`, num papel por usuario | `tests/rbac.rs::papel_sem_direito_recebe_403` |
+| projetos com membros | `--projeto` por usuario; `member` e `leitor` so alcancam os deles | `tests/rbac.rs::token_de_outro_projeto_e_recusado` |
+| chave de API por usuario | token `phxu_...` por usuario, guardado so como SHA-256 com sal | `rbac::testes::o_hash_nao_vaza_no_disco_no_debug_nem_na_listagem` |
+| `N8N_METRICS` + `/metrics` | `api.metricas` + `GET /metrics` (texto Prometheus) | `tests/rbac.rs::metrics_atras_do_portao_e_no_formato_prometheus` |
+
+### 9a. Onde DIVERGE do n8n, e a restricao nossa que causou cada divergencia
+
+| Divergencia | Restricao nossa |
+| --- | --- |
+| Usuario e token so pela CLI local (`phxclaw usuario`), nunca por HTTP | criar usuario pela rede e a porta para o primeiro que chegar se fazer dono; as credenciais do dono vem por comando local (decisao 4 de 09/10) |
+| Sem usuarios, nada muda: o Bearer unico do `api.token` vale como antes | guarda nova entra pedida, nao imposta (`sem_usuarios_nada_muda`) |
+| O `api.token` continua valendo com usuarios, como owner | quem le o arquivo 0600 ja roda a CLI na mesma maquina; recusa-lo quebraria ponte, gatilhos e SDK sem tirar poder de ninguem |
+| Papel por usuario, nao por projeto (o n8n tem `project:admin/editor/viewer`) | a matriz fica UMA tabela de (metodo, rota) -> papel minimo; papel por projeto pede uma segunda dimensao que nada aqui usa ainda |
+| O projeto vem do cabecalho `X-PhxClaw-Projeto` ou da tarefa gravada; no corpo e 400 | portao de permissao e UM so, e o campo que ele le e o furo: um `projeto` no corpo diria outra coisa e o portao nao veria |
+| Rotulo de metrica so de conjunto fechado (sem `workflow_name`, sem nome de no) | nome de ferramenta de MCP e de plugin vem de fora; rotulo livre e dado sensivel e cardinalidade sem teto |
+| Token comparado por SHA-256 com sal, sem PBKDF2 | o token tem 256 bits do CSPRNG; estiramento so serve a segredo de pouca entropia e custaria CPU em todo pedido |
+
+### 9b. O que o portao alcanca, e quem esconde o recurso fora dele
+
+O portao (`rbac::portao`) e o middleware do `api::router` (`route_layer`, posto DEPOIS de todas
+as rotas). Tres lugares esconderiam o recurso fora do campo que ele le, e cada um foi tratado:
+
+- **o id da tarefa** na rota: o portao le a tarefa gravada e o projeto dela (e o da mae, para
+  subagente) antes da rota rodar; tarefa inexistente e 404 do proprio portao;
+- **o projeto no corpo** do `POST /v1/tasks`: recusado com 400 (so com usuarios; sem eles o
+  campo segue ignorado, como sempre foi);
+- **o token na primeira mensagem do websocket** do terminal do IDE: o portao deixa a conexao
+  subir sem identidade, e a sessao chama `rbac::conferir_rota` com a linha da propria rota
+  (so owner) -- a mesma `decidir`, nao uma segunda copia.
+
+Os fluxos da tela (`/v1/fluxos`, `/arquivo`, `/validar`, `/rodar`) tem o nome na query ou no
+corpo, que o portao nao le -- e nao precisa: o escopo deles e a INSTANCIA (arquivos da pasta do
+projeto), e so o papel conta (leitor le e valida; member grava e roda). Pendencia declarada: a
+tarefa do `rodar` nasce sem projeto; carimba-la pede o `rodar` ler o `rbac::Acesso` da extensao.
+
+Fora do portao, de proposito: `/v1/triggers/...` (o segredo do gatilho) e as rotas do canal.
+Publicos, como eram: `/health`, a tela, `/sites/...` e `/canvas/...`.
+
+### 9c. Prova real nos dois sentidos
+
+Cada guarda com o defeito reposto (marcado `// REPOSTO`), o teste caindo, e o conteudo
+restaurado (0 `REPOSTO` no fim):
+
+| Guarda | Defeito reposto | Teste que caiu |
+| --- | --- | --- |
+| papel sem direito -> 403 | `if false && a.papel < regra.minimo` | `papel_sem_direito_recebe_403` (leitor criou: 202, esperado 403) e `o_websocket_do_ide_passa_pela_mesma_matriz` |
+| token de outro projeto | `Acesso::alcanca` devolvendo `true` | `token_de_outro_projeto_e_recusado` (GET da tarefa de outro projeto: 200, esperado 403) |
+| projeto no corpo | conferencia do corpo desligada | `token_de_outro_projeto_e_recusado` (202, esperado 400) |
+| sem usuarios nada muda | portao imposto sem usuarios | `sem_usuarios_nada_muda` (o cabecalho de projeto filtrou a lista: `[]`) |
+| websocket do IDE | `auth` no lugar de `conferir_rota` | `o_websocket_do_ide_passa_pela_mesma_matriz` (admin recebeu `pronto`) |
+| fluxos: leitor nao grava | linha `PUT /v1/fluxos/arquivo` com `leitor` | `papel_sem_direito_recebe_403` (400 da rota, esperado 403) |
+| revogar sem reiniciar | lista lida uma vez e nunca mais | `revogar_vale_no_pedido_seguinte_sem_reiniciar` (200, esperado 401) |
+| tempo constante (bytes) | `break` no primeiro byte diferente | `a_comparacao_visita_os_32_bytes_...` (`(false, 1)`, esperado `(false, 32)`) |
+| tempo constante (usuarios) | `break` no usuario que casou | `achar_confere_todos_os_usuarios_...` (1 comparacao, esperado 3) |
+| hash nao vaza | `Debug` com o hash | `o_hash_nao_vaza_no_disco_no_debug_nem_na_listagem` |
+| metrica desligada custa zero | involucro antes do interruptor; fecho rodado antes | `desligada_nao_envolve_o_agente_nem_roda_o_fecho` (as duas formas) |
+
+O tempo constante se prova pela CONTAGEM de bytes e de usuarios visitados, nao por relogio:
+medir tempo num teste seria ruido, nao prova.
+
+### 8g. Modelos, publicada x rascunho e git dos fluxos (F3, 09/10/2026)
+
+Fecha tres capacidades do n8n (`docs/absorcao/phxclaw.json`): `modelos_fluxo`,
+`versionamento_fluxo` e `controle_versao_git_fluxos`. Codigo em `fluxo_modelos.rs`,
+`fluxo_versoes.rs` e `fluxo_git.rs` (modulos novos; `fluxos.rs` ganhou so `pub(crate)` no
+`ordenado`). Prova: `crates/phxclaw-agent/tests/fluxo_f3.rs` (21 testes) e
+`apps/phxclaw/tests/fluxo_cli.rs::modelos_versoes_e_git_pela_cli`.
+
+**Galeria (`phxclaw fluxo modelos` | `usar MODELO DESTINO.json`).** 12 modelos em
+`modelos/fluxos/*.json`, embutidos no binario (`include_str!`; o teste `galeria_embutida_e_a_pasta`
+reprova modelo na pasta que ninguem registrou). O arquivo e um envelope `{"modelo": {nome,
+descricao, etiquetas, credenciais}, "fluxo": {...}}`; `usar` grava SO o `fluxo`, com as
+etiquetas, e nao sobrescreve. **Credencial entra por NOME** (`smtp`, `canal-mensagens`, `n8n`,
+`postgres`): o arquivo inteiro passa por `phxclaw_types::segredo` (forma do valor e nome de
+campo) e e recusado se trouxer um valor; e o modelo que usa `send_email`, `channel_send`,
+`n8n_workflow` ou `postgres` tem de declarar o nome (`credenciais_das_ferramentas`), senao a lista
+mentiria por omissao. Todo modelo passa por `fluxos::ler`, o validador de qualquer fluxo.
+
+**Rascunho x publicada (`publicar`, `versoes`, `voltar`, `restaurar`).**
+
+| Arquivo | Papel |
+| --- | --- |
+| `ARQ.json` | o RASCUNHO (o formato de sempre; gravar/editar nao muda o que roda em producao) |
+| `.ARQ.versoes/indice.json` | `{formato: 1, publicada: N, versoes: [{numero, sha256, em, nota, voltou_a}]}` |
+| `.ARQ.versoes/v0001.json` | a definicao congelada (pins dentro, chaves em ordem) |
+| `.ARQ.json.lock` | a trava entre processos (publicar e voltar sao leitura-e-escrita do indice) |
+
+- **Quem roda o que.** Gatilho (webhook, formulario, arquivo), agenda e sub-fluxo rodam a
+  PUBLICADA; so `phxclaw fluxo rodar ARQ` le o rascunho (e para testar a edicao), e
+  `rodar --publicada` le a versao. O hash da versao e o `fluxos::assinatura`, o mesmo do
+  `Relatorio.fluxo_sha256`: `versao_do_sha` diz de que versao foi uma execucao.
+- **Formato antigo lido (comportamento velho, travado por `fluxo_sem_versao_e_publicado_implicito`).**
+  Fluxo sem pasta `.ARQ.versoes` e PUBLICADO IMPLICITO: roda o arquivo, editar vale na proxima
+  execucao, e ler nao cria nada. A pasta nasce no primeiro `publicar`, montada inteira ao lado e
+  posta no lugar por `rename` (gatilho que dispara no meio ve o fluxo sem pasta ou com a pasta
+  completa).
+- **Fecha, nao cai no rascunho.** Pasta sem indice, indice de formato futuro, numeracao quebrada
+  ou arquivo de versao cujo hash nao bate com o indice: o gatilho recusa (500) e a agenda nao
+  dispara. Cair no rascunho rodaria em producao o que ninguem publicou.
+- **O historico so cresce.** `voltar N` publica de novo a definicao da versao N como versao NOVA
+  (`voltou_a: N`); `publicar` recusa rascunho igual a publicada; `restaurar N` copia a versao
+  para o rascunho e recusa quando o rascunho tem edicao que nenhuma versao guarda (`--forcar`).
+- **Divergencia do n8n**, e a restricao nossa: ele guarda a versao no banco, junto do fluxo; aqui
+  o fluxo e arquivo de projeto, e arquivo ao lado do arquivo atravessa o git e o `historico.rs`
+  sem tabela nem migracao.
+
+**Git dos fluxos (`exportar|importar --ambiente dev|prod [--fluxos DIR] [--repo DIR]`).**
+`<repo>/dev/[pasta/]<fluxo>.json` guarda o RASCUNHO e `<repo>/prod/...` a PUBLICADA. O arquivo e
+o pacote do `fluxos::exportar` (formato, `sha256`, fluxo) mais o `ambiente` e, no prod, a
+`versao`, em JSON canonico (chaves em ordem em qualquer profundidade, indentado, quebra final,
+sem data): exportar o mesmo fluxo duas vezes da os mesmos bytes e nao reescreve o arquivo, entao
+o `git diff` mostra so a edicao. Fluxo que saiu do projeto sai do repositorio (so arquivo que e
+pacote). `--commit MSG` registra pelo `GitTool` de escrita do `git.rs` (mesmo sandbox, mesma
+varredura de segredos): nao ha segundo versionador. A importacao confere tudo antes de gravar
+(formato, `ambiente` do arquivo contra a pasta, validacao, sha256), nao sobrescreve rascunho
+diferente sem `--sobrescrever`, e no `prod` PUBLICA o que trouxe (o gatilho passa a rodar o que
+veio do git); o prod que ja roda aquele hash nao cria versao.
+
+**O que ficou de fora (honesto).** `api.rs` nao foi tocada (outra frente): a rota de execucao
+manual por API, se existir, le o arquivo; os gatilhos passam todos por `criar_fluxo_publicado`.
+Nao ha diff entre duas versoes (o git de fluxos entrega isso pelo `git diff` dos arquivos
+canonicos). Fluxo com rascunho que nao le impede `exportar` (a exportacao aborta inteira, de
+proposito). Pull/push remoto nao existe: o repositorio e local, e quem empurra e o `git` de
+sempre. Sem teste com n8n de verdade (secao 6).
+
+## 10. No HTTP generico, OAuth2 nomeado e gatilho de poll (F1, 09/10/2026)
+
+Os tres gaps `requisicao_http`, `oauth2_generico` e `gatilho_poll` de `docs/absorcao/phxclaw.json`.
+Codigo em `crates/phxclaw-agent/src/fluxo_http.rs` e `gatilho_poll.rs`; no `fluxos.rs` so o
+despacho (`tipo` e `argumentos_de`). Testes em `crates/phxclaw-agent/tests/fluxo_http.rs`, contra
+um servidor axum local.
+
+**O passo `http`.** E a ferramenta `http_request` (capacidade `http.request`, fora do padrao)
+chamada pelo portao unico, no passo da onda e no fluxo de erro -- os dois caminhos que chamam
+ferramenta leem o pedido do mesmo `argumentos_de`:
+
+```json
+{"id": "busca", "http": {
+   "metodo": "GET", "url": "https://api.exemplo.com/v1/pedidos",
+   "query": {"status": "aberto"}, "cabecalhos": {"Accept": "application/json"},
+   "credencial": "loja", "teto_ms": 30000, "teto_bytes": 2097152, "itens": "data",
+   "paginacao": {"cursor": "meta.proximo", "parametro": "cursor", "max_paginas": 10}}}
+```
+
+- Corpo: `{"json": ...}`, `{"form": {...}}` ou `{"texto": "...", "tipo": "text/csv"}`, so em
+  POST/PUT/PATCH/DELETE.
+- Paginacao, exatamente um modo: `cursor` + `parametro`, `proximo` (caminho da URL da proxima
+  pagina na resposta) ou `link: true` (cabecalho `Link` com `rel="next"`). Teto `max_paginas`
+  (padrao 10, maximo 100); a mesma URL duas vezes encerra.
+- Lote: `"lote": {"itens": "{{passo}}", "tamanho": 50, "pausa_ms": 1000}` manda N itens por pedido
+  (o corpo e o lote, ou o `corpo.json` com o lote em `campo`), com pausa entre os pedidos.
+- A resposta vira itens: array JSON -> N itens, objeto -> um, texto -> um item de texto;
+  `resposta: "completa"` da `{status, cabecalhos, corpo}` (sem os cabecalhos com nome de
+  segredo, como `set-cookie`). Status >= 400 falha o passo com o status, o metodo, a URL SEM a
+  query e o comeco do corpo, tarjado; `aceitar_erro` devolve o status como item.
+
+**Credencial so por nome.** Declarada em `<raiz do agente>/http.json` (da maquina, nao do
+projeto), com as ORIGENS a que pode ir; o segredo vai ao broker de `<raiz>/credenciais` por
+`phxclaw credencial guardar|renovacao|login NOME` (uma linha da entrada padrao, nunca argumento):
+
+```json
+{"liberar": ["http://127.0.0.1:9000"],
+ "credenciais": {
+   "loja":   {"tipo": "bearer", "origens": ["https://api.exemplo.com"]},
+   "legado": {"tipo": "basico", "usuario": "integracao", "origens": ["https://erp.exemplo.com"]},
+   "chave":  {"tipo": "cabecalho", "cabecalho": "X-Api-Key", "origens": ["https://x.exemplo.com"]},
+   "maquina": {"tipo": "oauth2", "origens": ["https://api.exemplo.com"],
+               "oauth2": {"token": "https://auth.exemplo.com/token", "cliente_id": "id",
+                          "concessao": "client_credentials", "escopos": ["ler"]}}}}
+```
+
+O OAuth2 e o `oauth.rs` dos MCP, chamado e nao copiado: `AutorizacaoMcp::do_broker` (extraido
+do `da_pasta`), `Oauth::renovar` com o ramo `client_credentials`, `login_no` (o PKCE S256 do
+`login`, sobre o broker dado). O `Alvo` ganhou o espaco (`mcp` ou `credenciais`); o nome do
+segredo dos MCP nao mudou.
+
+**Gatilho de poll.** Lista `polls` do mesmo `.phxclaw/gatilhos.json`, um laco por poll no
+`servir`:
+
+```json
+{"polls": [{"nome": "pedidos", "http": {"url": "https://api.exemplo.com/v1/pedidos",
+            "credencial": "loja", "itens": "data"}, "chave": "id", "intervalo_s": 300,
+            "fluxo": "fluxos/novo-pedido.json"},
+           {"nome": "blog", "http": {"url": "https://blog.exemplo.com/feed.xml"},
+            "formato": "feed", "intervalo_s": 3600, "objetivo": "resuma {itens}"}]}
+```
+
+**Onde DIVERGE do n8n, e a restricao nossa que causou cada divergencia:**
+
+- **Credencial presa a origens.** O n8n deixa a credencial do HTTP Request ir a qualquer URL do
+  no; aqui o fluxo pode vir de modelo ou de importacao, e credencial que vai a URL escrita no
+  fluxo e exfiltracao com um campo. Pedido para outra origem recusa antes de conectar; o
+  redirecionamento para outra origem tira o cabecalho.
+- **SSRF fechado por padrao, com o IP preso.** O n8n alcanca a rede interna por padrao. Aqui
+  cada salto passa pela lista de IPs internos do navegador (`BrowserPolicy::check_url_resolved`)
+  e a conexao vai ao IP conferido (`HttpOptions::resolve`); so `liberar` abre um destino
+  interno, por origem exata. A pagina do link `next` e o 302 passam pela mesma conferencia.
+- **Segredo nao entra no JSON do fluxo.** O n8n aceita cabecalho `Authorization` literal no no;
+  aqui cabecalho, query e campo de formulario com nome de segredo, e qualquer texto com forma
+  de credencial (motor unico `phxclaw_types::segredo`), sao recusados na LEITURA do fluxo.
+- **Teto de bytes por no.** O n8n le a resposta inteira; aqui o corpo e abortado ao passar do
+  teto, somando todas as paginas.
+- **Poll com estado em disco e linha de base.** O no de poll do n8n guarda o estado no banco
+  dele; aqui o sha256 das chaves vistas fica em `<raiz>/gatilhos/poll-NOME.json`, gravado so
+  depois de o disparo ser aceito (pelo menos uma vez, nunca zero), e a primeira leitura nao
+  dispara.
+
+**Os motores irmaos, e por que nao ha segundo.** O laco de redirecionamento do EgressBroker virou
+`phxclaw_egress_broker::request_checked`, com a conferencia de cada salto nas maos de quem chama:
+o EgressBroker passa a lista de origens, o no HTTP passa a guarda de IP. O `http_request` virou
+o `http_request_with` com opcoes vazias (teto do corpo e endereco fixado). O caminho do JSON
+(`fluxos::pelo_caminho`) e a forma canonica do item (`fluxos::ordenado`) sao os do motor.
+
+**Prova real nos dois sentidos** (`// REPOSTO`, recompilado, visto cair, restaurado por escrita):
+SSRF (`check_url_resolved` trocado por aceitar tudo: o 127.0.0.1 devolve os itens),
+redirecionamento (conferencia so no primeiro salto: o 302 leva ao interno), teto de bytes (sem a
+conta no laco de pedacos: 3 MiB entram num teto de 1 MiB), tarja (erro sem `limpar`: o Bearer
+ecoado pelo servidor chega ao relatorio), origem da credencial (`alcanca` sempre verdadeiro: o
+token vai a outra origem) e dedupe do poll (sem o filtro dos vistos: a volta sem item novo
+redispara os dois ja vistos).
+
+**O que ficou de fora (honesto).** Poll de banco (Postgres Trigger). Corpo multipart (o
+`HttpRequestSpec` tem; o pedido do no nao expoe). Autenticacao por query (`?api_key=`): a chave
+na URL vai a log de proxy e ao erro do cliente, e cabecalho cobre os servicos que a aceitam.
+O teto de paginas encerra calado, como o `Max Pages` do n8n. Os arquivos gerados que listam as
+ferramentas (`apps/phxclaw-ui/assets/ferramentas.json`, `docs/AGENTE_AUTONOMO.md`) precisam do
+`tools/gerar_assets_ui.sh` depois do merge: a ferramenta `http_request` e nova.

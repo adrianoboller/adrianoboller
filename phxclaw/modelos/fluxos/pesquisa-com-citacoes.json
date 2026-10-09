@@ -1,0 +1,27 @@
+{
+  "modelo": {
+    "nome": "pesquisa-com-citacoes",
+    "descricao": "Pesquisa uma pergunta na web, com citações conferidas contra a página lida, e grava o resultado em um arquivo.",
+    "etiquetas": ["pesquisa", "web"],
+    "credenciais": []
+  },
+  "fluxo": {
+    "nome": "pesquisa-com-citacoes",
+    "teto_ms": 900000,
+    "variaveis": { "pergunta": "Quais são as novidades do Rust 1.98?" },
+    "passos": [
+      {
+        "id": "pesquisar",
+        "ferramenta": "deep_research",
+        "args": { "question": "{{var.pergunta}}" },
+        "teto_ms": 600000
+      },
+      {
+        "id": "gravar",
+        "depende": ["pesquisar"],
+        "ferramenta": "write_file",
+        "args": { "path": "pesquisa.md", "content": "{{pesquisar}}" }
+      }
+    ]
+  }
+}

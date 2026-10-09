@@ -1,0 +1,32 @@
+# O contexto do build é a raiz do repositório. O que está aqui não entra na imagem nem no
+# cache: nem artefato de compilação (dezenas de GB), nem histórico, nem segredo, nem dado.
+target/
+**/target/
+.git/
+.github/
+third_party/target/
+
+# segredos e dados de execução: nunca no contexto
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+**/master.key
+**/api.token
+**/segredos/
+**/cofre/
+secrets/
+deploy/secrets/
+.pgpass
+var/
+.phxclaw/
+*.db
+*.sqlite
+*.log
+
+# ruído local (os .png da interface em apps/phxclaw-ui/assets ENTRAM: a PWA os embute)
+**/__pycache__/
+node_modules/

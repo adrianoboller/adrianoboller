@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: phxclaw
+  labels:
+    app.kubernetes.io/part-of: phxclaw
+    # Pod Security Standards: o Deployment já cumpre o perfil `restricted`; o rótulo faz o
+    # cluster RECUSAR amanhã um manifesto que deixe de cumpri-lo.
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest

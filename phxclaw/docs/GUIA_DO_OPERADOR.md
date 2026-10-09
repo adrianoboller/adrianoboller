@@ -316,6 +316,81 @@ sandbox o Helix abre qualquer caminho, e foi assim que a chave-mestra do cofre a
 (medido em 09/10). Os testes do IDE e os servidores de linguagem também rodam com a pasta do
 agente escondida. Em máquina sem `bwrap` (Windows), o terminal web fica indisponível.
 
+### Usuários, projetos e papéis da API (RBAC)
+
+Sem usuários, a API de `phxclaw servir` tem uma porta só: o Bearer do `api.token`, como
+sempre foi. Os usuários entram **pedidos**, pela CLI local — não há rota HTTP que crie
+usuário, porque criar pela rede seria a porta para o primeiro que chegar se fazer dono:
+
+```bash
+phxclaw usuario criar ana --papel member --projeto vendas     # imprime o token UMA vez
+phxclaw usuario criar lia --papel leitor --projeto vendas --projeto compras
+phxclaw usuario criar ada --papel admin
+phxclaw usuario listar                                         # nome, papel, projetos; nunca o hash
+phxclaw usuario chave ana                                      # troca o token; o anterior morre
+phxclaw usuario remover ana                                    # sem usuários, volta o Bearer único
+```
+
+O arquivo é `<pasta>/usuarios.json`, gravado 0600, com o sal e o SHA-256 de cada token — o
+token em si não fica em lugar nenhum. Trocar a chave ou remover vale **no pedido seguinte**,
+sem reiniciar o `servir`. O `api.token` continua valendo, como **owner**: quem lê aquele
+arquivo já roda `phxclaw usuario` na mesma máquina, e recusá-lo só quebraria a ponte, os
+gatilhos e o SDK.
+
+| Papel | Alcança |
+|---|---|
+| `leitor` | ler tarefas e artefatos dos projetos dele; listar, ler e validar fluxos; `GET /metrics` |
+| `member` | o do leitor, mais criar, aprovar, editar plano, responder e cancelar tarefas dos projetos dele; gravar e rodar fluxos |
+| `admin` | todos os projetos e as tarefas sem projeto; agenda, configuração (só leitura), IDE (menos o terminal), MCP |
+| `owner` | tudo: gravar configuração, terminal do IDE e do túnel, instalar plugin |
+
+A tabela é a `MATRIZ` de `crates/phxclaw-agent/src/rbac.rs`, lida por um portão único (o
+middleware do router); rota que ninguém classificou é só do owner. O projeto do pedido vem
+de dois lugares, nunca de um terceiro: da tarefa gravada (rotas com `{id}`) ou do cabeçalho
+`X-PhxClaw-Projeto` (criar e listar). Usuário de um projeto só pode omitir o cabeçalho; com
+dois ou mais, a API pede que ele diga qual. `projeto` no corpo do `POST /v1/tasks` é
+**recusado** (400): seria um segundo campo dizendo outra coisa, que o portão não lê. A
+tarefa criada sem projeto (pela agenda, por gatilho, por canal ou pelo `api.token` sem o
+cabeçalho) é da instância: só admin e owner a veem. O subagente herda o projeto da mãe.
+
+Os fluxos da tela (`/v1/fluxos...`) são arquivos da pasta do projeto da **instância**, não de
+um projeto do RBAC: o portão confere só o papel. Duas consequências que valem saber: um
+`member` de qualquer projeto grava e roda qualquer fluxo da instância, e a tarefa que o
+`POST /v1/fluxos/rodar` cria nasce sem projeto (só admin e owner a veem depois).
+
+Limites: o canvas (`/canvas/...`) e o site publicado (`/sites/...`) continuam públicos, como
+eram — o widget roda em sandbox e se endereça pelo id da tarefa. Os webhooks de gatilho
+(`/v1/triggers/...`) ficam fora do portão: têm o segredo deles.
+
+### Métricas Prometheus (`/metrics`)
+
+`api.metricas` (`PHXCLAW_API_METRICAS`), desligada por padrão. Desligada, o `GET /metrics`
+responde 404 e nada é medido — o interruptor é lido antes de envolver modelo e ferramentas,
+então não há custo nenhum por chamada. Ligada, a rota responde no formato de texto do
+Prometheus, com o mesmo Bearer das outras rotas (com usuários, papel `leitor` ou acima):
+
+| Métrica | Tipo | Rótulos |
+|---|---|---|
+| `phxclaw_tarefas_total` | counter | `estado` (o final da tarefa) |
+| `phxclaw_fluxo_execucoes_total` | counter | `estado` (onde o disparo ou a retomada parou) |
+| `phxclaw_passos_total` | counter | — |
+| `phxclaw_ferramenta_chamadas_total` | counter | `resultado` (`ok`/`erro`) |
+| `phxclaw_modelo_chamadas_total` | counter | `resultado` |
+| `phxclaw_tokens_total` | counter | `tipo` (`entrada`/`saida`) |
+| `phxclaw_ferramenta_duracao_segundos` | histogram | `le` |
+| `phxclaw_tarefa_duracao_segundos` | histogram | `le` |
+
+Todo rótulo é de conjunto fechado: nada de nome de ferramenta, argumento, objetivo ou nome
+de credencial (há teste que reprova rótulo fora da lista). Os contadores são do processo:
+reiniciar zera, e o Prometheus trata o recomeço. Exemplo de coleta:
+
+```yaml
+scrape_configs:
+  - job_name: phxclaw
+    authorization: { credentials_file: /etc/prometheus/phxclaw.token }
+    static_configs: [{ targets: ["127.0.0.1:8787"] }]
+```
+
 ### Motor de fluxo: quantos rodam ao mesmo tempo
 
 `fluxos.max_simultaneos` (`PHXCLAW_FLUXOS_MAX_SIMULTANEOS`) é o máximo de fluxos rodando ao

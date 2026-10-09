@@ -10,6 +10,8 @@
 //! - criar tarefa passa por um balde de fichas: cada tarefa gasta modelo, e um laco de
 //!   cliente com defeito esvaziaria a cota do provedor. Consulta nao gasta ficha, porque
 //!   acompanhar tarefa e sondagem legitima.
+//! - com usuarios (`rbac.rs`), papel e projeto se decidem num portao UNICO, o middleware
+//!   posto em `router`; as rotas continuam chamando `auth`, que so confirma o token.
 
 use crate::agenda::Agenda;
 use crate::motor::{Agent, CancelFlag, NoObserver};
@@ -44,6 +46,8 @@ pub struct ApiState {
     pub webhook_origins: Vec<String>,
     /// Teto de criacao de tarefas (balde de fichas).
     pub limite: Arc<Limite>,
+    /// Usuarios, projetos e papeis (`rbac.rs`). Vazio = so o Bearer unico, como antes.
+    pub usuarios: crate::rbac::Usuarios,
 }
 
 /// Balde de fichas: `capacidade` de rajada, reposto a `por_minuto`.
@@ -82,6 +86,8 @@ impl Limite {
 pub fn router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"ok": true})) }))
+        // Exposicao Prometheus (`metricas.rs`), desligada por padrao (`api.metricas`).
+        .route("/metrics", get(crate::metricas::expor))
         .route("/v1/tasks", post(criar).get(listar))
         .route("/v1/tasks/{id}", get(obter))
         .route("/v1/tasks/{id}/plan", post(editar_plano))
@@ -102,6 +108,14 @@ pub fn router(state: ApiState) -> Router {
         .merge(crate::ide::rotas())
         // MCP por streamable HTTP (`POST /mcp`), para o MCP Client Tool do n8n e afins.
         .merge(crate::mcp::rotas())
+        // A tela Fluxos (editor em grafo): listar, ler, validar, gravar e rodar `--ate`.
+        .merge(crate::fluxos_tela::rotas())
+        // O portao do RBAC, por ULTIMO: `route_layer` cobre so as rotas que ja existem, e e
+        // assim que nenhuma das acima escapa dele. Sem usuarios, ele nao faz nada.
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::rbac::portao,
+        ))
         .with_state(state)
 }
 
@@ -115,8 +129,10 @@ fn erro(code: StatusCode, msg: impl Into<String>) -> (StatusCode, Json<Value>) {
     (code, Json(json!(corpo)))
 }
 
+/// O token e de alguem: o Bearer unico, ou (com usuarios) um token de usuario. Papel e
+/// projeto NAO se decidem aqui -- o portao (`rbac::portao`) ja decidiu antes da rota.
 pub(crate) fn auth(s: &ApiState, h: &HeaderMap) -> Result<(), (StatusCode, Json<Value>)> {
-    if phxclaw_api_gateway::authorized(h, &s.token) {
+    if phxclaw_api_gateway::authorized(h, &s.token) || crate::rbac::e_usuario(s, h) {
         Ok(())
     } else {
         Err(erro(StatusCode::UNAUTHORIZED, "token ausente ou invalido"))
@@ -146,9 +162,27 @@ pub struct Criada {
     pub fim: tokio::task::JoinHandle<Task>,
 }
 
-async fn criar(State(s): State<ApiState>, h: HeaderMap, Json(n): Json<NovaTarefa>) -> Resp {
+async fn criar(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    acesso: Option<axum::Extension<crate::rbac::Acesso>>,
+    Json(v): Json<Value>,
+) -> Resp {
     auth(&s, &h)?;
-    match criar_tarefa(&s, n) {
+    // Com usuarios, o projeto vem do cabecalho, que e o campo que o portao le. Um `projeto`
+    // no corpo seria um segundo campo dizendo outra coisa, e o portao nao o veria: recusa,
+    // em vez de ignorar calado e criar a tarefa num projeto que quem pediu nao escolheu.
+    // Sem usuarios (`acesso` ausente) o campo segue ignorado, como sempre foi.
+    if acesso.is_some() && v.get("projeto").is_some() {
+        return Err(erro(
+            StatusCode::BAD_REQUEST,
+            "o projeto vem do cabecalho X-PhxClaw-Projeto, nao do corpo",
+        ));
+    }
+    let n: NovaTarefa = serde_json::from_value(v)
+        .map_err(|e| erro(StatusCode::UNPROCESSABLE_ENTITY, e.to_string()))?;
+    let projeto = acesso.and_then(|a| a.0.projeto);
+    match criar_tarefa_em(&s, n, projeto, |_| Ok(())) {
         Ok(c) => Ok((StatusCode::ACCEPTED, Json(TarefaCriada { id: c.id })).into_response()),
         Err(Recusa {
             retry_after: Some(seg),
@@ -179,6 +213,17 @@ pub fn criar_tarefa(s: &ApiState, n: NovaTarefa) -> Result<Criada, Recusa> {
 pub fn criar_tarefa_com(
     s: &ApiState,
     n: NovaTarefa,
+    preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+) -> Result<Criada, Recusa> {
+    criar_tarefa_em(s, n, None, preparo)
+}
+
+/// `criar_tarefa_com` no projeto que o portao resolveu (`rbac::Acesso`). O projeto entra
+/// na tarefa ANTES da primeira gravacao: nao ha instante em que ela exista sem ele.
+fn criar_tarefa_em(
+    s: &ApiState,
+    n: NovaTarefa,
+    projeto: Option<String>,
     preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
 ) -> Result<Criada, Recusa> {
     let recusa = |status, e: String| Recusa {
@@ -242,6 +287,7 @@ pub fn criar_tarefa_com(
         });
     }
     let mut t = Task::new(objetivo, modelo);
+    t.projeto = projeto;
     t.webhook = n.webhook;
     t.verificar = verificar;
     t.saida_esquema = n.saida_esquema;
@@ -329,6 +375,18 @@ pub fn criar_fluxo_com(
     entrada: Vec<Value>,
     preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
 ) -> Result<Criada, Recusa> {
+    criar_fluxo_ate(s, caminho, entrada, preparo, None)
+}
+
+/// O mesmo disparo, cortado nos ancestrais de `ate` (o `rodar --ate` da CLI): e o
+/// «executar ate aqui» da tela Fluxos. Um caminho so -- o corte e do motor.
+pub fn criar_fluxo_ate(
+    s: &ApiState,
+    caminho: &str,
+    entrada: Vec<Value>,
+    preparo: impl FnOnce(&std::path::Path) -> std::io::Result<()>,
+    ate: Option<String>,
+) -> Result<Criada, Recusa> {
     let recusa = |status, e: String| Recusa {
         status,
         erro: e,
@@ -341,6 +399,7 @@ pub fn criar_fluxo_com(
     // uma tarefa que falha, e sem gastar ficha nem disco.
     crate::fluxos::conferir_entrada(&entrada).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
     let agente = (s.factory)(&s.default_model).map_err(|e| recusa(StatusCode::BAD_REQUEST, e))?;
+    let agente = crate::metricas::GLOBAL.medindo(agente);
     if let Err(seg) = s.limite.tomar() {
         return Err(Recusa {
             status: StatusCode::TOO_MANY_REQUESTS,
@@ -374,11 +433,18 @@ pub fn criar_fluxo_com(
             crate::fluxos::Execucao {
                 entrada,
                 mae: Some(mae),
+                ate: ate.as_deref(),
                 ..crate::fluxos::Execucao::default()
             },
         )
         .await;
-        match store.load(&id) {
+        let fim = store.load(&id);
+        crate::metricas::GLOBAL.fim_de_fluxo(|| match (&r, &fim) {
+            (Err(_), _) => Some(TaskStatus::Failed),
+            (Ok(_), Ok(t)) => Some(t.status),
+            _ => None,
+        });
+        match fim {
             Ok(mut t) => {
                 if let Err(e) = r {
                     // Recusa antes do primeiro passo (ciclo, variavel sem config): a tarefa
@@ -411,20 +477,28 @@ pub fn retomar_fluxo(s: &ApiState, id: &str) -> Result<tokio::task::JoinHandle<(
         erro: e,
         retry_after: None,
     })?;
+    let agente = crate::metricas::GLOBAL.medindo(agente);
     let (store, id) = (s.store.clone(), id.to_string());
     Ok(tokio::spawn(async move {
+        let r = crate::fluxos::retomar_do_disco(&agente, &id).await;
         // A retomada que ja corre (a resposta e o laco do servidor chegando juntos) nao e
         // falha: a outra termina o trabalho. Decidido pelo TIPO, nunca pela frase.
-        if let Err(crate::fluxos::FalhaDaRetomada::Recusada(e)) =
-            crate::fluxos::retomar_do_disco(&agente, &id).await
+        if let Err(crate::fluxos::FalhaDaRetomada::Recusada(e)) = &r
             && let Ok(mut t) = store.load(&id)
             && t.status == TaskStatus::AwaitingInput
         {
             t.status = TaskStatus::Failed;
-            t.error = Some(e);
+            t.error = Some(e.clone());
             t.updated_at = Utc::now();
             let _ = store.save(&t);
         }
+        // Caminho irmao do disparo (`criar_fluxo_ate`): a retomada tambem e uma execucao de
+        // fluxo e conta pelo estado em que parou -- menos a que nem comecou porque a outra
+        // ja corria, que nao executou nada.
+        crate::metricas::GLOBAL.fim_de_fluxo(|| match &r {
+            Err(crate::fluxos::FalhaDaRetomada::JaEmCurso(_)) => None,
+            _ => store.load(&id).ok().map(|t| t.status),
+        });
     }))
 }
 
@@ -459,6 +533,10 @@ pub fn manter_fluxos(s: &ApiState) -> Vec<tokio::task::JoinHandle<()>> {
 
 /// Roda em segundo plano, registra o cancelamento e chama o webhook no fim.
 pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<Task> {
+    // O interruptor das metricas vem antes de tudo: desligado, nem o relogio se le.
+    let m = &crate::metricas::GLOBAL;
+    let agente = m.medindo(agente);
+    let inicio = m.ligada().then(Instant::now);
     let cancel = CancelFlag::default();
     s.running
         .lock()
@@ -468,6 +546,7 @@ pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<
         let id = t.id.clone();
         let fim = agente.run(t, &cancel, &NoObserver).await;
         s.running.lock().unwrap().remove(&id);
+        m.fim_de_tarefa(|| crate::metricas::FimDeTarefa::de(&fim, inicio));
         if let Some(w) = fim.webhook.clone() {
             chamar_webhook(&s, &w, &fim).await;
         }
@@ -504,12 +583,19 @@ fn resumo(t: &Task) -> Value {
     json!(TaskSummary::from(t))
 }
 
-async fn listar(State(s): State<ApiState>, h: HeaderMap) -> Resp {
+async fn listar(
+    State(s): State<ApiState>,
+    h: HeaderMap,
+    acesso: Option<axum::Extension<crate::rbac::Acesso>>,
+) -> Resp {
     auth(&s, &h)?;
     let l = s
         .store
         .list()
         .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    // A colecao nao tem UM projeto para o portao conferir: ele resolve o projeto do
+    // pedido e a lista se corta por ele aqui, pela funcao do proprio RBAC.
+    let l = crate::rbac::visiveis(acesso.as_ref().map(|a| &a.0), l);
     Ok(Json(l.iter().map(resumo).collect::<Vec<_>>()).into_response())
 }
 

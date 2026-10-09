@@ -29,6 +29,7 @@
   "api": {
     "//": [
       "host: Endereço em que a API escuta; expor é decisão do operador [texto; ambiente PHXCLAW_API_HOST]",
+      "metricas: Exposição Prometheus em GET /metrics (contadores e latência); desligada não custa nada [booleano; ambiente PHXCLAW_API_METRICAS]",
       "porta: Porta da API do app de mesa [inteiro; ambiente PHXCLAW_API_PORT]",
       "tarefas_por_minuto: Teto de criação de tarefas pela API (balde de fichas) [inteiro; ambiente PHXCLAW_API_TAREFAS_POR_MINUTO]",
       "url_cliente: Servidor que o SDK e o exemplo do SDK chamam [texto; ambiente PHXCLAW_URL]",
@@ -36,6 +37,7 @@
       "webhook_origens: Origens para onde o webhook de fim de tarefa pode ir; vazio = recusado [lista; ambiente PHXCLAW_WEBHOOK_ORIGINS]"
     ],
     "host": "127.0.0.1",
+    "metricas": false,
     "porta": null,
     "tarefas_por_minuto": 10,
     "url_cliente": "http://127.0.0.1:8787",

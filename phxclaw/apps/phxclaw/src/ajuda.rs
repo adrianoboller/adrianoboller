@@ -309,6 +309,19 @@ pub const COMANDOS: &[Comando] = &[
     },
     Comando {
         grupo: Grupo::Credenciais,
+        nome: "credencial",
+        resumo: "Segredo de uma credencial nomeada do no HTTP (http_request)",
+        apelidos: &["credential"],
+        uso: "credencial guardar|renovacao|login NOME [--pasta DIR]",
+        descricao: "A credencial e declarada em <pasta>/http.json (tipo bearer, basico, \
+                    cabecalho ou oauth2, e as ORIGENS a que pode ir). guardar le uma linha da \
+                    ENTRADA PADRAO (o valor fixo, ou o segredo do cliente no oauth2) e a guarda \
+                    no broker de <pasta>/credenciais; renovacao guarda um refresh token; login \
+                    faz OAuth 2.0 + PKCE no navegador local. O fluxo e a ferramenta dizem so o \
+                    NOME.",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
         nome: "elevenlabs",
         resumo: "Guarda a chave da ElevenLabs ou lista as vozes da conta",
         apelidos: &[],
@@ -358,6 +371,18 @@ pub const COMANDOS: &[Comando] = &[
         descricao: "Le PHXCLAW_API_TOKEN (24+ caracteres) do AMBIENTE do comando e guarda no \
                     broker de <pasta>/api. O servir le do ambiente, senao do broker, senao de \
                     <pasta>/api.token (gerado na primeira vez).",
+    },
+    Comando {
+        grupo: Grupo::Credenciais,
+        nome: "usuario",
+        resumo: "Usuarios, projetos e papeis da API (token so como hash)",
+        apelidos: &["user"],
+        uso: "usuario criar NOME --papel owner|admin|member|leitor [--projeto P]... | listar | \
+              chave NOME | remover NOME [--pasta DIR]",
+        descricao: "Grava <pasta>/usuarios.json (0600) com o sal e o SHA-256 de cada token; o \
+                    token aparece uma vez, na criacao ou na troca de chave. Sem usuarios a API \
+                    usa so o Bearer do api.token; com eles, o api.token vale como owner. member \
+                    e leitor so alcancam os projetos deles (cabecalho X-PhxClaw-Projeto).",
     },
     Comando {
         grupo: Grupo::Credenciais,

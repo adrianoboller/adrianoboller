@@ -1,0 +1,27 @@
+{
+  "modelo": {
+    "nome": "monitor-de-testes",
+    "descricao": "Roda um nó da árvore de testes e, se ele falhar, avisa numa conversa do canal de mensagens com o motivo.",
+    "etiquetas": ["testes", "monitor", "canal"],
+    "credenciais": ["canal-mensagens"]
+  },
+  "fluxo": {
+    "nome": "monitor-de-testes",
+    "variaveis": { "conversa": "ID-DA-CONVERSA", "no": "meu-crate" },
+    "passos": [
+      {
+        "id": "testar",
+        "ferramenta": "test_run",
+        "args": { "node": "{{var.no}}", "language": "rust" },
+        "ao_errar": "saida_de_erro",
+        "teto_ms": 900000
+      },
+      {
+        "id": "avisar",
+        "depende": ["testar:erro"],
+        "ferramenta": "channel_send",
+        "args": { "to": "{{var.conversa}}", "text": "Os testes falharam: {{testar}}" }
+      }
+    ]
+  }
+}

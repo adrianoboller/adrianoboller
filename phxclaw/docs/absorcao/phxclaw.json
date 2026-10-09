@@ -667,16 +667,18 @@
    "evidencia": "subfluxo.rs ferramenta `fluxo` (capacidade flow.run, pelo call_tool): roda fluxo gravado por `nome` (pasta de fluxos) ou `caminho` (confine da pasta da tarefa) com itens de entrada, once/each; teto de 8 fluxos empilhados e ciclo recusado pela assinatura na cadeia de parent (fluxos::conferir_cadeia). tests/fluxo_onda2.rs::subfluxo (RED medido com a recusa de ciclo desligada)"
   },
   "versionamento_fluxo": {
-   "estado": "parcial",
-   "evidencia": "fluxos.rs Relatorio.fluxo_sha256 prende a execucao a definicao; historico.rs guarda cada gravacao do arquivo no projeto; sem versao publicada x rascunho nem diff entre versoes"
+   "estado": "agente",
+   "evidencia": "fluxo_versoes.rs: o arquivo e o RASCUNHO e `publicar` congela versao numerada (.ARQ.versoes/, hash = fluxos::assinatura, o mesmo do Relatorio.fluxo_sha256); gatilho (webhook, formulario, arquivo), agenda e sub-fluxo rodam a PUBLICADA, so `fluxo rodar` le o rascunho (`--publicada` para a versao); historico, `voltar N` (versao nova com voltou_a), `restaurar N` (rascunho, recusa edicao nao guardada); fluxo sem versao e publicado implicito (formato antigo lido). Falta: diff entre duas versoes dentro da ferramenta (o git de fluxos entrega o diff dos arquivos canonicos)",
+   "teste": "crates/phxclaw-agent/tests/fluxo_f3.rs::gatilho_roda_a_publicada_e_nao_o_rascunho (RED medido: com o caminho do rascunho em criar_fluxo_publicado o gatilho devolve o rascunho), ::agenda_e_subfluxo_rodam_a_publicada (RED medido nos dois irmaos), ::fluxo_sem_versao_e_publicado_implicito (RED medido: formato antigo sem pasta de versoes passa a ser erro), ::versao_adulterada_fecha_e_nao_cai_no_rascunho (RED medido), ::publicacoes_concorrentes_nao_repetem_numero (RED medido sem a trava)"
   },
   "gatilho_manual": {
    "estado": "agente",
    "evidencia": "apps/phxclaw/src/main.rs:918 `phxclaw fluxo rodar ARQ.json`"
   },
   "gatilho_poll": {
-   "estado": "parcial",
-   "evidencia": "gatilhos.rs Observador: pasta observada por mtime (arquivo estavel); canais/ IMAP por laco; sem poll generico de API ou banco (RSS, Postgres Trigger)"
+   "estado": "agente",
+   "evidencia": "gatilho_poll.rs (lista `polls` do gatilhos.json, armada no `servir`): consulta HTTP periodica pelo MESMO fluxo_http::executar do no HTTP (SSRF, credencial por nome, teto de bytes), JSON ou RSS/Atom (itens_do_feed, quick-xml sem entidade externa), dispara o fluxo publicado (fluxo_versoes::criar_fluxo_publicado, como o webhook e a pasta) ou a tarefa so com os itens NOVOS: chave do item (campo `chave`, `id` no feed, ou o item canonico) em sha256 persistida em <raiz>/gatilhos/poll-NOME.json (ultimas 10.000, gravada por tmp+rename), marcada so depois do disparo aceito; primeira leitura e linha de base (nao dispara; `disparar_primeira` muda), intervalo minimo 60 s, max_itens por disparo. Falta: poll de banco (Postgres Trigger)",
+   "teste": "crates/phxclaw-agent/tests/fluxo_http.rs::poll_dispara_so_com_itens_novos_e_lembra_depois_de_reiniciar (RED medido: sem o filtro dos vistos a volta sem item novo redispara os dois ja vistos) e ::poll_intervalo_minimo_primeira_leitura_e_feed"
   },
   "gatilho_formulario": {
    "estado": "agente",
@@ -692,8 +694,9 @@
    "evidencia": "crates/phxclaw-secret-broker: AES-256-GCM em repouso (lib.rs:442), chave-mestra em arquivo, store/rotate/revoke/lease; canais e MCP leem do broker"
   },
   "oauth2_generico": {
-   "estado": "parcial",
-   "evidencia": "oauth.rs: PKCE S256 com refresh para servidores MCP e presets (Google, Linear); nao se aplica a uma requisicao HTTP qualquer"
+   "estado": "agente",
+   "evidencia": "credencial nomeada `tipo: oauth2` em <raiz>/http.json serve ao no HTTP pelo MESMO oauth.rs dos MCP (AutorizacaoMcp::do_broker, renovacao serializada, 401 que invalida e repete uma vez, limpar no erro): concessao `client_credentials` (RFC 6749 §4.4, Oauth::renovar) e `codigo` (refresh token guardado por `phxclaw credencial renovacao` ou obtido por `phxclaw credencial login`, o mesmo PKCE S256 via oauth::login_no); segredo no broker <raiz>/credenciais, preso a (nome, origens, endpoint de token, cliente) como o achado M4; tambem bearer, basico e cabecalho proprio",
+   "teste": "crates/phxclaw-agent/tests/fluxo_http.rs::oauth2_client_credentials_e_refresh_pelo_oauth_rs, ::basico_e_cabecalho_saem_do_broker, ::credencial_so_vai_as_origens_declaradas (RED medido: com Credenciada::alcanca sempre verdadeiro o token chega a outra origem); tests/credencial_ci.rs (os MCP, sem regressao)"
   },
   "segredos_externos": {
    "estado": "nao",
@@ -727,12 +730,14 @@
    "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::concorrencia_limite (RED medido: sem a vaga os tres fluxos entram juntos, maximo em voo 3)"
   },
   "editor_canvas": {
-   "estado": "nao",
-   "evidencia": "nenhuma tela de fluxo na UI (telas: geral, agentes, ide, ferramentas, absorcao, tarefas, config); xyflow recusado R20 (TRIAGEM 01/10)"
+   "estado": "agente",
+   "evidencia": "tela Fluxos (apps/phxclaw-ui/assets/fluxos.js, SVG a mao, sem biblioteca: xyflow recusado R20): grafo em camadas pela ordem topologica, zoom/rolagem/minimapa, arrastar no (posicao em ui.posicoes, fora da assinatura do motor), ligar/desligar, criar e excluir passo, parametros do passo, validar/salvar/executar e executar ate um passo (--ate) pelas rotas /v1/fluxos/* (crates/phxclaw-agent/src/fluxos_tela.rs, o motor julga), ultima execucao por cima com entrada/saida por passo. Falta: criar arquivo de fluxo novo pela tela, desfazer, formulario por tipo de no (docs/N8N.md, Editor em grafo)",
+   "teste": "tests/desktop/ui_fluxos.mjs (47/47 contra o agente real, 1280 e 400, dois temas, contraste >= 4,5:1; capturas tests/desktop/out/ui_fluxos_*.png; RED medido: sem o script da tela o roteiro cai) e crates/phxclaw-agent/src/fluxos_tela.rs::testes"
   },
   "modelos_fluxo": {
-   "estado": "nao",
-   "evidencia": "sem galeria de fluxos prontos; importar_skills.rs importa SKILL.md, nao fluxos"
+   "estado": "agente",
+   "evidencia": "fluxo_modelos.rs: galeria de 12 modelos em modelos/fluxos/*.json embutidos no binario (nome, descricao, etiquetas, credenciais exigidas por NOME); CLI `phxclaw fluxo modelos` e `fluxo usar MODELO DESTINO.json` (nao sobrescreve); todo modelo passa por fluxos::ler e o arquivo inteiro pelo motor unico phxclaw_types::segredo (valor de credencial e recusado); o modelo que usa send_email/channel_send/n8n_workflow/postgres tem de declarar o nome da credencial. Sem galeria remota nem modelos da comunidade",
+   "teste": "crates/phxclaw-agent/tests/fluxo_f3.rs::modelo_com_credencial_e_recusado (RED medido: sem as duas guardas de credencial de ler_modelo as seis variantes entram) e ::nenhum_modelo_da_galeria_traz_valor_de_credencial (RED medido: ghp_ injetado num arquivo da galeria derruba o teste)"
   },
   "etiquetas_pastas": {
    "estado": "agente",
@@ -740,12 +745,14 @@
    "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::etiquetas_pastas (nao reposto um a um)"
   },
   "projetos_rbac": {
-   "estado": "nao",
-   "evidencia": "api.rs: um Bearer unico; sem usuarios, projetos nem papeis (owner/admin/member)"
+   "estado": "agente",
+   "evidencia": "rbac.rs: usuarios com papel owner/admin/member/leitor e projetos, token por usuario guardado so como SHA-256 com sal (<pasta>/usuarios.json 0600), criado pela CLI `phxclaw usuario criar|listar|chave|remover`; matriz papel x rota UMA (rbac::MATRIZ) aplicada pelo portao unico rbac::portao (route_layer do api::router); projeto pela tarefa gravada ou pelo cabecalho X-PhxClaw-Projeto, corpo com projeto recusado; sem usuarios o Bearer unico vale como antes. Papel e por usuario, nao por projeto (o n8n tem project:admin/editor/viewer)",
+   "teste": "crates/phxclaw-agent/tests/rbac.rs::sem_usuarios_nada_muda, ::papel_sem_direito_recebe_403, ::token_de_outro_projeto_e_recusado, ::o_websocket_do_ide_passa_pela_mesma_matriz, ::revogar_vale_no_pedido_seguinte_sem_reiniciar; rbac::testes::o_hash_nao_vaza_no_disco_no_debug_nem_na_listagem, ::a_comparacao_visita_os_32_bytes_onde_quer_que_esteja_a_diferenca, ::achar_confere_todos_os_usuarios_mesmo_depois_de_casar (RED medido de cada guarda: docs/N8N.md secao 9c)"
   },
   "controle_versao_git_fluxos": {
    "estado": "parcial",
-   "evidencia": "o fluxo e um JSON no projeto e git.rs/git_write o versionam como qualquer arquivo; sem push/pull de fluxos como entidade nem ambientes dev/prod"
+   "evidencia": "fluxo_git.rs: `phxclaw fluxo exportar|importar --ambiente dev|prod` (dev = rascunho, prod = publicada) com arquivo canonico (chaves ordenadas, bytes estaveis, nada reescrito se nao mudou) em <repo>/<ambiente>/; importar confere tudo antes de gravar, recusa arquivo de outro ambiente e rascunho diferente sem --sobrescrever, e no prod PUBLICA; `--commit MSG` registra pelo GitTool de escrita do git.rs (mesmo sandbox e varredura de segredos, sem segundo versionador). Falta: push/pull para remoto (o git do agente roda sem rede) e a ligacao automatica de ambiente a ramo",
+   "teste": "crates/phxclaw-agent/tests/fluxo_f3.rs::exportar_e_canonico_e_estavel_e_separa_dev_de_prod, ::importar_confere_antes_de_gravar (RED medido: sem a conferencia do ambiente o arquivo do dev entra no prod), ::registrar_commita_pelo_git_tool; apps/phxclaw/tests/fluxo_cli.rs::modelos_versoes_e_git_pela_cli"
   },
   "assistente_construtor_ia": {
    "estado": "parcial",
@@ -764,8 +771,9 @@
    "evidencia": "segredos.rs varredura gitleaks no git_write, instrucoes.rs/importar_skills.rs varredura anti-injecao, gravacao.rs redigir; sem no generico de politica sobre texto (PII, jailbreak, topico)"
   },
   "requisicao_http": {
-   "estado": "parcial",
-   "evidencia": "adaptadores.rs BrowserTool abre e le pagina (GET); sem no HTTP generico com metodo, corpo, autenticacao por credencial, paginacao e lotes; `network` (sistema.rs:929) e diagnostico, nao requisicao"
+   "estado": "agente",
+   "evidencia": "fluxo_http.rs: ferramenta `http_request` (capacidade http.request, fora do padrao) e passo `http` do fluxo (fluxos.rs tipo/argumentos_de: a MESMA ferramenta pelo call_tool, no passo da onda e no fluxo de erro); GET/POST/PUT/PATCH/DELETE/HEAD, cabecalhos, query, corpo json/form/texto, teto_ms, teto_bytes lido em pedacos (phxclaw_http_client::http_request_with), credencial por NOME (segredo no broker; cabecalho/query/form com nome de segredo e forma de credencial recusados na leitura), paginacao por cursor, por URL na resposta e por Link rel=next com max_paginas, lotes de N itens por pedido com pausa; resposta vira itens (caminho `itens`); erro HTTP com status e trecho do corpo tarjado (segredos do pedido + scrub_secret_like). SSRF: BrowserPolicy::check_url_resolved em cada salto (phxclaw_egress_broker::request_checked, o laco do EgressBroker) com o IP fixado na conexao; interno so por `liberar` em http.json",
+   "teste": "crates/phxclaw-agent/tests/fluxo_http.rs: ::ssrf_recusa_interno_por_padrao_e_libera_so_a_origem_listada (RED medido), ::redirecionamento_para_interno_e_recusado_sem_tocar_o_alvo (RED medido: conferencia so no primeiro salto), ::teto_de_bytes_aborta_a_resposta_grande (RED medido: sem o teto no laco de pedacos), ::erro_http_aparece_no_relatorio_sem_vazar_o_authorization (RED medido: sem a tarja o Bearer ecoado vai ao relatorio), ::paginacao_por_cursor_link_e_proximo_com_teto_de_paginas, ::lote_manda_n_itens_por_pedido_com_pausa, ::passo_http_do_fluxo_vira_itens_pelo_portao, ::segredo_e_pedido_invalido_no_passo_http_recusados_na_leitura"
   },
   "banco_postgres": {
    "estado": "agente",
@@ -773,7 +781,8 @@
   },
   "observabilidade_insights": {
    "estado": "parcial",
-   "evidencia": "EvidenceLedger por tarefa, avaliacao.rs p50/p95 e tokens, gravacao.rs MedidasDoPasso; sem /metrics Prometheus, OTel nem painel de insights"
+   "evidencia": "metricas.rs: GET /metrics no texto Prometheus (tarefas e execucoes de fluxo por estado, passos, chamadas de ferramenta e de modelo, tokens, latencia de ferramenta e de tarefa em histograma), atras do portao do RBAC (leitor+), rotulos de conjunto fechado, desligado por padrao (api.metricas) e sem custo desligado; mais EvidenceLedger por tarefa, avaliacao.rs p50/p95 e tokens, gravacao.rs MedidasDoPasso. Falta: OTel e o painel de insights (tempo poupado, taxa de falha por fluxo)",
+   "teste": "crates/phxclaw-agent/tests/rbac.rs::metrics_atras_do_portao_e_no_formato_prometheus; metricas::testes::desligada_nao_envolve_o_agente_nem_roda_o_fecho (RED medido: involucro antes do interruptor e fecho rodado antes), ::ligada_conta_e_os_rotulos_sao_de_conjunto_fechado"
   },
   "cli_importar_exportar": {
    "estado": "agente",
@@ -781,8 +790,9 @@
    "teste": "crates/phxclaw-agent/tests/fluxo_onda3.rs::cli_importar_exportar (RED medido: sem a conferencia da assinatura o pacote com o pin trocado foi importado)"
   },
   "instalacao_docker_k8s": {
-   "estado": "nao",
-   "evidencia": "nenhum Dockerfile, compose ou manifesto k8s na arvore; phxclaw-installer e backup/restore local"
+   "estado": "parcial",
+   "evidencia": "deploy/ (Dockerfile multi-estagio com USER 10001 e HEALTHCHECK, .dockerignore, docker-compose.yml com PostgreSQL por perfil e segredos por arquivo, deploy/k8s com Namespace/ConfigMap/PVC/Deployment/Service/Secret sem valor/kustomization; docs/INSTALACAO_DOCKER_K8S.md). Conformidade medida: 10 testes, RED medido por mutante e no arquivo real; `docker compose config` valida o compose. NAO MEDIDO: docker build, docker run + /health e kubectl apply (esta maquina nao tem daemon Docker nem cluster) -- vira agente quando o build e o /health forem medidos",
+   "teste": "crates/phxclaw-types/tests/deploy_conformidade.rs (cargo test -p phxclaw-types --test deploy_conformidade; usa phxclaw_types::segredo)"
   }
  }
 }

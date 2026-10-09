@@ -92,6 +92,11 @@ pub struct Task {
     /// o objeto, e o MESMO validador das ferramentas o confere antes de aceitar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saida_esquema: Option<Value>,
+    /// Projeto da tarefa quando a API tem usuarios (`rbac.rs` do agente): e o que o portao
+    /// le para decidir quem a ve. Sai do cabecalho `X-PhxClaw-Projeto` (ou do unico projeto
+    /// do usuario), nunca do corpo do pedido. Ausente = tarefa da instancia (so dono e admin).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projeto: Option<String>,
 }
 
 impl Task {
@@ -116,6 +121,7 @@ impl Task {
             images: vec![],
             verificar: None,
             saida_esquema: None,
+            projeto: None,
         }
     }
 }

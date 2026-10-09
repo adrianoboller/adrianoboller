@@ -84,6 +84,7 @@ async fn subir(projeto: &std::path::Path, nome: &str) -> (String, Pasta) {
         ))
     });
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "falso:ide".into(),

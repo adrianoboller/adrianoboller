@@ -1,0 +1,3 @@
+# Os arquivos de segredo do compose (api_token, master_key, pg_senha) ficam aqui, no
+# hospedeiro, e nunca no git.
+secrets/

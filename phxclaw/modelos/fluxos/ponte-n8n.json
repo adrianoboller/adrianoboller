@@ -1,0 +1,26 @@
+{
+  "modelo": {
+    "nome": "ponte-n8n",
+    "descricao": "Dispara um fluxo do n8n pelo webhook dele (assinado com o segredo guardado) e grava a resposta.",
+    "etiquetas": ["n8n", "integracao"],
+    "credenciais": ["n8n"]
+  },
+  "fluxo": {
+    "nome": "ponte-n8n",
+    "variaveis": { "webhook": "pedido" },
+    "passos": [
+      {
+        "id": "acionar",
+        "ferramenta": "n8n_workflow",
+        "args": { "action": "run", "path": "{{var.webhook}}", "body": { "origem": "phxclaw" } },
+        "tentativas": 2
+      },
+      {
+        "id": "gravar",
+        "depende": ["acionar"],
+        "ferramenta": "write_file",
+        "args": { "path": "resposta-n8n.json", "content": "{{acionar}}" }
+      }
+    ]
+  }
+}

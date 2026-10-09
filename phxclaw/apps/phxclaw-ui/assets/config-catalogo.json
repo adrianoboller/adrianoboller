@@ -257,6 +257,21 @@
       "variavel": "PHXCLAW_API_HOST"
     },
     {
+      "chave": "api.metricas",
+      "comando_do_segredo": null,
+      "descricao": "Exposição Prometheus em GET /metrics (contadores e latência); desligada não custa nada",
+      "descricao_en": "Prometheus exposition at GET /metrics (counters and latency); off costs nothing",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": false,
+      "secao": "api",
+      "segredo": false,
+      "tipo": "booleano",
+      "variavel": "PHXCLAW_API_METRICAS"
+    },
+    {
       "chave": "api.porta",
       "comando_do_segredo": null,
       "descricao": "Porta da API do app de mesa",

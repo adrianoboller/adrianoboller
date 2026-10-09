@@ -1,0 +1,30 @@
+{
+  "modelo": {
+    "nome": "relatorio-do-banco",
+    "descricao": "Roda uma consulta SELECT no PostgreSQL configurado (somente leitura) e grava o resultado numa planilha .xlsx.",
+    "etiquetas": ["banco", "relatorio", "planilha"],
+    "credenciais": ["postgres"]
+  },
+  "fluxo": {
+    "nome": "relatorio-do-banco",
+    "variaveis": { "consulta": "SELECT 1 AS exemplo" },
+    "passos": [
+      {
+        "id": "consultar",
+        "ferramenta": "postgres",
+        "args": { "action": "query", "sql": "{{var.consulta}}", "max_rows": 1000 },
+        "tentativas": 2,
+        "teto_ms": 60000
+      },
+      {
+        "id": "planilha",
+        "depende": ["consultar"],
+        "ferramenta": "create_spreadsheet",
+        "args": {
+          "path": "relatorio.xlsx",
+          "sheets": [{ "name": "dados", "rows": "{{consultar}}", "bold_header": true }]
+        }
+      }
+    ]
+  }
+}

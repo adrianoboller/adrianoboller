@@ -5,7 +5,9 @@
 //! - `GET /v1/ide/terminal` (websocket): um Helix num PTY na pasta do projeto, pelo mesmo
 //!   `phxclaw-terminal` do desktop. A tela manda tecla, colar, tamanho e rolagem; recebe a
 //!   grade por diferenca. O token vai na PRIMEIRA mensagem (o navegador nao poe cabecalho
-//!   num websocket) e e conferido pela mesma `auth` das outras rotas. Uma sessao por
+//!   num websocket) e e conferido por `rbac::conferir_rota`: a MESMA decisao do portao,
+//!   com a linha desta rota na matriz (o portao a deixa passar sem token, porque o token
+//!   ainda nao chegou; sem usuarios, e a `auth` de sempre). Uma sessao por
 //!   usuario: a conexao nova fecha a anterior, em vez de a aba velha prender o terminal.
 //!   SO o Helix abre por aqui: um bash livre pela rede seria o `execute_shell` sem a
 //!   politica dele. E ele roda no MESMO bwrap dos outros processos
@@ -41,9 +43,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+/// A rota do terminal: a mesma constante no `route` e na conferencia do token, para a
+/// linha da matriz que a sessao consulta ser a da rota que o navegador abriu.
+pub const ROTA_TERMINAL: &str = "/v1/ide/terminal";
+
 pub fn rotas() -> Router<ApiState> {
     Router::new()
-        .route("/v1/ide/terminal", get(terminal))
+        .route(ROTA_TERMINAL, get(terminal))
         .route("/v1/ide/simbolos", get(simbolos))
         .route("/v1/ide/arquivo", get(arquivo))
         .route("/v1/ide/completar", post(completar))
@@ -153,7 +159,7 @@ async fn sessao(s: ApiState, mut sock: WebSocket, api: Option<String>) {
     if let Ok(v) = format!("Bearer {token}").parse() {
         h.insert(header::AUTHORIZATION, v);
     }
-    if auth(&s, &h).is_err() {
+    if crate::rbac::conferir_rota(&s, axum::http::Method::GET, ROTA_TERMINAL, &h).is_err() {
         let _ = mandar(
             &mut sock,
             json!({"ev": "erro", "erro": "token ausente ou invalido"}),

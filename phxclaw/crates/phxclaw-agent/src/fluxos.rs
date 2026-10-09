@@ -260,6 +260,10 @@ pub struct Passo {
     /// Comando de barra do projeto (`/revisar src`, com ou sem a barra).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comando: Option<String>,
+    /// Pedido HTTP generico (`fluxo_http::Pedido`): vira uma chamada a ferramenta
+    /// `http_request` pelo portao, com este objeto (resolvido) como argumentos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http: Option<Value>,
     /// So com `tarefa`: o papel ou o estilo que envolve o subagente do passo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comportamento: Option<Comportamento>,
@@ -643,6 +647,9 @@ fn tipo(p: &Passo) -> Result<Tipo<'_>, String> {
     if let Some(c) = &p.comando {
         tipos.push(Tipo::Comando(c));
     }
+    if p.http.is_some() {
+        tipos.push(Tipo::Ferramenta(crate::fluxo_http::FERRAMENTA.into()));
+    }
     if let Some(c) = &p.se {
         tipos.push(Tipo::Se(c));
     }
@@ -660,8 +667,8 @@ fn tipo(p: &Passo) -> Result<Tipo<'_>, String> {
     }
     if tipos.len() != 1 {
         return Err(format!(
-            "passo {}: diga 'tarefa', 'ferramenta', 'skill', 'mcp', 'comando', 'se', 'juntar', \
-'lote', 'parar_com_erro' OU 'esperar' (exatamente um)",
+            "passo {}: diga 'tarefa', 'ferramenta', 'skill', 'mcp', 'comando', 'http', 'se', \
+'juntar', 'lote', 'parar_com_erro' OU 'esperar' (exatamente um)",
             p.id
         ));
     }
@@ -864,6 +871,18 @@ variavel de fluxo, so pelo broker"
             Tipo::Comando(c) if c.trim().trim_start_matches('/').is_empty() => {
                 return Err(format!("passo {}: comando sem nome", p.id));
             }
+            // O pedido HTTP se confere na leitura pelo motor do no (segredo pela forma e pelo
+            // nome, metodo, corpo, paginacao, lote); `args` ao lado seria dizer duas vezes.
+            Tipo::Ferramenta(_) if p.http.is_some() => {
+                if !p.args.is_null() {
+                    return Err(format!(
+                        "passo {}: o passo 'http' leva o pedido em 'http', sem 'args'",
+                        p.id
+                    ));
+                }
+                crate::fluxo_http::validar_no_fluxo(p.http.as_ref().expect("tipo http"))
+                    .map_err(|e| format!("passo {}: {e}", p.id))?;
+            }
             Tipo::Ferramenta(n) if n.starts_with("mcp__") => {
                 let m = p.mcp.as_ref().expect("tipo mcp");
                 if m.servidor.trim().is_empty() || m.ferramenta.trim().is_empty() {
@@ -1017,6 +1036,9 @@ entra em dado pinado, so pelo broker",
             juntar_textos(&c.valor, &mut textos);
         }
         juntar_textos(&p.args, &mut textos);
+        if let Some(h) = &p.http {
+            juntar_textos(h, &mut textos);
+        }
         let e_fluxo_de_erro = f.fluxo_de_erro.as_deref() == Some(p.id.as_str());
         for t in &textos {
             for r in referencias(t) {
@@ -1440,7 +1462,7 @@ fn texto_de(v: &Value) -> String {
 }
 
 /// Resolve `campo.sub[0].x` dentro de `v`. Caminho vazio e o proprio valor.
-fn pelo_caminho(v: &Value, caminho: &str) -> Option<Value> {
+pub(crate) fn pelo_caminho(v: &Value, caminho: &str) -> Option<Value> {
     let mut atual = v.clone();
     if caminho.trim().is_empty() {
         return Some(atual);
@@ -1925,7 +1947,7 @@ fn valor_externo_parece_segredo(v: &Value) -> bool {
 /// dependencia de BUILD do tree-sitter (o resolver 2 nao o une ao binario), entao este
 /// passo nao muda numero nenhum agora; ele existe para que uma dependencia nova que ligue o
 /// recurso nao invalide em silencio todo progresso gravado.
-fn ordenado(v: &Value) -> Value {
+pub(crate) fn ordenado(v: &Value) -> Value {
     match v {
         Value::Object(o) => {
             let mut chaves: Vec<&String> = o.keys().collect();
@@ -2014,6 +2036,13 @@ fn pula(p: &Passo, mortas: &[String]) -> bool {
         }
         _ => !mortas.is_empty(),
     }
+}
+
+/// Os argumentos da chamada de um passo de ferramenta: o pedido do passo `http` ou o `args`.
+/// Um lugar so para o passo da onda e o fluxo de erro (os dois caminhos que chamam a
+/// ferramenta) nunca lerem campos diferentes.
+fn argumentos_de(p: &Passo) -> &Value {
+    p.http.as_ref().unwrap_or(&p.args)
 }
 
 /// O no de controle, resolvido na hora: nenhum deles chama ferramenta, e por isso nenhum
@@ -2566,7 +2595,7 @@ velhas a passos novos; rode de novo"
                 }
                 Tipo::Ferramenta(nome) => {
                     for (i, v) in visoes.iter().enumerate() {
-                        match substituir_valor(&p.args, v) {
+                        match substituir_valor(argumentos_de(p), v) {
                             Ok(arguments) => chamadas.push((
                                 r.uuid,
                                 r.attempt,
@@ -2901,7 +2930,7 @@ velhas a passos novos; rode de novo"
                 }
                 Err(e) => (false, e, None),
             },
-            Tipo::Ferramenta(nome) => match substituir_valor(&p.args, &visao) {
+            Tipo::Ferramenta(nome) => match substituir_valor(argumentos_de(p), &visao) {
                 Ok(arguments) => {
                     let c = ToolCall {
                         id: format!("{}-erro", p.id),

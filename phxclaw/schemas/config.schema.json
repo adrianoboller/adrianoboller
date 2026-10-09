@@ -121,6 +121,14 @@
             "null"
           ]
         },
+        "metricas": {
+          "default": false,
+          "description": "Exposição Prometheus em GET /metrics (contadores e latência); desligada não custa nada (ambiente: PHXCLAW_API_METRICAS)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "porta": {
           "description": "Porta da API do app de mesa (ambiente: PHXCLAW_API_PORT)",
           "type": [

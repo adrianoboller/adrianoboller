@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
+    net::SocketAddr,
     time::{Duration, Instant},
 };
 use thiserror::Error;
@@ -136,10 +137,34 @@ pub enum HttpClientError {
     Json(#[from] serde_json::Error),
     #[error("decode error: {0}")]
     Decode(String),
+    #[error("response body exceeds the limit of {0} bytes")]
+    BodyTooLarge(usize),
+}
+
+/// O que um pedido precisa e o `HttpRequestSpec` nao carrega, porque nao e dado do pedido e
+/// sim politica de quem o faz: o teto do corpo e o endereco ja conferido.
+#[derive(Debug, Clone, Default)]
+pub struct HttpOptions {
+    /// Teto do corpo da resposta. Lido em pedacos e abortado ao passar: ler tudo e conferir
+    /// depois e justamente a alocacao que o teto existe para impedir.
+    pub max_body_bytes: Option<usize>,
+    /// Endereco fixo por host. Quem confere o destino pelo IP (SSRF) fixa aqui o IP que
+    /// conferiu: sem isso o cliente resolveria o nome de novo, e um DNS que responde publico
+    /// na conferencia e 127.0.0.1 na conexao passaria pela guarda (DNS rebinding).
+    pub resolve: Vec<(String, Vec<SocketAddr>)>,
 }
 
 /// PhxClaw equivalent of a complete HTTPRequest operation.
 pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClientError> {
+    http_request_with(spec, &HttpOptions::default()).await
+}
+
+/// O mesmo pedido, com o teto do corpo e o endereco fixado de `opts`. Um motor so: o
+/// `http_request` e este com as opcoes vazias, para a montagem do pedido nao ter duas copias.
+pub async fn http_request_with(
+    spec: &HttpRequestSpec,
+    opts: &HttpOptions,
+) -> Result<HttpResult, HttpClientError> {
     let method = Method::from_bytes(spec.method.as_bytes())
         .map_err(|_| HttpClientError::InvalidMethod(spec.method.clone()))?;
 
@@ -161,6 +186,9 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
     }
     if let Some(ua) = &spec.user_agent {
         builder = builder.user_agent(ua.clone());
+    }
+    for (host, enderecos) in &opts.resolve {
+        builder = builder.resolve_to_addrs(host, enderecos);
     }
 
     let client = builder.build()?;
@@ -228,7 +256,7 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
     }
 
     let started = Instant::now();
-    let response = request.send().await?;
+    let mut response = request.send().await?;
     let final_url = response.url().to_string();
     let status = response.status().as_u16();
     let content_type = response
@@ -237,7 +265,24 @@ pub async fn http_request(spec: &HttpRequestSpec) -> Result<HttpResult, HttpClie
         .and_then(|v| v.to_str().ok())
         .map(ToOwned::to_owned);
     let response_headers = headers_to_map(response.headers());
-    let bytes = response.bytes().await?;
+    let bytes = match opts.max_body_bytes {
+        None => response.bytes().await?.to_vec(),
+        Some(teto) => {
+            // O Content-Length declarado ja recusa sem ler; o laco cobre o servidor que nao
+            // declara (chunked) ou que declara menos do que manda.
+            if response.content_length().is_some_and(|n| n > teto as u64) {
+                return Err(HttpClientError::BodyTooLarge(teto));
+            }
+            let mut corpo = Vec::new();
+            while let Some(pedaco) = response.chunk().await? {
+                if corpo.len() + pedaco.len() > teto {
+                    return Err(HttpClientError::BodyTooLarge(teto));
+                }
+                corpo.extend_from_slice(&pedaco);
+            }
+            corpo
+        }
+    };
 
     Ok(HttpResult {
         request_uuid: spec.uuid,

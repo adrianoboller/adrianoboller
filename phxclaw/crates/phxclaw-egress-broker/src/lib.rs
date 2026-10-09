@@ -1,4 +1,6 @@
-use phxclaw_http_client::{HttpClientError, HttpRequestSpec, HttpResult, http_request};
+use phxclaw_http_client::{
+    HttpClientError, HttpOptions, HttpRequestSpec, HttpResult, http_request_with,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -28,6 +30,10 @@ pub enum EgressError {
     InvalidCertsDenied,
     #[error("too many redirects (limit {0})")]
     TooManyRedirects(usize),
+    /// Recusa de quem confere o destino fora da lista de origens (a guarda de IP do no
+    /// HTTP do fluxo), com o motivo dela.
+    #[error("destination refused: {0}")]
+    Refused(String),
 }
 
 #[derive(Clone)]
@@ -68,57 +74,85 @@ impl EgressBroker {
         if spec.accept_invalid_certs {
             return Err(EgressError::InvalidCertsDenied);
         }
-        let mut url = self.validate_url(&spec.url)?;
+        self.validate_url(&spec.url)?;
         if let Some(proxy) = &spec.proxy {
             self.validate_url(proxy)?;
         }
-        let mut salto = spec.clone();
-        salto.follow_redirects = false;
-        let limite = if spec.follow_redirects {
-            spec.max_redirects
-        } else {
-            0
-        };
-        for n in 0..=limite {
-            salto.url = url.to_string();
-            let resposta = http_request(&salto).await?;
-            let redirect = matches!(resposta.status, 301 | 302 | 303 | 307 | 308);
-            if !spec.follow_redirects || !redirect {
-                return Ok(resposta);
-            }
-            let Some(destino) = resposta.headers.get("location").and_then(|v| v.first()) else {
-                return Ok(resposta);
-            };
-            if n == limite {
-                return Err(EgressError::TooManyRedirects(limite));
-            }
-            let proximo = self.validate_url(url.join(destino)?.as_str())?;
-            if origin(&proximo) != origin(&url) {
-                // Credencial de uma origem nao viaja para outra. Lista do que PASSA, nao do
-                // que se tira: a lista de proibidos esquecia chave em cabecalho proprio
-                // (X-Subscription-Token do Brave, x-api-key, x-goog-api-key).
-                salto.auth = Default::default();
-                salto.headers.retain(|k, _| {
-                    ["accept", "accept-language", "content-type", "user-agent"]
-                        .iter()
-                        .any(|ok| k.eq_ignore_ascii_case(ok))
-                });
-            }
-            if resposta.status == 303
-                || (matches!(resposta.status, 301 | 302)
-                    && salto.method.eq_ignore_ascii_case("POST"))
-            {
-                salto.method = "GET".into();
-                salto.body_base64 = None;
-                salto.json = None;
-                salto.form.clear();
-                salto.multipart_fields.clear();
-                salto.multipart_files.clear();
-            }
-            url = proximo;
-        }
-        Err(EgressError::TooManyRedirects(limite))
+        request_checked(spec, |url| {
+            let r = self
+                .validate_url(url.as_str())
+                .map(|_| HttpOptions::default());
+            async move { r }
+        })
+        .await
     }
+}
+
+/// O laco de redirecionamento, com a conferencia de cada salto nas maos de quem chama: a
+/// lista de origens do `EgressBroker` e uma; a guarda de IP do no HTTP do fluxo e outra. As
+/// duas pedem o MESMO laco -- salto a salto, credencial que nao atravessa origem, POST que
+/// vira GET no 303 --, e um segundo laco seria a copia que alguem esquece de consertar.
+///
+/// `check` recebe cada destino, o primeiro inclusive, ANTES de qualquer conexao a ele, e
+/// devolve as opcoes do pedido (teto do corpo, endereco fixado) ou a recusa.
+pub async fn request_checked<F, Fut>(
+    spec: &HttpRequestSpec,
+    mut check: F,
+) -> Result<HttpResult, EgressError>
+where
+    F: FnMut(Url) -> Fut,
+    Fut: std::future::Future<Output = Result<HttpOptions, EgressError>>,
+{
+    if spec.accept_invalid_certs {
+        return Err(EgressError::InvalidCertsDenied);
+    }
+    let mut url = Url::parse(&spec.url)?;
+    let mut salto = spec.clone();
+    salto.follow_redirects = false;
+    let limite = if spec.follow_redirects {
+        spec.max_redirects
+    } else {
+        0
+    };
+    for n in 0..=limite {
+        let opcoes = check(url.clone()).await?;
+        salto.url = url.to_string();
+        let resposta = http_request_with(&salto, &opcoes).await?;
+        let redirect = matches!(resposta.status, 301 | 302 | 303 | 307 | 308);
+        if !spec.follow_redirects || !redirect {
+            return Ok(resposta);
+        }
+        let Some(destino) = resposta.headers.get("location").and_then(|v| v.first()) else {
+            return Ok(resposta);
+        };
+        if n == limite {
+            return Err(EgressError::TooManyRedirects(limite));
+        }
+        let proximo = url.join(destino)?;
+        if origin(&proximo) != origin(&url) {
+            // Credencial de uma origem nao viaja para outra. Lista do que PASSA, nao do
+            // que se tira: a lista de proibidos esquecia chave em cabecalho proprio
+            // (X-Subscription-Token do Brave, x-api-key, x-goog-api-key).
+            salto.auth = Default::default();
+            salto.headers.retain(|k, _| {
+                ["accept", "accept-language", "content-type", "user-agent"]
+                    .iter()
+                    .any(|ok| k.eq_ignore_ascii_case(ok))
+            });
+        }
+        if resposta.status == 303
+            || (matches!(resposta.status, 301 | 302) && salto.method.eq_ignore_ascii_case("POST"))
+        {
+            salto.method = "GET".into();
+            salto.body_base64 = None;
+            salto.json = None;
+            salto.form.clear();
+            salto.multipart_fields.clear();
+            salto.multipart_files.clear();
+        }
+        url = proximo;
+    }
+    Err(EgressError::TooManyRedirects(limite))
 }
 
 fn origin(url: &Url) -> String {

@@ -1,0 +1,39 @@
+{
+  "modelo": {
+    "nome": "aprovacao-humana-antes-de-agir",
+    "descricao": "Um subagente propõe a mudança, o fluxo para numa pergunta ao humano (sem segurar thread nenhuma) e só grava se a resposta contiver «sim».",
+    "etiquetas": ["aprovacao", "humano", "espera"],
+    "credenciais": []
+  },
+  "fluxo": {
+    "nome": "aprovacao-humana-antes-de-agir",
+    "teto_ms": 86400000,
+    "passos": [
+      {
+        "id": "propor",
+        "tarefa": "Descreva em até cinco linhas a mudança que você faria no projeto e o risco dela."
+      },
+      {
+        "id": "aprovar",
+        "depende": ["propor"],
+        "esperar": { "pergunta": "Aprova esta mudança? Responda sim ou não. Proposta: {{propor}}" }
+      },
+      {
+        "id": "decisao",
+        "depende": ["aprovar"],
+        "se": { "caminho": "", "operador": "contem", "valor": "sim" }
+      },
+      {
+        "id": "aplicar",
+        "depende": ["decisao:verdadeiro", "propor"],
+        "ferramenta": "write_file",
+        "args": { "path": "aprovado.md", "content": "{{propor}}" }
+      },
+      {
+        "id": "recusar",
+        "depende": ["decisao:falso"],
+        "parar_com_erro": "A mudança não foi aprovada pelo humano."
+      }
+    ]
+  }
+}

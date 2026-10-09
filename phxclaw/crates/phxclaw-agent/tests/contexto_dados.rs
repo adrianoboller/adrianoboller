@@ -254,6 +254,7 @@ fn estado(llm: Arc<ScriptedLlm>) -> ApiState {
         ))
     });
     ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "m".into(),

@@ -1,6 +1,6 @@
 use crate::error::{BrowserError, Result};
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 use url::{Host, Url};
 
@@ -63,6 +63,14 @@ impl BrowserPolicy {
     /// os IPs resolvidos: conferir so o texto deixaria passar um nome publico
     /// que aponta para 127.0.0.1.
     pub async fn check_url(&self, raw: &str) -> Result<Url> {
+        self.check_url_resolved(raw).await.map(|(url, _)| url)
+    }
+
+    /// Como `check_url`, devolvendo tambem os enderecos que a conferencia resolveu para um
+    /// NOME (vazio quando o host e IP literal, ou quando a origem passou sem conferir IP).
+    /// Quem conecta por fora do Chromium fixa a conexao neles: resolver de novo na hora de
+    /// conectar abriria a janela do DNS rebinding entre a conferencia e o uso.
+    pub async fn check_url_resolved(&self, raw: &str) -> Result<(Url, Vec<SocketAddr>)> {
         let negar = |reason: &str| BrowserError::PolicyDenied {
             url: raw.to_string(),
             reason: reason.to_string(),
@@ -73,19 +81,21 @@ impl BrowserPolicy {
         }
         let host = url.host().ok_or_else(|| negar("url sem host"))?;
         if self.origin_listed(&url) {
-            return Ok(url);
+            return Ok((url, vec![]));
         }
         if !self.allow_any_public {
             return Err(negar("origem fora da lista permitida"));
         }
         if !self.block_private_networks {
-            return Ok(url);
+            return Ok((url, vec![]));
         }
         let port = url.port_or_known_default().unwrap_or(80);
+        let mut por_nome = false;
         let ips: Vec<IpAddr> = match host {
             Host::Ipv4(ip) => vec![IpAddr::V4(ip)],
             Host::Ipv6(ip) => vec![IpAddr::V6(ip)],
             Host::Domain(nome) => {
+                por_nome = true;
                 let consulta = tokio::net::lookup_host((nome, port));
                 match tokio::time::timeout(DNS_TIMEOUT, consulta).await {
                     Ok(Ok(it)) => it.map(|s| s.ip()).collect(),
@@ -102,7 +112,12 @@ impl BrowserPolicy {
         if let Some(ip) = ips.iter().find(|ip| is_blocked_ip(**ip)) {
             return Err(negar(&format!("endereco interno {ip}")));
         }
-        Ok(url)
+        let enderecos = if por_nome {
+            ips.iter().map(|ip| SocketAddr::new(*ip, port)).collect()
+        } else {
+            vec![]
+        };
+        Ok((url, enderecos))
     }
 }
 

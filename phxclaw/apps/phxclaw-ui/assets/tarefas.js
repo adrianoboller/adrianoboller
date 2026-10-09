@@ -39,12 +39,14 @@
     mostrarTentar('tarefas', comTentar);
   }
 
-  async function api(metodo, caminho, corpo) {
+  // `extra`: cabecalhos a mais (o If-Match da tela Fluxos). O corpo da recusa vai junto no
+  // erro (`corpo`): o 409 traz a revisao atual, e quem trata o conflito precisa dela.
+  async function api(metodo, caminho, corpo, extra) {
     let r;
     try {
       r = await fetch(`./v1/${caminho}`, {
         method: metodo,
-        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json' },
+        headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json', ...extra },
         body: corpo === undefined ? undefined : JSON.stringify(corpo),
         cache: 'no-store',
       });
@@ -54,7 +56,7 @@
       throw Object.assign(new Error('sem rede'), { rede: true });
     }
     const v = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error(v.error || `HTTP ${r.status}`), { status: r.status });
+    if (!r.ok) throw Object.assign(new Error(v.error || `HTTP ${r.status}`), { status: r.status, corpo: v });
     return v;
   }
 

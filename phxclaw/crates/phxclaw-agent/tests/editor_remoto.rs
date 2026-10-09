@@ -572,6 +572,7 @@ async fn ponte_rele_o_cliente_ao_agente_ligado_de_saida_e_o_token_da_api_nao_sai
         ))
     });
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "roteiro".into(),

@@ -131,6 +131,7 @@ fn estado(
         ))
     });
     ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "roteiro".into(),

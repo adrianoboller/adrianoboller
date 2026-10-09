@@ -53,6 +53,7 @@ async fn get_e_put_do_config_com_if_match_conflito_e_recusas() {
     let store = TaskStore::new(dir.join("tasks")).unwrap();
     let factory: AgentFactory = Arc::new(|_: &str| Err("sem modelo".to_string()));
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "padrao".into(),

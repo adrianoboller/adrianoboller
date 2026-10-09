@@ -1,0 +1,15 @@
+# O estado do agente: tarefas, config.json, cofre (segredos/cofre) e histórico. Perdeu o
+# volume, perdeu o estado; a chave-mestra, porém, vive no Secret e sobrevive a ele.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: phxclaw-dados
+  namespace: phxclaw
+  labels:
+    app.kubernetes.io/name: phxclaw
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
