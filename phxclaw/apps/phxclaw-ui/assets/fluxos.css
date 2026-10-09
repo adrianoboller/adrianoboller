@@ -1,0 +1,143 @@
+/* Tela Fluxos (fluxos.js): lista + editor em grafo (SVG a mao). Cor so de token: os estados
+   da execucao usam os tokens de ESTADO da marca (--ok, --aviso, --vermelho, --texto-3), e os
+   botoes os de ACAO, em contorno. O que e DADO (nome do fluxo, id do passo, item) fica sem
+   text-transform -- rotulo se estiliza, dado nunca. */
+.tela-fluxos .fluxos-corpo{display:grid;grid-template-columns:minmax(200px,264px) minmax(0,1fr);gap:14px;flex:1;min-height:0}
+.fluxos-lista{min-width:0;overflow:auto}
+.fluxos-lista ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.fluxo-item{width:100%;display:flex;flex-direction:column;gap:4px;text-align:left;padding:10px 12px;border:1px solid var(--linha-forte);border-radius:7px;background:var(--painel);color:var(--texto);cursor:pointer;min-width:0}
+.fluxo-item:hover{border-color:var(--texto-3)}
+.fluxo-item:focus-visible{outline:2px solid var(--laranja);outline-offset:2px}
+.fluxo-item[aria-current="true"]{border-color:var(--laranja);box-shadow:inset 3px 0 0 var(--laranja)}
+.fluxo-item-nome{font-size:var(--fs-3);font-weight:700;overflow-wrap:anywhere}
+.fluxo-item-arq{font-family:var(--mono);font-size:var(--fs-1);color:var(--texto-3);overflow-wrap:anywhere}
+.fluxo-item-meta{display:flex;flex-wrap:wrap;gap:6px;font-size:var(--fs-1);color:var(--texto-2)}
+.fluxo-etiqueta{font-family:var(--mono);border:1px solid var(--linha-forte);border-radius:4px;padding:0 5px}
+.fluxo-invalido{color:var(--vermelho);font-weight:700;letter-spacing:.1em}
+.fluxo-item-erro{font-family:var(--mono);font-size:var(--fs-1);color:var(--vermelho);overflow-wrap:anywhere}
+
+.fluxos-editor{display:flex;flex-direction:column;min-width:0;min-height:0}
+.fluxos-editor[hidden]{display:none}
+.fluxos-barra{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;margin-bottom:6px}
+.fluxos-titulo{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;min-width:0}
+.fluxos-titulo h2{font-size:var(--fs-5);margin:0;overflow-wrap:anywhere}
+.fluxos-titulo code{font-family:var(--mono);font-size:var(--fs-1);color:var(--texto-3);overflow-wrap:anywhere}
+.fluxos-sujo{font-size:var(--fs-1);font-weight:700;letter-spacing:.12em;color:var(--acao-alterar);border:1px solid var(--acao-alterar);border-radius:4px;padding:1px 6px}
+.fluxos-sujo[hidden]{display:none}
+.fluxos-veredito,.fluxos-execucao{margin:2px 0;font-size:var(--fs-2);color:var(--texto-2);overflow-wrap:anywhere}
+.fluxos-veredito[data-valido="1"]{color:var(--ok)}
+.fluxos-veredito[data-valido="0"]{color:var(--vermelho)}
+.fluxos-execucao:empty,.fluxos-veredito:empty{display:none}
+
+.fluxos-area{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,320px);gap:12px;flex:1;min-height:440px;margin-top:8px}
+.fluxos-palco{position:relative;min-width:0;min-height:0;border:1px solid var(--linha-forte);border-radius:8px;overflow:hidden;background:var(--fundo)}
+/* O quadro rola sozinho (o grafo nunca empurra a pagina para o lado); no toque a rolagem e
+   nativa, e so o no recusa o gesto (touch-action:none) para poder ser arrastado. */
+.fluxos-quadro{position:absolute;inset:0;overflow:auto;touch-action:pan-x pan-y;cursor:grab;
+  background-image:radial-gradient(color-mix(in srgb,var(--texto-3) 32%,transparent) 1px,transparent 1.2px);background-size:22px 22px}
+.fluxos-quadro.arrastando{cursor:grabbing}
+.fluxos-svg{display:block;overflow:visible}
+.fluxos-svg .quadro-fundo{fill:transparent}
+.fluxos-svg text{font-family:var(--sans);pointer-events:none}
+.fluxos-svg .no{cursor:pointer;touch-action:none;outline:none;color:var(--texto-3)}
+.no-caixa{fill:var(--painel-2);stroke:var(--texto-3);stroke-width:1.5}
+.no-erro .no-caixa{stroke-dasharray:6 4}
+.no-tipo{fill:var(--laranja);font-size:12px;font-weight:700;letter-spacing:.12em}
+.no-id{fill:var(--texto);font-family:var(--mono)!important;font-size:13px;font-weight:700}
+.no-resumo{fill:var(--texto-2);font-family:var(--mono)!important;font-size:12px}
+.no:hover .no-caixa{stroke:var(--texto-2)}
+.no.selecionado .no-caixa,.no:focus-visible .no-caixa{stroke:var(--laranja);stroke-width:3}
+/* Estado da ultima execucao: a cor no contorno e na aba, a FORMA no traco (cheio, tracejado,
+   pontilhado) e o rotulo na aba -- quem nao distingue a cor le o estado. */
+.no.est-ok{color:var(--ok)}
+.no.est-falhou,.no.est-bloqueado{color:var(--vermelho)}
+.no.est-continuou,.no.est-esperando{color:var(--aviso)}
+.no.est-pulado,.no.est-nao_pedido{color:var(--texto-3)}
+.no[class*="est-"]:not(.selecionado) .no-caixa{stroke:currentColor;stroke-width:2.5}
+.no.est-bloqueado:not(.selecionado) .no-caixa,.no.est-esperando:not(.selecionado) .no-caixa,.no.est-pulado:not(.selecionado) .no-caixa{stroke-dasharray:7 4}
+.no.est-nao_pedido:not(.selecionado) .no-caixa,.no.est-continuou:not(.selecionado) .no-caixa{stroke-dasharray:2 4}
+.no-estado-caixa{fill:var(--painel);stroke:currentColor;stroke-width:1.5}
+.no-estado{fill:currentColor;font-size:12px;font-weight:700;letter-spacing:.06em}
+
+.aresta{outline:none;cursor:pointer}
+.aresta-toque{fill:none;stroke:transparent;stroke-width:16;pointer-events:stroke}
+.aresta-linha{fill:none;stroke:var(--texto-3);stroke-width:1.75;pointer-events:none}
+.aresta-ponta{fill:var(--texto-3);pointer-events:none}
+.aresta.est-ok .aresta-linha{stroke:var(--ok)}.aresta.est-ok .aresta-ponta{fill:var(--ok)}
+.aresta:hover .aresta-linha{stroke:var(--texto)}
+.aresta.selecionada .aresta-linha,.aresta:focus-visible .aresta-linha{stroke:var(--laranja);stroke-width:3}
+.aresta.selecionada .aresta-ponta,.aresta:focus-visible .aresta-ponta{fill:var(--laranja)}
+.aresta-porta{fill:var(--texto-2);font-family:var(--mono)!important;font-size:12px;paint-order:stroke;stroke:var(--fundo);stroke-width:4px;stroke-linejoin:round}
+
+.fluxos-zoom{position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:6px;padding:6px;border:1px solid var(--linha-forte);border-radius:7px;background:color-mix(in srgb,var(--painel) 92%,transparent)}
+.fluxos-zoom .acao{padding:6px 10px;min-width:36px;min-height:36px}
+.fluxos-zoom-valor{font-family:var(--mono);font-size:var(--fs-1);color:var(--texto-2);min-width:44px;text-align:center}
+.fluxos-minimapa{position:absolute;right:10px;bottom:10px;width:184px;height:112px;border:1px solid var(--linha-forte);border-radius:6px;background:color-mix(in srgb,var(--painel) 94%,transparent);cursor:pointer}
+.mini-no{fill:var(--painel-3);stroke:var(--texto-3);stroke-width:6}
+.mini-no.est-ok{stroke:var(--ok)}.mini-no.est-falhou,.mini-no.est-bloqueado{stroke:var(--vermelho)}.mini-no.est-continuou,.mini-no.est-esperando{stroke:var(--aviso)}
+.mini-vista{fill:color-mix(in srgb,var(--laranja) 10%,transparent);stroke:var(--laranja);stroke-width:8}
+
+.fluxos-painel{min-width:0;overflow:auto;border:1px solid var(--linha-forte);border-radius:8px;padding:12px 14px;background:var(--painel)}
+.fp-cab{margin-bottom:6px}
+.fp-id{margin:4px 0 0;font-family:var(--mono);font-size:var(--fs-3);overflow-wrap:anywhere}
+.fp-seta{color:var(--texto-3);font-family:var(--sans)}
+.fp-bloco{border-top:1px solid var(--linha);padding-top:10px;margin-top:10px}
+.fp-bloco h3{margin:0 0 8px;font-size:var(--fs-1);letter-spacing:.14em;color:var(--texto-2);text-transform:uppercase}
+.fp-bloco h4{margin:10px 0 4px;font-size:var(--fs-1);letter-spacing:.12em;color:var(--texto-3);text-transform:uppercase}
+.fp-deps{list-style:none;margin:0 0 8px;padding:0;display:flex;flex-direction:column;gap:6px}
+.fp-deps li{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.fp-deps code{font-family:var(--mono);font-size:var(--fs-2);overflow-wrap:anywhere}
+.fp-deps .acao{padding:5px 9px}
+.fp-ligar{display:flex;flex-wrap:wrap;gap:6px}
+.fp-ligar select{flex:1 1 150px;min-width:0;background:var(--fundo);color:var(--texto);border:1px solid var(--linha-forte);border-radius:6px;padding:7px 8px;font-family:var(--mono);font-size:var(--fs-1)}
+.fp-ligar select[hidden]{display:none}
+/* Passo novo: o tipo e o id. O id e DADO (vai para o JSON como digitado). */
+.fp-sel,.fp-campo{display:block;width:100%;box-sizing:border-box;background:var(--fundo);color:var(--texto);border:1px solid var(--linha-forte);border-radius:6px;padding:7px 8px;font-size:var(--fs-1);margin-bottom:8px}
+.fp-campo{font-family:var(--mono);margin-top:4px}
+.fp-rotulo{display:block;font-size:var(--fs-1);color:var(--texto-2)}
+.fp-bloco .acao.exclui{margin-left:8px}
+.fp-json{display:block;width:100%;box-sizing:border-box;resize:vertical;background:var(--fundo);color:var(--texto);border:1px solid var(--linha-forte);border-radius:6px;padding:8px;font-family:var(--mono);font-size:var(--fs-1);line-height:1.45;margin-bottom:6px}
+.fp-msg{margin:0 0 6px;font-size:var(--fs-1);color:var(--texto-2)}
+.fp-msg:empty{display:none}
+.fp-msg[data-erro="1"]{color:var(--vermelho)}
+.fp-dica,.fp-vazio{margin:6px 0;font-size:var(--fs-1);color:var(--texto-3)}
+.fp-estado{margin:0 0 4px;font-size:var(--fs-2)}
+.fp-estado b{letter-spacing:.08em}
+.fp-estado.est-ok b{color:var(--ok)}.fp-estado.est-falhou b,.fp-estado.est-bloqueado b{color:var(--vermelho)}
+.fp-estado.est-continuou b,.fp-estado.est-esperando b{color:var(--aviso)}
+.fp-itens{margin:0;max-height:220px;overflow:auto;background:var(--fundo);border:1px solid var(--linha);border-radius:6px;padding:8px;font-family:var(--mono);font-size:var(--fs-1);color:var(--texto);white-space:pre-wrap;overflow-wrap:anywhere}
+
+.fluxos-legenda{list-style:none;display:flex;flex-wrap:wrap;gap:6px 16px;margin:10px 0 0;padding:0;font-size:var(--fs-1);color:var(--texto-2)}
+.fluxos-legenda[hidden]{display:none}
+.fluxos-legenda li{display:flex;align-items:center;gap:6px}
+.legenda-amostra{display:inline-block;width:22px;height:12px;border:2px solid var(--texto-3);border-radius:3px}
+.fluxos-legenda .est-ok .legenda-amostra{border-color:var(--ok)}
+.fluxos-legenda .est-falhou .legenda-amostra,.fluxos-legenda .est-bloqueado .legenda-amostra{border-color:var(--vermelho)}
+.fluxos-legenda .est-continuou .legenda-amostra,.fluxos-legenda .est-esperando .legenda-amostra{border-color:var(--aviso)}
+.fluxos-legenda .est-bloqueado .legenda-amostra,.fluxos-legenda .est-esperando .legenda-amostra,.fluxos-legenda .est-pulado .legenda-amostra{border-style:dashed}
+.fluxos-legenda .est-nao_pedido .legenda-amostra,.fluxos-legenda .est-continuou .legenda-amostra{border-style:dotted}
+
+/* Abaixo de 1500 a lista sobe para uma faixa acima do editor: ao lado, ela e o painel comiam
+   o quadro (medido a 1280: 495 px de grafo, e o «ajustar» descia a 35%). */
+@media(max-width:1499px){
+  .tela-fluxos .fluxos-corpo{display:flex;flex-direction:column}
+  .fluxos-lista{overflow:visible}
+  .fluxos-lista ul{flex-direction:row;flex-wrap:wrap}
+  .fluxos-lista li{flex:0 1 260px;min-width:0}
+  .fluxos-editor{flex:1;min-height:0}
+}
+@media(max-width:1100px){
+  .fluxos-area{grid-template-columns:minmax(0,1fr)}
+  .fluxos-palco{height:58vh;min-height:340px}
+}
+/* Celular: a lista vira coluna em cima, o grafo rola no proprio quadro (altura fixa) e o
+   painel vem embaixo; o minimapa sai (nao cabe ao lado do zoom). */
+@media(max-width:640px){
+  .tela-fluxos .fluxos-corpo{display:flex;flex-direction:column;flex:none}
+  .fluxos-lista{overflow:visible}
+  .fluxos-area{min-height:0}
+  .fluxos-palco{height:60vh;min-height:320px}
+  .fluxos-minimapa{display:none}
+  .fluxos-barra .acoes{width:100%}
+  .fluxos-barra .acoes .acao{flex:1 1 auto}
+}

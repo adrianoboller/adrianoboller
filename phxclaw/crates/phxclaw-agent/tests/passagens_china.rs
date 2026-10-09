@@ -329,6 +329,7 @@ async fn agenda_dispara_o_fluxo_uma_vez_e_anota_a_tarefa() {
         ))
     });
     let state = ApiState {
+        usuarios: Default::default(),
         store: store.clone(),
         factory,
         default_model: "sem-modelo".into(),

@@ -1,6 +1,6 @@
 use crate::error::{BrowserError, Result};
 use serde::{Deserialize, Serialize};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 use url::{Host, Url};
 
@@ -63,6 +63,14 @@ impl BrowserPolicy {
     /// os IPs resolvidos: conferir so o texto deixaria passar um nome publico
     /// que aponta para 127.0.0.1.
     pub async fn check_url(&self, raw: &str) -> Result<Url> {
+        self.check_url_resolved(raw).await.map(|(url, _)| url)
+    }
+
+    /// Como `check_url`, devolvendo tambem os enderecos que a conferencia resolveu para um
+    /// NOME (vazio quando o host e IP literal, ou quando a origem passou sem conferir IP).
+    /// Quem conecta por fora do Chromium fixa a conexao neles: resolver de novo na hora de
+    /// conectar abriria a janela do DNS rebinding entre a conferencia e o uso.
+    pub async fn check_url_resolved(&self, raw: &str) -> Result<(Url, Vec<SocketAddr>)> {
         let negar = |reason: &str| BrowserError::PolicyDenied {
             url: raw.to_string(),
             reason: reason.to_string(),
@@ -73,19 +81,21 @@ impl BrowserPolicy {
         }
         let host = url.host().ok_or_else(|| negar("url sem host"))?;
         if self.origin_listed(&url) {
-            return Ok(url);
+            return Ok((url, vec![]));
         }
         if !self.allow_any_public {
             return Err(negar("origem fora da lista permitida"));
         }
         if !self.block_private_networks {
-            return Ok(url);
+            return Ok((url, vec![]));
         }
         let port = url.port_or_known_default().unwrap_or(80);
+        let mut por_nome = false;
         let ips: Vec<IpAddr> = match host {
             Host::Ipv4(ip) => vec![IpAddr::V4(ip)],
             Host::Ipv6(ip) => vec![IpAddr::V6(ip)],
             Host::Domain(nome) => {
+                por_nome = true;
                 let consulta = tokio::net::lookup_host((nome, port));
                 match tokio::time::timeout(DNS_TIMEOUT, consulta).await {
                     Ok(Ok(it)) => it.map(|s| s.ip()).collect(),
@@ -102,7 +112,12 @@ impl BrowserPolicy {
         if let Some(ip) = ips.iter().find(|ip| is_blocked_ip(**ip)) {
             return Err(negar(&format!("endereco interno {ip}")));
         }
-        Ok(url)
+        let enderecos = if por_nome {
+            ips.iter().map(|ip| SocketAddr::new(*ip, port)).collect()
+        } else {
+            vec![]
+        };
+        Ok((url, enderecos))
     }
 }
 
@@ -137,16 +152,41 @@ fn is_blocked_v6(ip: Ipv6Addr) -> bool {
         return is_blocked_v4(v4);
     }
     let s = ip.segments();
-    // 64:ff9b::/96 (NAT64) carrega um IPv4 que pode ser interno.
+    let v4_em = |alto: u16, baixo: u16| {
+        Ipv4Addr::new(
+            (alto >> 8) as u8,
+            alto as u8,
+            (baixo >> 8) as u8,
+            baixo as u8,
+        )
+    };
+    // As formas que carregam um IPv4 e que o kernel (ou o tradutor da rede) entrega ao
+    // IPv4 de dentro: conferir so o prefixo IPv6 deixaria 169.254.169.254 passar disfarcado.
+    // 64:ff9b::/96 (NAT64 bem conhecido, RFC 6052): o IPv4 nos ultimos 32 bits.
     if s[0] == 0x64 && s[1] == 0xff9b && s[2..6] == [0, 0, 0, 0] {
-        let v4 = Ipv4Addr::new((s[6] >> 8) as u8, s[6] as u8, (s[7] >> 8) as u8, s[7] as u8);
-        return is_blocked_v4(v4);
+        return is_blocked_v4(v4_em(s[6], s[7]));
+    }
+    // 64:ff9b:1::/48 (NAT64 de uso local, RFC 8215): o comprimento do prefixo e escolha do
+    // operador (/48, /56, /64 ou /96), e cada um poe o IPv4 num lugar diferente (RFC 6052
+    // §2.2). Conferir um so lugar deixaria os outros passarem; o prefixo e de uso local e
+    // nao e internet publica, entao fecha inteiro.
+    if s[0] == 0x64 && s[1] == 0xff9b && s[2] == 1 {
+        return true;
+    }
+    // ::ffff:0:a.b.c.d (IPv4 traduzido, SIIT, RFC 6145): o IPv4 nos ultimos 32 bits.
+    if s[..4] == [0, 0, 0, 0] && s[4] == 0xffff && s[5] == 0 {
+        return is_blocked_v4(v4_em(s[6], s[7]));
+    }
+    // 2002::/16 (6to4, RFC 3056): o IPv4 do roteador de borda nos bits 16..48.
+    if s[0] == 0x2002 {
+        return is_blocked_v4(v4_em(s[1], s[2]));
     }
     ip.is_unspecified()
         || ip.is_loopback()
         || ip.is_multicast()
         || (s[0] & 0xfe00) == 0xfc00 // fc00::/7
         || (s[0] & 0xffc0) == 0xfe80 // fe80::/10
+        || (s[0] & 0xffc0) == 0xfec0 // fec0::/10 site-local (obsoleto, ainda roteado dentro)
         || (s[0] == 0x2001 && s[1] == 0x0db8) // documentacao
         || s[..6] == [0, 0, 0, 0, 0, 0] // ::/96 compativel com IPv4
 }
@@ -179,10 +219,30 @@ mod tests {
             "::ffff:127.0.0.1",
             "::ffff:10.0.0.1",
             "64:ff9b::a9fe:a9fe",
+            // RED medido: cada forma abaixo passava antes do conserto (`is_blocked_v6` sem
+            // o 6to4, o NAT64 local, o site-local e o IPv4 traduzido).
+            "64:ff9b:1::a9fe:a9fe",
+            "64:ff9b:1:abcd::7f00:1",
+            "2002:a9fe:a9fe::1",
+            "2002:7f00:1::",
+            "2002:0a00:0001::1",
+            "fec0::1",
+            "feff::1",
+            "::ffff:0:a9fe:a9fe",
+            "::ffff:0:7f00:1",
         ] {
             assert!(is_blocked_ip(ip(s)), "{s} devia ser interno");
         }
-        for s in ["8.8.8.8", "172.32.0.1", "93.184.216.34", "2606:4700::1111"] {
+        // O 6to4 e o IPv4 traduzido de um IPv4 PUBLICO continuam publicos: a conferencia
+        // decodifica, nao fecha o prefixo inteiro.
+        for s in [
+            "8.8.8.8",
+            "172.32.0.1",
+            "93.184.216.34",
+            "2606:4700::1111",
+            "2002:5db8:d822::1",
+            "::ffff:0:808:808",
+        ] {
             assert!(!is_blocked_ip(ip(s)), "{s} devia ser publico");
         }
     }

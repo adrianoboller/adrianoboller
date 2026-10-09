@@ -227,6 +227,7 @@ async fn subir_api(store: TaskStore, extra: axum::Router) -> String {
     });
     let dir = store.root().parent().unwrap().to_path_buf();
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "padrao".into(),

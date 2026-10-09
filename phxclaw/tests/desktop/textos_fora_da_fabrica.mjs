@@ -179,6 +179,42 @@ async function armarApiDeTarefas(page, { putConfig = 200 } = {}) {
   });
 }
 
+// A API de fluxos falsa (tela Fluxos): um fluxo com um passo de cada tipo que nao carrega
+// chave de protocolo no resumo (o `esperar` mostra a chave que o operador escreveu -- dado com
+// letra, que esta regua contaria), e uma execucao com um passo em cada estado. Tudo que vem
+// do servidor e DADO: «§», e ids sem letra.
+const ESTADOS_DE_PASSO = ['ok', 'falhou', 'bloqueado', 'continuou', 'esperando', 'pulado', 'nao_pedido'];
+const FLUXO_FALSO = {
+  nome: '§', fluxo_de_erro: '§9',
+  passos: [
+    { id: '§1', se: { caminho: '§', operador: '§', valor: '§' } },
+    { id: '§2', depende: ['§1:§'], tarefa: '§' },
+    { id: '§3', depende: ['§1'], ferramenta: '§', args: { '§': '§' } },
+    { id: '§4', depende: ['§2', '§3'], juntar: { modo: '§' } },
+    { id: '§5', depende: ['§4'], skill: '§' },
+    { id: '§6', depende: ['§4'], mcp: { servidor: '§', ferramenta: '§' } },
+    { id: '§7', depende: ['§5'], comando: '§' },
+    { id: '§8', depende: ['§6'], lote: 2 },
+    { id: '§9', parar_com_erro: '§' },
+  ],
+};
+const RELATORIO_FALSO = {
+  ate: '§4',
+  passos: FLUXO_FALSO.passos.slice(0, 7).map((p, i) => ({ id: p.id, estado: ESTADOS_DE_PASSO[i], itens: ['§'], portas: i === 0 ? { '§': ['§'] } : {}, tentativas: 1, ...(i === 1 ? { externo: { caminho: '§', bytes: 1 } } : {}) })),
+};
+async function armarApiDeFluxos(page, { valido = true } = {}) {
+  await page.route(`${ORIGEM}/v1/**`, route => {
+    const u = new URL(route.request().url());
+    const json = corpo => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(corpo) });
+    if (u.pathname === '/v1/fluxos') return json({ fluxos: [{ nome: '§', arquivo: '§', pasta: '', etiquetas: ['§'], passos: 9 }], invalidos: [{ arquivo: '§§', erro: '§' }] });
+    if (u.pathname === '/v1/fluxos/arquivo') return json({ valido, erro: valido ? null : '§', passos: 9, revisao: '0', assinatura: '0', texto: JSON.stringify(FLUXO_FALSO) });
+    if (u.pathname === '/v1/fluxos/validar') return json({ valido, erro: valido ? null : '§', passos: 9 });
+    if (u.pathname === '/v1/tasks') return json([{ id: 'f1', objective: 'fluxo: §', status: 'completed', created_at: '2026-10-01T00:00:00Z' }]);
+    if (u.pathname === '/v1/tasks/f1') return json({ id: 'f1', objective: 'fluxo: §', status: 'completed', created_at: '2026-10-01T00:00:00Z', answer: JSON.stringify(RELATORIO_FALSO) });
+    return route.fallback();
+  });
+}
+
 async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen=dashboard', real = false, relogio = false, api = false, putConfig = 200 } = {}) {
   const page = await browser.newPage({ viewport: { width: 1560, height: 960 } });
   await page.route(`${ORIGEM}/**`, route => {
@@ -208,7 +244,7 @@ async function abrir(browser, { modo = 'host', semEquipe = false, url = '?screen
 }
 
 async function percorrer(page, estado) {
-  for (const tela of ['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas', 'config']) {
+  for (const tela of ['geral', 'agentes', 'ide', 'ferramentas', 'absorcao', 'tarefas', 'fluxos', 'config']) {
     await page.click(`.nav[data-tela="${tela}"]`);
     await page.waitForTimeout(250);
     registrar(estado, await coletar(page));
@@ -326,6 +362,39 @@ try {
     await p.click('#configConfirmar');
     await p.waitForTimeout(400);
     registrar(`config-${putConfig}`, await coletar(p));
+    await p.close();
+  }
+
+  // Fluxos: a lista, o editor com o grafo e a execucao por cima, o painel de um passo (com a
+  // entrada, a saida, as portas e a saida externa), o de uma ligacao, o JSON recusado no
+  // painel e o veredito recusado do motor.
+  for (const valido of [true, false]) {
+    p = await abrir(browser, { api: true });
+    await armarApiDeFluxos(p, { valido });
+    await p.evaluate(() => localStorage.setItem('phxclaw.token', 'x'.repeat(24)));
+    await p.evaluate(() => mostrarTela('fluxos'));
+    await p.waitForTimeout(400);
+    registrar('fluxos-lista', await coletar(p));
+    await p.click('.fluxo-item[data-arquivo="§"]');
+    await p.waitForTimeout(600);
+    registrar(`fluxos-grafo${valido ? '' : '-recusado'}`, await coletar(p));
+    for (const id of ['§1', '§2', '§9']) {
+      await p.click(`#fluxosSvg .no[data-id="${id}"] .no-caixa`, { force: true });
+      await p.waitForTimeout(200);
+      registrar('fluxos-passo', await coletar(p));
+    }
+    await p.fill('.fp-json', '{');
+    await p.click('.fp-bloco .acao.altera');
+    registrar('fluxos-json-invalido', await coletar(p));
+    await p.focus('#fluxosSvg .aresta');
+    await p.keyboard.press('Enter');
+    await p.waitForTimeout(200);
+    registrar('fluxos-ligacao', await coletar(p));
+    // O painel do passo novo, e o id recusado (vazio).
+    await p.click('#fluxosNovoPasso');
+    await p.fill('.fp-campo', '');
+    await p.click('.fp-bloco .acao.inclui');
+    registrar('fluxos-passo-novo', await coletar(p));
     await p.close();
   }
 

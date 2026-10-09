@@ -1,0 +1,47 @@
+{
+  "modelo": {
+    "nome": "triagem-por-prioridade",
+    "descricao": "Lê uma lista de pedidos em JSON, resume cada pedido de prioridade alta com um subagente e arquiva os demais em lotes. Falhou: grava erro.txt.",
+    "etiquetas": ["triagem", "lote", "erro"],
+    "credenciais": []
+  },
+  "fluxo": {
+    "nome": "triagem-por-prioridade",
+    "max_paralelo": 2,
+    "teto_ms": 600000,
+    "fluxo_de_erro": "avisar",
+    "passos": [
+      {
+        "id": "ler",
+        "ferramenta": "read_file",
+        "args": { "path": "pedidos.json" },
+        "tentativas": 2,
+        "teto_ms": 5000
+      },
+      {
+        "id": "urgente",
+        "depende": ["ler"],
+        "se": { "caminho": "prioridade", "operador": "igual", "valor": "alta" }
+      },
+      {
+        "id": "resumir",
+        "depende": ["urgente:verdadeiro"],
+        "por_item": true,
+        "ao_errar": "saida_de_erro",
+        "tarefa": "Resuma em uma linha este pedido urgente: {{urgente.texto}}"
+      },
+      { "id": "lotes", "depende": ["urgente:falso"], "lote": 10 },
+      {
+        "id": "arquivar",
+        "depende": ["lotes"],
+        "por_item": true,
+        "ao_errar": "continuar",
+        "ferramenta": "write_file",
+        "args": { "path": "arquivo/{{lotes[0].id}}.json", "content": "{{lotes}}" }
+      },
+      { "id": "tudo", "depende": ["resumir", "arquivar"], "juntar": { "modo": "append" } },
+      { "id": "falhas", "depende": ["resumir:erro"], "parar_com_erro": "resumo falhou: {{resumir}}" },
+      { "id": "avisar", "ferramenta": "write_file", "args": { "path": "erro.txt", "content": "{{erro}}" } }
+    ]
+  }
+}

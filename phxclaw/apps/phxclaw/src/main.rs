@@ -67,6 +67,18 @@ fn main() -> Result<()> {
                 .block_on(phxclaw_agent::oauth::cli(&pasta(&args[1..]), &args[1..]))
                 .map_err(anyhow::Error::msg)?
         ),
+        // `phxclaw credencial guardar|renovacao|login NOME`: o segredo de uma credencial
+        // nomeada do no HTTP (declarada em http.json) pela entrada padrao, para o broker.
+        "credencial" | "credential" => println!(
+            "{}",
+            runtime()?
+                .block_on(phxclaw_agent::fluxo_http::cli(
+                    &pasta(&args[1..]),
+                    &args[1..],
+                    &mut std::io::stdin().lock(),
+                ))
+                .map_err(anyhow::Error::msg)?
+        ),
         "acp" => runtime()?.block_on(acp(&args[1..]))?,
         "ponte" | "bridge" => runtime()?.block_on(ponte(&args[1..]))?,
         "xai" => {
@@ -107,6 +119,12 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         // Os segredos que so tinham variavel de ambiente: `phxclaw <servico> chave` guarda
         // a variavel no broker pelo mesmo `Servico` da ElevenLabs e da Gemini.
         "api" => chave_de(&phxclaw_agent::chaves::API, &args[1..])?,
+        // Usuarios da API: so pela CLI local, nunca por HTTP (`rbac::comando`).
+        "usuario" | "user" => println!(
+            "{}",
+            phxclaw_agent::rbac::comando(&pasta(&args[1..]), &args[1..])
+                .map_err(anyhow::Error::msg)?
+        ),
         "openai" => chave_de(&phxclaw_agent::chaves::OPENAI, &args[1..])?,
         "anthropic" => chave_de(&phxclaw_agent::chaves::ANTHROPIC, &args[1..])?,
         "imagem" | "image" => chave_de(&phxclaw_agent::chaves::IMAGEM, &args[1..])?,
@@ -446,6 +464,17 @@ async fn servir(args: &[String]) -> Result<()> {
     };
     let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
     let state = estado_api(&raiz, store, factory, token)?;
+    // O interruptor das metricas, uma vez, antes do primeiro pedido: desligado, nenhuma
+    // ferramenta e envolvida e o `/metrics` responde 404.
+    phxclaw_agent::metricas::ligar(
+        phxclaw_agent::config::booleano_de("api.metricas").unwrap_or(false),
+    );
+    if state.usuarios.ligado() {
+        println!(
+            "usuarios da API: {} (papeis e projetos)",
+            raiz.join(phxclaw_agent::rbac::ARQUIVO).display()
+        );
+    }
     let mut rotas_do_canal = None;
     if let Some(l) = ligado {
         rotas_do_canal = l.rotas;
@@ -544,6 +573,22 @@ fn armar_gatilhos(raiz: &std::path::Path, state: &ApiState) -> Result<axum::Rout
             tokio::time::sleep(Duration::from_secs(5)).await;
         }
     });
+    // Os polls (lista `polls` do mesmo gatilhos.json): um laco por poll, porque cada um faz
+    // rede no proprio intervalo e um servico lento nao pode atrasar a pasta observada.
+    let polls = match &projeto {
+        Some(p) => phxclaw_agent::gatilho_poll::carregar(p).map_err(anyhow::Error::msg)?,
+        None => vec![],
+    };
+    if !polls.is_empty() {
+        println!(
+            "gatilhos: {}",
+            phxclaw_agent::gatilho_poll::descrever(&polls)
+        );
+    }
+    for p in polls {
+        let sondagem = phxclaw_agent::gatilho_poll::Sondagem::new(p, raiz);
+        tokio::spawn(phxclaw_agent::gatilho_poll::laco(state.clone(), sondagem));
+    }
     Ok(gatilhos::router(state.clone(), Arc::new(g)))
 }
 
@@ -591,6 +636,8 @@ fn estado_api(
     token: String,
 ) -> Result<ApiState> {
     Ok(ApiState {
+        // `<pasta>/usuarios.json` (`phxclaw usuario`): sem ele, so o Bearer unico.
+        usuarios: phxclaw_agent::rbac::Usuarios::da_pasta(raiz),
         store,
         factory,
         default_model: phxclaw_agent::config::texto_de("modelo.padrao")
@@ -955,6 +1002,73 @@ async fn subir_dispositivos(
     Ok(srv)
 }
 
+/// `phxclaw fluxo exportar|importar --ambiente dev|prod`: o git dos fluxos (`fluxo_git`).
+/// Porta fina: a pasta de fluxos e o repositorio sao opcoes, e `--commit MSG` registra pelo
+/// `GitTool` de escrita do agente (o mesmo sandbox e a mesma varredura de segredos).
+async fn fluxo_git(args: &[String], exportar: bool) -> Result<()> {
+    use phxclaw_agent::fluxo_git::{self, Ambiente, Efeito};
+    let amb = Ambiente::ler(&opcao(args, "--ambiente").unwrap_or_default())
+        .map_err(anyhow::Error::msg)?;
+    let fluxos_dir = opcao(args, "--fluxos")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| pasta(args).join("fluxos"));
+    let repo = opcao(args, "--repo")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| pasta(args).join(fluxo_git::PASTA_PADRAO));
+    if !exportar {
+        let feitos = fluxo_git::importar(
+            &repo,
+            amb,
+            &fluxos_dir,
+            args.iter().any(|a| a == "--sobrescrever"),
+        )
+        .map_err(anyhow::Error::msg)?;
+        for f in &feitos {
+            let efeito = match f.efeito {
+                Efeito::Novo => "novo",
+                Efeito::Atualizado => "atualizado",
+                Efeito::Igual => "igual",
+            };
+            let versao = f
+                .versao
+                .map(|v| format!(" (publicada v{v})"))
+                .unwrap_or_default();
+            println!("  {efeito:<10} {}{versao}  {}", f.nome, f.destino.display());
+        }
+        println!("{} fluxo(s) do ambiente {}", feitos.len(), amb.nome());
+        return Ok(());
+    }
+    let r = fluxo_git::exportar(&fluxos_dir, &repo, amb).map_err(anyhow::Error::msg)?;
+    for e in &r.escritos {
+        let versao = e.versao.map(|v| format!(" v{v}")).unwrap_or_default();
+        println!(
+            "  {} {}{versao}  {}",
+            if e.mudou { "gravado" } else { "igual  " },
+            e.nome,
+            e.arquivo.display()
+        );
+    }
+    for x in &r.removidos {
+        println!("  removido {}", x.display());
+    }
+    println!(
+        "{} fluxo(s) em {}/{}",
+        r.escritos.len(),
+        repo.display(),
+        amb.nome()
+    );
+    if let Some(msg) = opcao(args, "--commit") {
+        let bwrap = phxclaw_agent::arquivos::achar_bwrap()
+            .ok_or_else(|| anyhow::anyhow!("sem bwrap o git do agente nao roda"))?;
+        let g = phxclaw_agent::git::GitTool::escrita(bwrap);
+        let v = fluxo_git::registrar(&g, &repo, &msg)
+            .await
+            .map_err(anyhow::Error::msg)?;
+        println!("{v}");
+    }
+    Ok(())
+}
+
 /// `phxclaw fluxo rodar ARQ`: o fluxo declarativo pelo motor do agente
 /// (`phxclaw_agent::fluxos`), o mesmo que qualquer outra entrada usaria. Os subcomandos de
 /// gestao (onda 3 e 4 da SP000035) sao porta fina para as funcoes do motor: nenhum decide
@@ -964,7 +1078,10 @@ async fn fluxo(args: &[String]) -> Result<()> {
     const USO: &str = "uso: phxclaw fluxo rodar ARQ.json [--ate PASSO] [--pins] | retomar TAREFA [ARQ.json] \
 | responder TAREFA TEXTO | esperas | pinar ARQ.json PASSO (--json VALOR | --tarefa T) | despinar \
 ARQ.json PASSO | podar [--dias N] [--max N] | exportar ARQ.json [--saida PACOTE.json] | importar \
-PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo M] [--pasta DIR]";
+PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P] | modelos | usar MODELO \
+DESTINO.json | publicar ARQ.json [--nota T] | versoes ARQ.json | voltar ARQ.json N | restaurar \
+ARQ.json N [--forcar] | exportar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--commit MSG] | \
+importar --ambiente dev|prod [--fluxos DIR] [--repo DIR] [--sobrescrever]  [--modelo M] [--pasta DIR]";
     let sub = args.first().map(String::as_str).unwrap_or_default();
     let posicional = |i: usize| -> Option<&String> { args.get(i).filter(|a| !a.starts_with("--")) };
     match sub {
@@ -1021,6 +1138,125 @@ PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo
                 std::process::exit(2);
             }
             return Ok(());
+        }
+        "modelos" | "templates" => {
+            let galeria = phxclaw_agent::fluxo_modelos::galeria().map_err(anyhow::Error::msg)?;
+            for m in &galeria {
+                println!(
+                    "  {:<32} [{}]  credenciais: {}",
+                    m.nome,
+                    m.etiquetas.join(", "),
+                    if m.credenciais.is_empty() {
+                        "nenhuma".to_string()
+                    } else {
+                        m.credenciais.join(", ")
+                    }
+                );
+                println!("      {}", m.descricao);
+            }
+            println!(
+                "{} modelo(s); copie um com: fluxo usar MODELO DESTINO.json",
+                galeria.len()
+            );
+            return Ok(());
+        }
+        "usar" | "use" => {
+            let (Some(modelo), Some(destino)) = (posicional(1), posicional(2)) else {
+                bail!("{USO}");
+            };
+            let m = phxclaw_agent::fluxo_modelos::usar(modelo, Path::new(destino))
+                .map_err(anyhow::Error::msg)?;
+            println!("fluxo {} gravado em {destino} (rascunho)", m.nome);
+            if !m.credenciais.is_empty() {
+                println!(
+                    "guarde antes de rodar (so o nome vem no modelo): {}",
+                    m.credenciais.join(", ")
+                );
+            }
+            return Ok(());
+        }
+        "publicar" | "publish" => {
+            let Some(arq) = posicional(1) else {
+                bail!("{USO}")
+            };
+            let nota = opcao(args, "--nota").unwrap_or_default();
+            let v = phxclaw_agent::fluxo_versoes::publicar(Path::new(arq), &nota)
+                .map_err(anyhow::Error::msg)?;
+            println!("fluxo publicado: v{} (sha256 {})", v.numero, v.sha256);
+            return Ok(());
+        }
+        "versoes" | "versions" => {
+            use phxclaw_agent::fluxo_versoes;
+            let Some(arq) = posicional(1) else {
+                bail!("{USO}")
+            };
+            let s = fluxo_versoes::situacao(Path::new(arq)).map_err(anyhow::Error::msg)?;
+            match &s.indice {
+                None => println!("nunca publicado: o arquivo e o publicado implicito"),
+                Some(i) => {
+                    for v in &i.versoes {
+                        println!(
+                            "  v{:<4} {} {}{}{}",
+                            v.numero,
+                            &v.sha256[..12.min(v.sha256.len())],
+                            v.em,
+                            if v.numero == i.publicada {
+                                "  <- publicada"
+                            } else {
+                                ""
+                            },
+                            if v.nota.is_empty() {
+                                String::new()
+                            } else {
+                                format!("  ({})", v.nota)
+                            }
+                        );
+                    }
+                }
+            }
+            match &s.rascunho {
+                Ok(sha) => println!(
+                    "rascunho {}{}",
+                    &sha[..12.min(sha.len())],
+                    if s.rascunho_alterado() {
+                        "  (difere da publicada)"
+                    } else {
+                        ""
+                    }
+                ),
+                Err(e) => println!("rascunho nao le: {e}"),
+            }
+            return Ok(());
+        }
+        "voltar" | "rollback" => {
+            let (Some(arq), Some(n)) = (posicional(1), posicional(2)) else {
+                bail!("{USO}");
+            };
+            let n: u32 = n.parse().map_err(|_| anyhow::anyhow!("{USO}"))?;
+            let v = phxclaw_agent::fluxo_versoes::voltar(Path::new(arq), n)
+                .map_err(anyhow::Error::msg)?;
+            println!("publicada: v{} (a definicao da v{n})", v.numero);
+            return Ok(());
+        }
+        "restaurar" | "restore" => {
+            let (Some(arq), Some(n)) = (posicional(1), posicional(2)) else {
+                bail!("{USO}");
+            };
+            let n: u32 = n.parse().map_err(|_| anyhow::anyhow!("{USO}"))?;
+            phxclaw_agent::fluxo_versoes::restaurar_rascunho(
+                Path::new(arq),
+                n,
+                args.iter().any(|a| a == "--forcar"),
+            )
+            .map_err(anyhow::Error::msg)?;
+            println!("rascunho {arq} restaurado da v{n}");
+            return Ok(());
+        }
+        "exportar" | "export" if opcao(args, "--ambiente").is_some() => {
+            return fluxo_git(args, true).await;
+        }
+        "importar" | "import" if opcao(args, "--ambiente").is_some() => {
+            return fluxo_git(args, false).await;
         }
         "exportar" | "export" => {
             let Some(arq) = posicional(1) else {
@@ -1085,7 +1321,14 @@ PACOTE.json DESTINO.json | listar [DIR] [--etiqueta E] [--subpasta P]  [--modelo
             let Some(arq) = posicional(1) else {
                 bail!("{USO}")
             };
-            let f = fluxos::ler_arquivo(Path::new(arq)).map_err(anyhow::Error::msg)?;
+            // Sem `--publicada` a execucao manual le o RASCUNHO (e para testar a edicao);
+            // gatilho, agenda e sub-fluxo ja rodam a publicada.
+            let f = if args.iter().any(|a| a == "--publicada") {
+                phxclaw_agent::fluxo_versoes::ler_publicado(Path::new(arq))
+            } else {
+                fluxos::ler_arquivo(Path::new(arq))
+            }
+            .map_err(anyhow::Error::msg)?;
             println!(
                 "fluxo {} ({} passos), modelo {modelo}",
                 f.nome,

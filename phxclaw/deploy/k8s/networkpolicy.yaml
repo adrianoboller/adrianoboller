@@ -1,0 +1,28 @@
+# Isolamento de rede do pod. INGRESSO: so o namespace do Ingress (ajuste o rotulo abaixo ao
+# seu cluster) alcanca a API, e so na 8787 -- sem esta politica, qualquer pod de qualquer
+# namespace falaria com ela (o Bearer e a unica barreira restante).
+# EGRESSO: aberto de proposito (policyTypes nao lista Egress). O agente sai para APIs de
+# modelo, canais e web; um allowlist de IPs aqui quebraria isso em silencio. Quem quiser
+# fechar acrescenta `Egress` em policyTypes com as regras do seu ambiente.
+# Exige CNI que aplique NetworkPolicy (Calico, Cilium...); sem ela o objeto e aceito e ignorado.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: phxclaw
+  namespace: phxclaw
+  labels:
+    app.kubernetes.io/name: phxclaw
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: phxclaw
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8787

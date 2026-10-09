@@ -1,0 +1,14 @@
+# Só configuração que NÃO é segredo. Token e chave-mestra moram no Secret `phxclaw-segredos`.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: phxclaw-config
+  namespace: phxclaw
+  labels:
+    app.kubernetes.io/name: phxclaw
+data:
+  PHXCLAW_HOME: "/data"
+  # Dentro do pod a API precisa escutar em todas as interfaces para o Service e as sondas
+  # a alcançarem; ela continua exigindo Bearer em tudo, menos /health.
+  PHXCLAW_API_HOST: "0.0.0.0"
+  PHXCLAW_API_TAREFAS_POR_MINUTO: "10"

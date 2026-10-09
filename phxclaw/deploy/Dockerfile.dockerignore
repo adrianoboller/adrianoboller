@@ -1,0 +1,40 @@
+# Este e o arquivo que o Docker LE: com `docker build -f deploy/Dockerfile .` o BuildKit
+# procura `<Dockerfile>.dockerignore` ao lado do Dockerfile (nome exato) e, so se nao achar,
+# o `.dockerignore` da raiz do contexto. Um `deploy/.dockerignore` nao e lido por ninguem --
+# ja existiu aqui e o `COPY . .` levava deploy/secrets, var/, .git e target/ (16 GB).
+#
+# Segunda linha de defesa: o Dockerfile ja copia so o que o build precisa (lista fechada).
+# O que esta aqui garante que, se alguem voltar a um COPY largo, segredo e dado nao entram.
+target/
+**/target/
+.git/
+.github/
+third_party/target/
+
+# segredos e dados de execucao: nunca no contexto
+.env
+.env.*
+*.env
+*.key
+*.pem
+*.p12
+*.pfx
+**/master.key
+**/master_key
+**/api.token
+**/api_token
+**/segredos/
+**/cofre/
+secrets/
+**/secrets/
+deploy/secrets/
+.pgpass
+var/
+.phxclaw/
+*.db
+*.sqlite
+*.log
+
+# ruido local (os .png da interface em apps/phxclaw-ui/assets ENTRAM: a PWA os embute)
+**/__pycache__/
+node_modules/

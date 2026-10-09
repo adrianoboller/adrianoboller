@@ -25,7 +25,9 @@
 //!   para um no de codigo do n8n servir aos dois sentidos. Fora da janela de 5 minutos a
 //!   assinatura nao vale: um pedido capturado nao dispara o gatilho para sempre.
 
-use crate::api::{ApiState, Criada, Recusa, criar_fluxo_com, criar_tarefa_com};
+use crate::api::{ApiState, Criada, Recusa, criar_tarefa_com};
+// O gatilho roda a versao PUBLICADA do fluxo (`fluxo_versoes`), nunca o rascunho.
+use crate::fluxo_versoes::criar_fluxo_publicado;
 use axum::extract::{Path as Caminho, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::Html;
@@ -248,7 +250,7 @@ formulario vai a humanos e nao pode valer como credencial do gatilho",
             };
             // Lido ao carregar (com os pins ao lado): fluxo invalido para aqui, nao no
             // primeiro disparo.
-            crate::fluxos::ler_arquivo(&caminho)
+            crate::fluxo_versoes::ler_publicado(&caminho)
                 .map_err(|e| format!("{}: gatilho: fluxo {f}: {e}", arq.display()))?;
         }
         for a in &mut g.arquivos {
@@ -420,7 +422,7 @@ pub fn disparar_arquivos(s: &ApiState, obs: &mut [Observador]) -> Vec<Result<Cri
                 .iter()
                 .map(|(_, r)| json!({"arquivo": r, "gatilho": o.gatilho.nome}))
                 .collect();
-            v.push(criar_fluxo_com(s, f, entrada, copiar));
+            v.push(criar_fluxo_publicado(s, f, entrada, copiar));
             continue;
         }
         let objetivo = if o.gatilho.objetivo.contains("{arquivos}") {
@@ -595,7 +597,7 @@ fn chave_de_repeticao(nome: &str, cred: Credencial, h: &HeaderMap) -> Option<Str
 
 /// O fluxo do gatilho, quando ele declara formulario.
 fn fluxo_com_formulario(g: &GatilhoDeWebhook) -> Option<crate::fluxos::Fluxo> {
-    let f = crate::fluxos::ler_arquivo(Path::new(g.fluxo.as_deref()?)).ok()?;
+    let f = crate::fluxo_versoes::ler_publicado(Path::new(g.fluxo.as_deref()?)).ok()?;
     f.formulario.is_some().then_some(f)
 }
 
@@ -970,7 +972,7 @@ async fn webhook(
         };
         let arq = g.fluxo.as_deref().unwrap_or_default();
         return disparar(&e, &nome, cred, &h, || {
-            criar_fluxo_com(&e.api, arq, vec![item], |_| Ok(()))
+            criar_fluxo_publicado(&e.api, arq, vec![item], |_| Ok(()))
         })
         .map_or_else(
             |(st, msg, retry)| match retry {
@@ -1006,7 +1008,7 @@ async fn webhook(
         // JSON vira itens, texto vira um item de texto.
         let itens = crate::fluxos::itens_de_texto(&c);
         return responder(disparar(&e, &nome, cred, &h, || {
-            criar_fluxo_com(&e.api, f, itens, |_| Ok(()))
+            criar_fluxo_publicado(&e.api, f, itens, |_| Ok(()))
         }));
     }
     // A cerca nao pode ser fechada pelo proprio corpo.

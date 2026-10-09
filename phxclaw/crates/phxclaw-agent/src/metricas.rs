@@ -1,0 +1,561 @@
+//! `GET /metrics` no formato de exposicao de texto do Prometheus: tarefas e execucoes de
+//! fluxo por estado, passos, chamadas de ferramenta e de modelo, tokens e latencia em
+//! histograma.
+//!
+//! Decisoes que valem saber:
+//! - **Desligada custa zero, e o interruptor vem ANTES do trabalho.** `medindo` devolve o
+//!   MESMO agente quando desligada (nenhum involucro, nenhum relogio por chamada), e
+//!   `fim_de_tarefa` recebe um fecho que so roda depois de conferir o interruptor. O padrao
+//!   e desligado, como o `N8N_METRICS` do n8n: ligar e `api.metricas` no config.json.
+//! - **Rotulo so de conjunto fechado** (`estado`, `resultado`, `tipo`): nada de nome de
+//!   ferramenta, argumento, objetivo ou credencial. Nome de ferramenta de MCP e de plugin
+//!   vem de fora e poderia carregar qualquer coisa; e cardinalidade sem teto no coletor.
+//! - **Atras do mesmo portao das outras rotas** (papel leitor na matriz do `rbac.rs`).
+//! - Contadores do PROCESSO: reiniciar zera, que e o que o Prometheus espera de um
+//!   `counter` (ele trata o recomeco).
+
+use crate::motor::Agent;
+use crate::tarefa::{Task, TaskStatus};
+use phxclaw_agent_core::{
+    BoxFut, Llm, LlmError, LlmOptions, LlmReply, Message, Tool, ToolContext, ToolError, ToolOutput,
+    ToolSpec,
+};
+use serde_json::Value;
+use std::fmt::Write as _;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
+use std::time::{Duration, Instant};
+
+/// Os estados de `TaskStatus`, na ordem do indice de `indice_do_estado` (o nome e o do fio).
+const ESTADOS: [&str; 7] = [
+    "pending",
+    "awaiting_approval",
+    "awaiting_input",
+    "running",
+    "completed",
+    "failed",
+    "cancelled",
+];
+
+fn indice_do_estado(e: TaskStatus) -> usize {
+    // `match` exaustivo: estado novo nao compila sem lugar aqui.
+    match e {
+        TaskStatus::Pending => 0,
+        TaskStatus::AwaitingApproval => 1,
+        TaskStatus::AwaitingInput => 2,
+        TaskStatus::Running => 3,
+        TaskStatus::Completed => 4,
+        TaskStatus::Failed => 5,
+        TaskStatus::Cancelled => 6,
+    }
+}
+
+const MAX_FAIXAS: usize = 16;
+/// Ferramenta: de milissegundos (calculadora) a minutos (shell, navegador).
+const FAIXAS_FERRAMENTA: &[f64] = &[
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0,
+];
+/// Tarefa inteira: de segundos a uma hora.
+const FAIXAS_TAREFA: &[f64] = &[
+    1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0,
+];
+
+/// Histograma de faixas fixas, sem trava: cada observacao e um incremento atomico.
+pub struct Histograma {
+    faixas: &'static [f64],
+    contagens: [AtomicU64; MAX_FAIXAS],
+    soma_us: AtomicU64,
+    total: AtomicU64,
+}
+
+impl Histograma {
+    const fn novo(faixas: &'static [f64]) -> Self {
+        Self {
+            faixas,
+            contagens: [const { AtomicU64::new(0) }; MAX_FAIXAS],
+            soma_us: AtomicU64::new(0),
+            total: AtomicU64::new(0),
+        }
+    }
+
+    fn observar(&self, d: Duration) {
+        let s = d.as_secs_f64();
+        if let Some(i) = self.faixas.iter().position(|f| s <= *f) {
+            self.contagens[i].fetch_add(1, Relaxed);
+        }
+        self.soma_us
+            .fetch_add(u64::try_from(d.as_micros()).unwrap_or(u64::MAX), Relaxed);
+        self.total.fetch_add(1, Relaxed);
+    }
+
+    fn escrever(&self, o: &mut String, nome: &str, ajuda: &str) {
+        let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} histogram");
+        let mut acumulado = 0u64;
+        for (i, f) in self.faixas.iter().enumerate() {
+            acumulado += self.contagens[i].load(Relaxed);
+            let _ = writeln!(o, "{nome}_bucket{{le=\"{f}\"}} {acumulado}");
+        }
+        let total = self.total.load(Relaxed);
+        let _ = writeln!(o, "{nome}_bucket{{le=\"+Inf\"}} {total}");
+        let soma = self.soma_us.load(Relaxed) as f64 / 1e6;
+        let _ = writeln!(o, "{nome}_sum {soma}\n{nome}_count {total}");
+    }
+}
+
+/// O que se conta no fim de uma tarefa de objetivo. Montado por quem chama SO quando a
+/// metrica esta ligada (vem num fecho).
+pub struct FimDeTarefa {
+    pub estado: TaskStatus,
+    pub passos: u64,
+    pub duracao: Option<Duration>,
+}
+
+impl FimDeTarefa {
+    pub fn de(t: &Task, inicio: Option<Instant>) -> Self {
+        Self {
+            estado: t.status,
+            passos: t.steps.len() as u64,
+            duracao: inicio.map(|i| i.elapsed()),
+        }
+    }
+}
+
+pub struct Metricas {
+    ligada: AtomicBool,
+    tarefas: [AtomicU64; 7],
+    fluxos: [AtomicU64; 7],
+    passos: AtomicU64,
+    ferramenta_ok: AtomicU64,
+    ferramenta_erro: AtomicU64,
+    ferramenta_duracao: Histograma,
+    tarefa_duracao: Histograma,
+    modelo_chamadas: AtomicU64,
+    modelo_erros: AtomicU64,
+    tokens_entrada: AtomicU64,
+    tokens_saida: AtomicU64,
+}
+
+/// As metricas do processo do `servir`.
+pub static GLOBAL: Metricas = Metricas::nova();
+
+/// Liga ou desliga as do processo (o `servir`, pela chave `api.metricas`).
+pub fn ligar(sim: bool) {
+    GLOBAL.ligada.store(sim, Relaxed);
+}
+
+impl Default for Metricas {
+    fn default() -> Self {
+        Self::nova()
+    }
+}
+
+impl Metricas {
+    pub const fn nova() -> Self {
+        Self {
+            ligada: AtomicBool::new(false),
+            tarefas: [const { AtomicU64::new(0) }; 7],
+            fluxos: [const { AtomicU64::new(0) }; 7],
+            passos: AtomicU64::new(0),
+            ferramenta_ok: AtomicU64::new(0),
+            ferramenta_erro: AtomicU64::new(0),
+            ferramenta_duracao: Histograma::novo(FAIXAS_FERRAMENTA),
+            tarefa_duracao: Histograma::novo(FAIXAS_TAREFA),
+            modelo_chamadas: AtomicU64::new(0),
+            modelo_erros: AtomicU64::new(0),
+            tokens_entrada: AtomicU64::new(0),
+            tokens_saida: AtomicU64::new(0),
+        }
+    }
+
+    pub fn ligada(&self) -> bool {
+        self.ligada.load(Relaxed)
+    }
+
+    pub fn definir(&self, sim: bool) {
+        self.ligada.store(sim, Relaxed);
+    }
+
+    /// O agente com modelo e ferramentas contados -- ou o MESMO agente, intocado, quando
+    /// desligada: o interruptor e a primeira coisa, antes de qualquer involucro.
+    pub fn medindo(&'static self, mut a: Agent) -> Agent {
+        if !self.ligada() {
+            return a;
+        }
+        a.llm = Arc::new(LlmMedido {
+            interno: a.llm,
+            m: self,
+        });
+        a.tools = a
+            .tools
+            .into_iter()
+            .map(|t| {
+                Arc::new(ToolMedida {
+                    interno: t,
+                    m: self,
+                }) as Arc<dyn Tool>
+            })
+            .collect();
+        a
+    }
+
+    /// Fim de uma tarefa de objetivo. O fecho so roda com a metrica ligada.
+    pub fn fim_de_tarefa(&self, fim: impl FnOnce() -> FimDeTarefa) {
+        if !self.ligada() {
+            return;
+        }
+        let f = fim();
+        self.tarefas[indice_do_estado(f.estado)].fetch_add(1, Relaxed);
+        self.passos.fetch_add(f.passos, Relaxed);
+        if let Some(d) = f.duracao {
+            self.tarefa_duracao.observar(d);
+        }
+    }
+
+    /// Fim de um trecho de execucao de fluxo (do disparo ou da retomada ate parar), pelo
+    /// estado em que parou. O fecho so roda com a metrica ligada.
+    pub fn fim_de_fluxo(&self, estado: impl FnOnce() -> Option<TaskStatus>) {
+        if !self.ligada() {
+            return;
+        }
+        if let Some(e) = estado() {
+            self.fluxos[indice_do_estado(e)].fetch_add(1, Relaxed);
+        }
+    }
+
+    /// O texto de exposicao, ou `None` desligada (a rota responde 404).
+    pub fn texto(&self) -> Option<String> {
+        if !self.ligada() {
+            return None;
+        }
+        let mut o = String::new();
+        let por_estado = |o: &mut String, nome: &str, ajuda: &str, v: &[AtomicU64; 7]| {
+            let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
+            for (i, e) in ESTADOS.iter().enumerate() {
+                let _ = writeln!(o, "{nome}{{estado=\"{e}\"}} {}", v[i].load(Relaxed));
+            }
+        };
+        por_estado(
+            &mut o,
+            "phxclaw_tarefas_total",
+            "Tarefas de objetivo terminadas, pelo estado final.",
+            &self.tarefas,
+        );
+        por_estado(
+            &mut o,
+            "phxclaw_fluxo_execucoes_total",
+            "Execucoes de fluxo (disparo ou retomada) pelo estado em que pararam.",
+            &self.fluxos,
+        );
+        let contador = |o: &mut String, nome: &str, ajuda: &str, linhas: &[(&str, u64)]| {
+            let _ = writeln!(o, "# HELP {nome} {ajuda}\n# TYPE {nome} counter");
+            for (rotulo, v) in linhas {
+                let _ = writeln!(o, "{nome}{rotulo} {v}");
+            }
+        };
+        contador(
+            &mut o,
+            "phxclaw_passos_total",
+            "Passos gravados pelas tarefas de objetivo terminadas.",
+            &[("", self.passos.load(Relaxed))],
+        );
+        contador(
+            &mut o,
+            "phxclaw_ferramenta_chamadas_total",
+            "Chamadas de ferramenta, pelo resultado.",
+            &[
+                ("{resultado=\"ok\"}", self.ferramenta_ok.load(Relaxed)),
+                ("{resultado=\"erro\"}", self.ferramenta_erro.load(Relaxed)),
+            ],
+        );
+        contador(
+            &mut o,
+            "phxclaw_modelo_chamadas_total",
+            "Pedidos ao modelo, pelo resultado.",
+            &[
+                ("{resultado=\"ok\"}", self.modelo_chamadas.load(Relaxed)),
+                ("{resultado=\"erro\"}", self.modelo_erros.load(Relaxed)),
+            ],
+        );
+        contador(
+            &mut o,
+            "phxclaw_tokens_total",
+            "Tokens informados pelo provedor.",
+            &[
+                ("{tipo=\"entrada\"}", self.tokens_entrada.load(Relaxed)),
+                ("{tipo=\"saida\"}", self.tokens_saida.load(Relaxed)),
+            ],
+        );
+        self.ferramenta_duracao.escrever(
+            &mut o,
+            "phxclaw_ferramenta_duracao_segundos",
+            "Latencia de cada chamada de ferramenta.",
+        );
+        self.tarefa_duracao.escrever(
+            &mut o,
+            "phxclaw_tarefa_duracao_segundos",
+            "Duracao da execucao de cada tarefa de objetivo.",
+        );
+        Some(o)
+    }
+}
+
+struct LlmMedido {
+    interno: Arc<dyn Llm>,
+    m: &'static Metricas,
+}
+
+impl Llm for LlmMedido {
+    fn id(&self) -> String {
+        self.interno.id()
+    }
+    fn chat<'a>(
+        &'a self,
+        messages: &'a [Message],
+        tools: &'a [ToolSpec],
+        options: &'a LlmOptions,
+    ) -> BoxFut<'a, Result<LlmReply, LlmError>> {
+        Box::pin(async move {
+            let r = self.interno.chat(messages, tools, options).await;
+            match &r {
+                Ok(resp) => {
+                    self.m.modelo_chamadas.fetch_add(1, Relaxed);
+                    self.m
+                        .tokens_entrada
+                        .fetch_add(resp.usage.input_tokens, Relaxed);
+                    self.m
+                        .tokens_saida
+                        .fetch_add(resp.usage.output_tokens, Relaxed);
+                }
+                Err(_) => {
+                    self.m.modelo_erros.fetch_add(1, Relaxed);
+                }
+            }
+            r
+        })
+    }
+}
+
+struct ToolMedida {
+    interno: Arc<dyn Tool>,
+    m: &'static Metricas,
+}
+
+// Repassa TODO metodo do trait: um que caisse no padrao mudaria o comportamento da
+// ferramenta medida (o `comando_de_shell` e o que as regras de comando conferem).
+impl Tool for ToolMedida {
+    fn spec(&self) -> ToolSpec {
+        self.interno.spec()
+    }
+    fn capability(&self) -> &'static str {
+        self.interno.capability()
+    }
+    fn run<'a>(
+        &'a self,
+        args: Value,
+        ctx: &'a ToolContext,
+    ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+        Box::pin(async move {
+            let t0 = Instant::now();
+            let r = self.interno.run(args, ctx).await;
+            self.m.ferramenta_duracao.observar(t0.elapsed());
+            match &r {
+                Ok(_) => self.m.ferramenta_ok.fetch_add(1, Relaxed),
+                Err(_) => self.m.ferramenta_erro.fetch_add(1, Relaxed),
+            };
+            r
+        })
+    }
+    fn finish<'a>(&'a self, task_id: &'a str) -> BoxFut<'a, ()> {
+        self.interno.finish(task_id)
+    }
+    fn comando_de_shell(&self, args: &Value) -> Option<String> {
+        self.interno.comando_de_shell(args)
+    }
+}
+
+/// `GET /metrics`: o Bearer primeiro (o portao, com usuarios, ja decidiu o papel), depois
+/// o interruptor -- desligada e 404, para o coletor dizer «alvo sem metrica» e nao «zero».
+pub async fn expor(
+    axum::extract::State(s): axum::extract::State<crate::api::ApiState>,
+    h: axum::http::HeaderMap,
+) -> axum::response::Response {
+    use axum::http::{StatusCode, header};
+    use axum::response::IntoResponse;
+    if let Err(e) = crate::api::auth(&s, &h) {
+        return e.into_response();
+    }
+    match GLOBAL.texto() {
+        Some(t) => (
+            [(
+                header::CONTENT_TYPE,
+                "text/plain; version=0.0.4; charset=utf-8",
+            )],
+            t,
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "metricas desligadas (api.metricas)").into_response(),
+    }
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+    use crate::tarefa::TaskStore;
+    use serde_json::json;
+
+    struct Eco;
+    impl Tool for Eco {
+        fn spec(&self) -> ToolSpec {
+            ToolSpec {
+                name: "eco".into(),
+                description: String::new(),
+                parameters: json!({"type": "object"}),
+            }
+        }
+        fn capability(&self) -> &'static str {
+            "calc"
+        }
+        fn run<'a>(
+            &'a self,
+            args: Value,
+            _ctx: &'a ToolContext,
+        ) -> BoxFut<'a, Result<ToolOutput, ToolError>> {
+            Box::pin(async move { Ok(ToolOutput::text(args.to_string())) })
+        }
+    }
+
+    struct Mudo;
+    impl Llm for Mudo {
+        fn id(&self) -> String {
+            "mudo".into()
+        }
+        fn chat<'a>(
+            &'a self,
+            _m: &'a [Message],
+            _t: &'a [ToolSpec],
+            _o: &'a LlmOptions,
+        ) -> BoxFut<'a, Result<LlmReply, LlmError>> {
+            Box::pin(async { Err(LlmError::Parse("mudo".into())) })
+        }
+    }
+
+    fn agente() -> Agent {
+        Agent::new(
+            Arc::new(Mudo),
+            vec![Arc::new(Eco)],
+            Default::default(),
+            TaskStore::new(std::env::temp_dir().join("phx-metricas-store")).unwrap(),
+        )
+    }
+
+    fn nova() -> &'static Metricas {
+        Box::leak(Box::new(Metricas::nova()))
+    }
+
+    #[test]
+    fn desligada_nao_envolve_o_agente_nem_roda_o_fecho() {
+        let m = nova();
+        let a = agente();
+        let (llm, tool) = (a.llm.clone(), a.tools[0].clone());
+        let b = m.medindo(a);
+        assert!(Arc::ptr_eq(&llm, &b.llm), "envolveu o modelo desligada");
+        assert!(
+            Arc::ptr_eq(&tool, &b.tools[0]),
+            "envolveu a ferramenta desligada"
+        );
+        let mut rodou = false;
+        m.fim_de_tarefa(|| {
+            rodou = true;
+            FimDeTarefa {
+                estado: TaskStatus::Completed,
+                passos: 1,
+                duracao: None,
+            }
+        });
+        m.fim_de_fluxo(|| {
+            rodou = true;
+            None
+        });
+        assert!(!rodou, "trabalho feito antes do interruptor");
+        assert!(m.texto().is_none());
+    }
+
+    #[tokio::test]
+    async fn ligada_conta_e_os_rotulos_sao_de_conjunto_fechado() {
+        let m = nova();
+        m.definir(true);
+        let a = m.medindo(agente());
+        let ctx = ToolContext {
+            task_id: "t".into(),
+            workdir: std::env::temp_dir(),
+            timeout: Duration::from_secs(1),
+        };
+        let segredo = "ghp_SEGREDO_QUE_NAO_PODE_SAIR";
+        a.tools[0]
+            .run(json!({"token": segredo}), &ctx)
+            .await
+            .unwrap();
+        let _ = a.llm.chat(&[], &[], &LlmOptions::default()).await;
+        m.fim_de_tarefa(|| FimDeTarefa {
+            estado: TaskStatus::Failed,
+            passos: 3,
+            duracao: Some(Duration::from_millis(1500)),
+        });
+        m.fim_de_fluxo(|| Some(TaskStatus::AwaitingInput));
+        let t = m.texto().unwrap();
+        assert!(
+            t.contains("phxclaw_ferramenta_chamadas_total{resultado=\"ok\"} 1"),
+            "{t}"
+        );
+        assert!(
+            t.contains("phxclaw_modelo_chamadas_total{resultado=\"erro\"} 1"),
+            "{t}"
+        );
+        assert!(
+            t.contains("phxclaw_tarefas_total{estado=\"failed\"} 1"),
+            "{t}"
+        );
+        assert!(t.contains("phxclaw_passos_total 3"), "{t}");
+        assert!(
+            t.contains("phxclaw_fluxo_execucoes_total{estado=\"awaiting_input\"} 1"),
+            "{t}"
+        );
+        assert!(
+            t.contains("phxclaw_tarefa_duracao_segundos_bucket{le=\"5\"} 1"),
+            "{t}"
+        );
+        assert!(
+            t.contains("phxclaw_tarefa_duracao_segundos_bucket{le=\"1\"} 0"),
+            "{t}"
+        );
+        assert!(
+            t.contains("phxclaw_ferramenta_duracao_segundos_count 1"),
+            "{t}"
+        );
+        assert!(!t.contains(segredo) && !t.contains("eco"), "{t}");
+        // Todo rotulo publicado e de conjunto fechado: um rotulo novo com valor livre
+        // (nome de ferramenta, argumento) reprova aqui antes de chegar a um coletor.
+        let permitidos: Vec<String> = ESTADOS
+            .iter()
+            .map(|e| format!("estado=\"{e}\""))
+            .chain(
+                [
+                    "resultado=\"ok\"",
+                    "resultado=\"erro\"",
+                    "tipo=\"entrada\"",
+                    "tipo=\"saida\"",
+                ]
+                .map(String::from),
+            )
+            .collect();
+        for linha in t.lines().filter(|l| !l.starts_with('#')) {
+            if let (Some(i), Some(f)) = (linha.find('{'), linha.find('}')) {
+                let r = &linha[i + 1..f];
+                assert!(
+                    r.starts_with("le=\"") || permitidos.iter().any(|p| p == r),
+                    "rotulo fora do conjunto fechado: {linha}"
+                );
+            }
+        }
+    }
+}

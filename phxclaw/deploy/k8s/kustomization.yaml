@@ -1,0 +1,17 @@
+# kubectl apply -k deploy/k8s
+# O Secret NÃO está na lista: crie-o antes (ver secret-exemplo.yaml). Sem ele o pod fica em
+# ContainerCreating, que é a falha certa — melhor que subir com token vazio.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: phxclaw
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - networkpolicy.yaml
+images:
+  - name: phxclaw
+    newName: phxclaw
+    newTag: 0.70.0

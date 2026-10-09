@@ -14,3 +14,6 @@ thiserror.workspace = true
 url.workspace = true
 uuid.workspace = true
 phxclaw-types = { path = "../phxclaw-types" }
+
+[dev-dependencies]
+tokio.workspace = true

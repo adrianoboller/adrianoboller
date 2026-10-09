@@ -38,6 +38,7 @@ async fn subir(por_minuto: u32) -> String {
         ))
     });
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "padrao".into(),

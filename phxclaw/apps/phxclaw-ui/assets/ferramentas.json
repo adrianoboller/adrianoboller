@@ -323,6 +323,13 @@
       "nome": "calculator"
     },
     {
+      "capacidade": "http.request",
+      "concedida": false,
+      "descricao": "Generic HTTP request (GET/POST/PUT/PATCH/DELETE/HEAD) with headers, query, JSON/form/text body, timeout and size limit. Authentication only by the NAME of a credential declared by the operator ('credencial'); never put a secret in headers, query or body. Supports pagination (cursor field, next URL field, or Link rel=next) and batching. Returns the response items as a JSON array. Internal network addresses are refused unless the operator allowed them.",
+      "grupo": "http",
+      "nome": "http_request"
+    },
+    {
       "capacidade": "weather.read",
       "concedida": false,
       "descricao": "Previsao do tempo para uma coordenada (MET Norway, CC BY 4.0): temperatura, vento, umidade, chuva e simbolo hora a hora. Cite a atribuicao que vem na resposta.",
@@ -514,6 +521,6 @@
   ],
   "gerado_por": "phxclaw ferramentas",
   "observacao": "montadas nesta maquina: shell exige bwrap, navegador exige Chromium, e-mail e banco exigem configuracao",
-  "total": 73,
+  "total": 74,
   "versao": "0.70.0"
 }

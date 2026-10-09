@@ -1,0 +1,100 @@
+# PhxClaw: exemplo de execução com Docker Compose.
+#
+#   docker compose -f deploy/docker-compose.yml build
+#   docker compose -f deploy/docker-compose.yml up -d                       # só o agente
+#   docker compose -f deploy/docker-compose.yml --profile postgres up -d    # + PostgreSQL
+#
+# SEGREDO NUNCA MORA AQUI. Os arquivos abaixo são criados pelo operador, fora do git
+# (deploy/secrets/ está no .gitignore e no Dockerfile.dockerignore; o Dockerfile nem o copia), com permissão 0400/0440:
+#   deploy/secrets/api_token   -> Bearer da API, 24+ caracteres:  openssl rand -hex 32
+#   deploy/secrets/master_key  -> chave-mestra do cofre, base64 de 32 bytes:  openssl rand -base64 32
+#   deploy/secrets/pg_senha    -> senha do PostgreSQL (só no perfil `postgres`)
+# Sem `api_token` o agente gera um em /data/api.token (volume) e continua autenticado;
+# sem `master_key` o cofre gera a dele em /data/segredos/master.key. O que NÃO se faz é
+# pôr o valor em `environment:`.
+
+name: phxclaw
+
+services:
+  phxclaw:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: phxclaw:0.70.0
+    user: "10001:10001"
+    restart: unless-stopped
+    environment:
+      PHXCLAW_HOME: /data
+      PHXCLAW_API_HOST: 0.0.0.0
+    ports:
+      # Só no loopback do hospedeiro: expor a API na rede é decisão escrita do operador.
+      - "127.0.0.1:8787:8787"
+    volumes:
+      - phxclaw-dados:/data
+    secrets:
+      - source: api_token
+        target: /data/api.token
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+      - source: master_key
+        target: /data/segredos/master.key
+        uid: "10001"
+        gid: "10001"
+        mode: 0400
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 20s
+      retries: 3
+
+  # Opcional: `--profile postgres`. A senha vem de arquivo (POSTGRES_PASSWORD_FILE), nunca
+  # de variável. Sem porta publicada: só o serviço `phxclaw` o alcança, pela rede do compose.
+  postgres:
+    profiles: ["postgres"]
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: phxclaw
+      POSTGRES_DB: phxclaw
+      POSTGRES_PASSWORD_FILE: /run/secrets/pg_senha
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - phxclaw-pg:/var/lib/postgresql/data
+    secrets:
+      - pg_senha
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phxclaw -d phxclaw"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  phxclaw-dados:
+  phxclaw-pg:
+
+secrets:
+  api_token:
+    file: ./secrets/api_token
+  master_key:
+    file: ./secrets/master_key
+  pg_senha:
+    file: ./secrets/pg_senha

@@ -369,6 +369,16 @@ const FIXAS: &[L] = &[
         Some(("api", "api", "api-token")),
     ),
     c(
+        "api.metricas",
+        "PHXCLAW_API_METRICAS",
+        B,
+        Some("false"),
+        (
+            "Exposição Prometheus em GET /metrics (contadores e latência); desligada não custa nada",
+            "Prometheus exposition at GET /metrics (counters and latency); off costs nothing",
+        ),
+    ),
+    c(
         "api.tarefas_por_minuto",
         "PHXCLAW_API_TAREFAS_POR_MINUTO",
         I,

@@ -1178,28 +1178,21 @@
  },
  "n8n": {
   "total": 59,
-  "no_agente": 45,
-  "parcial": 9,
-  "nao": 5,
-  "pct_agente": 76.3,
-  "pct_com_bibliotecas": 83.9,
+  "no_agente": 52,
+  "parcial": 6,
+  "nao": 1,
+  "pct_agente": 88.1,
+  "pct_com_bibliotecas": 93.2,
   "falta": [
-   "segredos_externos",
-   "editor_canvas",
-   "modelos_fluxo",
-   "projetos_rbac",
-   "instalacao_docker_k8s"
+   "segredos_externos"
   ],
   "pela_metade": [
-   "versionamento_fluxo",
-   "gatilho_poll",
-   "oauth2_generico",
    "fila_workers",
    "controle_versao_git_fluxos",
    "assistente_construtor_ia",
    "guardrails",
-   "requisicao_http",
-   "observabilidade_insights"
+   "observabilidade_insights",
+   "instalacao_docker_k8s"
   ],
   "lido_em": "02/10/2026",
   "capacidades": [
@@ -1277,7 +1270,7 @@
    },
    {
     "id": "versionamento_fluxo",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "gatilho_manual",
@@ -1293,7 +1286,7 @@
    },
    {
     "id": "gatilho_poll",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "webchat",
@@ -1317,7 +1310,7 @@
    },
    {
     "id": "oauth2_generico",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "segredos_externos",
@@ -1353,11 +1346,11 @@
    },
    {
     "id": "editor_canvas",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "modelos_fluxo",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "etiquetas_pastas",
@@ -1365,7 +1358,7 @@
    },
    {
     "id": "projetos_rbac",
-    "estado": "nao"
+    "estado": "agente"
    },
    {
     "id": "controle_versao_git_fluxos",
@@ -1413,7 +1406,7 @@
    },
    {
     "id": "requisicao_http",
-    "estado": "parcial"
+    "estado": "agente"
    },
    {
     "id": "banco_postgres",
@@ -1437,7 +1430,7 @@
    },
    {
     "id": "instalacao_docker_k8s",
-    "estado": "nao"
+    "estado": "parcial"
    }
   ]
  }

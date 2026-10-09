@@ -73,7 +73,9 @@ impl FluxoTool {
 }
 
 fn ler_fluxo(arq: &Path) -> Result<Fluxo, ToolError> {
-    fluxos::ler_arquivo(arq)
+    // A versao PUBLICADA: o sub-fluxo chamado por um fluxo em producao nao pode trazer a
+    // edicao do rascunho (sem versao publicada, o arquivo e o publicado implicito).
+    crate::fluxo_versoes::ler_publicado(arq)
         .map_err(|e| ToolError::InvalidArguments(format!("fluxo {}: {e}", arq.display())))
 }
 

@@ -423,6 +423,7 @@ async fn subir(gatilhos: Option<Arc<Gatilhos>>) -> (String, ApiState) {
         ))
     });
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "padrao".into(),

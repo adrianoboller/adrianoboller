@@ -29,7 +29,7 @@ sem SMTP não há `send_email`, sem token não há `github` — e por isso há d
 montou aqui e o que existe no código mas não montou.
 
 <!-- gerado:ferramentas:inicio -->
-Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 07:08), com `PHXCLAW_CAPACIDADES` no padrao. **73 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
+Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferramentas` (versao 0.70.0, binario de 2026-10-09 14:22), com `PHXCLAW_CAPACIDADES` no padrao. **74 ferramentas montadas nesta maquina**, 61 concedidas por padrao.
 
 | Capacidade | Padrao | Ferramentas |
 |---|---|---|
@@ -45,6 +45,7 @@ Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `git.read` | sim | `git` |
 | `git.write` | sim | `git_write`, `git_worktree` |
 | `gonogo.write` | **nao** | `go_no_go` |
+| `http.request` | **nao** | `http_request` |
 | `media.generate` | **nao** | `image_generate` |
 | `media.stt` | **nao** | `transcribe` |
 | `media.tts` | **nao** | `speak` |
@@ -116,6 +117,7 @@ Medido em 2026-10-09 por `python3 tools/gerar_doc_agente.py`, de `phxclaw ferram
 | `test_run` | `shell.exec` | Run ONE node of the test tree (see test_list): Rust `CRATE`, `CRATE/module` or `CRATE/module::test`; Python a pytest node id (`tests/test_x.py` or `tests/test_x.py::test_name`). Same sandbox and same cargo/pytest as rust_project and python_project. Returns passed/failed counts and the result lines. |
 | `debug` | `shell.exec` | Debug a program of the task directory with a real debugger (DAP) inside the sandbox. Adapters on this host: rust; missing: python: debugpy ausente em /opt/phxclaw-python/lib/python3.14/site-packages (uv pip install debugpy no hospedeiro). action=start (program, optional args, language, breakpoints=[{file,line}]; runs until the first breakpoint or the end), breakpoint (file, line: adds one and reports whether it was verified), continue (runs to the next stop), stack (frames of the stopped thread), variables (locals of a frame; frame=0 is the top), evaluate (expression in the frame -- the debug console; console=true sends it to the adapter's own command line instead), stop. Returns JSON with the state (stopped reason, program output). |
 | `calculator` | `calc` | Evaluate an arithmetic expression exactly as written: + - * / % ^ (or **), parentheses, pi, e, and sqrt abs ln log log2 exp sin cos tan asin acos atan floor ceil round trunc min max pow. Use it instead of doing arithmetic in your head. |
+| `http_request` | `http.request` | Generic HTTP request (GET/POST/PUT/PATCH/DELETE/HEAD) with headers, query, JSON/form/text body, timeout and size limit. Authentication only by the NAME of a credential declared by the operator ('credencial'); never put a secret in headers, query or body. Supports pagination (cursor field, next URL field, or Link rel=next) and batching. Returns the response items as a JSON array. Internal network addresses are refused unless the operator allowed them. |
 | `weather` | `weather.read` | Previsao do tempo para uma coordenada (MET Norway, CC BY 4.0): temperatura, vento, umidade, chuva e simbolo hora a hora. Cite a atribuicao que vem na resposta. |
 | `session_search` | `session.read` | Full-text search over previous tasks of this agent (objective, plan, answer and step summaries). Returns the best matches with id, date, status and a snippet. Use it to recall what was done or found before. |
 | `daily_summary` | `session.read` | Summary of all tasks created on a day (UTC): counts by status, tokens, and one line per task with its outcome and files. date: YYYY-MM-DD, 'today' (default) or 'yesterday'. |
@@ -223,11 +225,13 @@ SERVICOS (API, CANAIS, EDITORES, DISPOSITIVOS):
 CREDENCIAIS (vao para o SecretBroker, nunca para arquivo):
   forja         Guarda o token do GitHub ou do GitLab
   mcp           Credencial de um servidor MCP remoto (Bearer ou OAuth)
+  credencial    Segredo de uma credencial nomeada do no HTTP (http_request)
   elevenlabs    Guarda a chave da ElevenLabs ou lista as vozes da conta
   gemini        Guarda a chave da Gemini API (Nano Banana no image_generate)
   xai           Guarda a chave da xAI (habilita x_search)
   n8n           Guarda a chave da API e o segredo do webhook do n8n (habilita n8n_workflow)
   api           Guarda o Bearer da API de tarefas
+  usuario       Usuarios, projetos e papeis da API (token so como hash)
   openai        Guarda a chave da OpenAI (modelos openai:*)
   anthropic     Guarda a chave da Anthropic (modelos anthropic:*)
   imagem        Guarda a chave do gerador de imagem openai

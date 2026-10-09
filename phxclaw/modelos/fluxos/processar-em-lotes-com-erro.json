@@ -1,0 +1,36 @@
+{
+  "modelo": {
+    "nome": "processar-em-lotes-com-erro",
+    "descricao": "Lê uma lista de itens, processa em lotes de 20 com um subagente por lote, tenta de novo o que falha e junta o que deu certo com o que falhou.",
+    "etiquetas": ["lote", "erro", "repeticao"],
+    "credenciais": []
+  },
+  "fluxo": {
+    "nome": "processar-em-lotes-com-erro",
+    "max_paralelo": 3,
+    "fluxo_de_erro": "registrar",
+    "passos": [
+      { "id": "ler", "ferramenta": "read_file", "args": { "path": "itens.json" } },
+      { "id": "lotes", "depende": ["ler"], "lote": 20 },
+      {
+        "id": "processar",
+        "depende": ["lotes"],
+        "por_item": true,
+        "tentativas": 3,
+        "ao_errar": "continuar",
+        "tarefa": "Normalize cada item deste lote e devolva uma linha por item: {{lotes}}"
+      },
+      {
+        "id": "gravar",
+        "depende": ["processar"],
+        "ferramenta": "write_file",
+        "args": { "path": "normalizados.json", "content": "{{processar}}" }
+      },
+      {
+        "id": "registrar",
+        "ferramenta": "write_file",
+        "args": { "path": "erro.txt", "content": "{{erro}}" }
+      }
+    ]
+  }
+}

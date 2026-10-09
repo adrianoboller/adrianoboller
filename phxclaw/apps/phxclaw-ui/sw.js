@@ -27,10 +27,12 @@
 // Casca 12: o minimapa do IDE (SP000032 R5) -- nenhum arquivo a mais, mas index.html, app.css,
 // ide.js e textos.json mudaram juntos: um ide.js novo sobre um index.html velho nao acha o
 // #ideMinimapa, e um textos.json velho mostraria as chaves cruas do painel.
-const CACHE = 'phxclaw-casca-12';
+// Casca 13: a tela Fluxos (editor em grafo) -- dois arquivos a mais (fluxos.js, fluxos.css), e
+// index.html, app.js, tarefas.js e textos.json mudaram junto.
+const CACHE = 'phxclaw-casca-13';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
-  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css',
+  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css', './assets/fluxos.js', './assets/fluxos.css',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json', './assets/ide.js', './assets/paineis.js',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/fonte/exo2-latin.woff2',

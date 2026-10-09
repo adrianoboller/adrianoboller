@@ -53,6 +53,7 @@ async fn subir_com(webhooks: Vec<String>, por_minuto: u32) -> (String, ApiState)
         ))
     });
     let state = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "padrao".into(),

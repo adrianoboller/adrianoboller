@@ -36,7 +36,6 @@ use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 const NAMESPACE: &str = "mcp";
-const CONSUMIDOR: &str = "phxclaw.agent.mcp";
 /// Antes do vencimento declarado: o relogio do servidor e o nosso nao batem ao segundo, e
 /// um pedido longo comecado com token quase vencido chegaria vencido.
 const FOLGA_DE_VENCIMENTO: Duration = Duration::from_secs(60);
@@ -68,6 +67,24 @@ pub struct ConfigOauth {
     /// nao volta refresh token).
     #[serde(default)]
     pub parametros: BTreeMap<String, String>,
+    /// Como o acesso se obtem. O padrao e o dos MCP (codigo com PKCE no `login`, renovado
+    /// pelo refresh token); `cliente` e o client credentials (RFC 6749 §4.4) das credenciais
+    /// nomeadas do no HTTP (`fluxo_http.rs`), em que nao ha navegador nem usuario.
+    #[serde(default)]
+    pub concessao: Concessao,
+}
+
+/// A concessao OAuth 2.0 de uma credencial.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Concessao {
+    /// Authorization code com PKCE no `login`; depois, refresh token (RFC 6749 §6).
+    #[default]
+    #[serde(alias = "refresh_token", alias = "authorization_code")]
+    Codigo,
+    /// Client credentials (RFC 6749 §4.4): o segredo do cliente troca direto por acesso.
+    #[serde(alias = "client_credentials")]
+    Cliente,
 }
 
 impl ConfigOauth {
@@ -77,7 +94,13 @@ impl ConfigOauth {
         if self.cliente_id.trim().is_empty() {
             return Err("oauth sem 'cliente_id'".into());
         }
-        for (nome, u) in [("autorizacao", &self.autorizacao), ("token", &self.token)] {
+        // No client credentials nao ha navegador: o endpoint de autorizacao nao se usa, e
+        // exigi-lo faria o operador inventar uma URL so para passar na conferencia.
+        let mut enderecos = vec![("token", &self.token)];
+        if self.concessao == Concessao::Codigo {
+            enderecos.insert(0, ("autorizacao", &self.autorizacao));
+        }
+        for (nome, u) in enderecos {
             let url = reqwest::Url::parse(u).map_err(|e| format!("oauth '{nome}': {e}"))?;
             let loopback = matches!(url.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
             if url.scheme() != "https" && !(url.scheme() == "http" && loopback) {
@@ -289,9 +312,12 @@ async fn pedir_token(
 
 // ------------------------------------------------------------------ guarda no broker
 
-/// Os segredos de um servidor: um por tipo, cada um com o escopo so dele.
+/// Os segredos de um servidor: um por tipo, cada um com o escopo so dele. O `Bearer` e o
+/// segredo FIXO do alvo: o token do Linear, e nas credenciais do no HTTP tambem a senha do
+/// Basic e o valor do cabecalho -- o nome no broker continua `-bearer` para o segredo ja
+/// guardado dos MCP nao mudar de nome.
 #[derive(Clone, Copy)]
-enum Tipo {
+pub enum Tipo {
     Bearer,
     Acesso,
     Renovacao,
@@ -317,6 +343,9 @@ impl Tipo {
 pub struct Alvo {
     pub servidor: String,
     pub endpoint: String,
+    /// O espaco do segredo no broker (`mcp`, ou `credenciais` do no HTTP). Entra no nome,
+    /// no escopo e no consumidor: o mesmo rotulo em dois espacos nao divide segredo.
+    espaco: &'static str,
 }
 
 impl Alvo {
@@ -329,7 +358,19 @@ impl Alvo {
         Ok(Self {
             servidor: phxclaw_mcp_lsp_runtime::normalize_mcp_name(servidor.trim()),
             endpoint: u.to_string(),
+            espaco: NAMESPACE,
         })
+    }
+
+    /// O alvo de uma credencial nomeada do no HTTP. `vinculo` e o texto canonico do que a
+    /// credencial alcanca (as origens e, no OAuth, o endpoint de token): e a mesma licao do
+    /// M4 -- mudar para onde a credencial vai e pedir o segredo de novo, nunca herda-lo.
+    pub fn de_credencial(nome: &str, vinculo: &str, espaco: &'static str) -> Self {
+        Self {
+            servidor: nome.to_string(),
+            endpoint: vinculo.to_string(),
+            espaco,
+        }
     }
 
     /// Marca curta do endpoint para o nome do segredo: o nome no broker e um rotulo, e a
@@ -343,21 +384,31 @@ impl Alvo {
     }
 
     fn nome_do_segredo(&self, t: Tipo) -> String {
-        format!("mcp-{}-{}-{}", self.servidor, self.marca(), t.uso())
+        format!(
+            "{}-{}-{}-{}",
+            self.espaco,
+            self.servidor,
+            self.marca(),
+            t.uso()
+        )
     }
 
     fn prefixo(&self) -> String {
-        format!("mcp:{}@{}", self.servidor, self.marca())
+        format!("{}:{}@{}", self.espaco, self.servidor, self.marca())
+    }
+
+    fn consumidor(&self) -> String {
+        format!("phxclaw.agent.{}", self.espaco)
     }
 
     /// Chave da serializacao da renovacao: duas instancias do MESMO (servidor, endpoint)
     /// no processo dividem o vencimento, e so uma delas renova.
     fn chave(&self) -> String {
-        format!("{}@{}", self.servidor, self.endpoint)
+        format!("{}:{}@{}", self.espaco, self.servidor, self.endpoint)
     }
 }
 
-fn guardar(
+pub(crate) fn guardar(
     broker: &SecretBroker,
     alvo: &Alvo,
     t: Tipo,
@@ -367,20 +418,21 @@ fn guardar(
     guardar_segredo(
         broker,
         &alvo.nome_do_segredo(t),
-        NAMESPACE,
+        alvo.espaco,
         &[&escopo],
         valor,
     )
 }
 
-fn credencial(
+pub(crate) fn credencial(
     broker: &Arc<SecretBroker>,
     alvo: &Alvo,
     t: Tipo,
 ) -> Result<Option<Credencial>, String> {
     Ok(
-        segredo_guardado(broker, &alvo.nome_do_segredo(t), NAMESPACE)?
-            .map(|d| Credencial::de_escopo(broker.clone(), d.uuid, CONSUMIDOR, alvo.prefixo())),
+        segredo_guardado(broker, &alvo.nome_do_segredo(t), alvo.espaco)?.map(|d| {
+            Credencial::de_escopo(broker.clone(), d.uuid, alvo.consumidor(), alvo.prefixo())
+        }),
     )
 }
 
@@ -433,11 +485,31 @@ pub async fn login(
     prazo: Duration,
     abrir: impl FnOnce(&str),
 ) -> Result<(), String> {
+    let broker = broker_da_pasta(raiz_do_agente, true)?.ok_or("sem broker")?;
+    login_no(&broker, alvo, cfg, segredo_cliente, prazo, abrir).await
+}
+
+/// O `login` sobre um broker dado: o dos MCP (`mcp/`) ou o das credenciais nomeadas do no
+/// HTTP. Um fluxo de PKCE so, para os dois nunca divergirem de verificador nem de `state`.
+pub async fn login_no(
+    broker: &SecretBroker,
+    alvo: &Alvo,
+    cfg: &ConfigOauth,
+    segredo_cliente: Option<SecretValue>,
+    prazo: Duration,
+    abrir: impl FnOnce(&str),
+) -> Result<(), String> {
     cfg.validar()?;
+    if cfg.concessao != Concessao::Codigo {
+        return Err(
+            "login com navegador so na concessao por codigo; client credentials nao \
+tem login (guarde o segredo do cliente)"
+                .into(),
+        );
+    }
     if cfg.segredo_cliente && segredo_cliente.is_none() {
         return Err("este cliente OAuth exige o segredo do cliente".into());
     }
-    let broker = broker_da_pasta(raiz_do_agente, true)?.ok_or("sem broker")?;
     let escuta = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .map_err(|e| format!("loopback: {e}"))?;
@@ -466,10 +538,10 @@ pub async fn login(
     let renovacao = r.renovacao.ok_or(
         "o servidor nao devolveu refresh token (no Google: access_type=offline e prompt=consent)",
     )?;
-    guardar(&broker, alvo, Tipo::Renovacao, renovacao)?;
-    guardar(&broker, alvo, Tipo::Acesso, r.acesso)?;
+    guardar(broker, alvo, Tipo::Renovacao, renovacao)?;
+    guardar(broker, alvo, Tipo::Acesso, r.acesso)?;
     if let Some(s) = segredo_cliente {
-        guardar(&broker, alvo, Tipo::Cliente, s)?;
+        guardar(broker, alvo, Tipo::Cliente, s)?;
     }
     // Acesso recem-trocado: o processo que logou nao precisa renovar na primeira chamada.
     *vencimento_de(alvo).lock().await = Some(Instant::now() + r.validade);
@@ -559,13 +631,31 @@ impl AutorizacaoMcp {
         let falta = |cmd: &str| format!("sem credencial: rode `phxclaw mcp {cmd} {servidor}`");
         let cmd = if oauth.is_some() { "login" } else { "token" };
         let broker = broker_da_pasta(raiz_do_agente, false)?.ok_or_else(|| falta(cmd))?;
+        Self::do_broker(broker, alvo, oauth).map_err(|e| e.unwrap_or_else(|| falta(cmd)))
+    }
+
+    /// A credencial de `alvo` num broker dado. `Err(None)` quando o segredo que ela exige
+    /// nao esta guardado (quem chama diz qual comando guarda); `Err(Some)` para o resto.
+    /// O client credentials exige o segredo do cliente; o codigo, o refresh token.
+    pub fn do_broker(
+        broker: Arc<SecretBroker>,
+        alvo: &Alvo,
+        oauth: Option<&ConfigOauth>,
+    ) -> Result<Self, Option<String>> {
         match oauth {
-            None => credencial(&broker, alvo, Tipo::Bearer)?
+            None => credencial(&broker, alvo, Tipo::Bearer)
+                .map_err(Some)?
                 .map(AutorizacaoMcp::Bearer)
-                .ok_or_else(|| falta(cmd)),
+                .ok_or(None),
             Some(cfg) => {
-                cfg.validar()?;
-                credencial(&broker, alvo, Tipo::Renovacao)?.ok_or_else(|| falta(cmd))?;
+                cfg.validar().map_err(Some)?;
+                let exigido = match cfg.concessao {
+                    Concessao::Codigo => Tipo::Renovacao,
+                    Concessao::Cliente => Tipo::Cliente,
+                };
+                credencial(&broker, alvo, exigido)
+                    .map_err(Some)?
+                    .ok_or(None)?;
                 Ok(AutorizacaoMcp::Oauth(Box::new(Oauth {
                     alvo: alvo.clone(),
                     cfg: cfg.clone(),
@@ -617,16 +707,27 @@ impl Oauth {
     /// Troca o refresh token por um acesso novo e devolve quando ele vence. Quem chama
     /// SEGURA a trava do vencimento: e isso que faz a renovacao ser uma so.
     async fn renovar(&self) -> Result<Instant, String> {
-        let renovacao = credencial(&self.broker, &self.alvo, Tipo::Renovacao)?
-            .ok_or("refresh token sumiu do broker: rode `phxclaw mcp login` de novo")?
-            .abrir("renovacao")?;
         let cliente = match credencial(&self.broker, &self.alvo, Tipo::Cliente)? {
             Some(c) => Some(c.abrir("cliente")?),
-            None if self.cfg.segredo_cliente => {
+            None if self.cfg.segredo_cliente || self.cfg.concessao == Concessao::Cliente => {
                 return Err("segredo do cliente sumiu do broker".into());
             }
             None => None,
         };
+        if self.cfg.concessao == Concessao::Cliente {
+            // Client credentials: o acesso sai do segredo do cliente, e nao ha refresh
+            // token -- quando vence, pede-se outro do mesmo jeito.
+            let mut form = vec![("grant_type".into(), "client_credentials".into())];
+            if !self.cfg.escopos.is_empty() {
+                form.push(("scope".into(), self.cfg.escopos.join(" ")));
+            }
+            let r = pedir_token(&self.cfg, form, cliente.as_ref().map(|c| c.expor())).await?;
+            guardar(&self.broker, &self.alvo, Tipo::Acesso, r.acesso)?;
+            return Ok(Instant::now() + r.validade);
+        }
+        let renovacao = credencial(&self.broker, &self.alvo, Tipo::Renovacao)?
+            .ok_or("refresh token sumiu do broker: rode o login de novo")?
+            .abrir("renovacao")?;
         let r = pedir_token(
             &self.cfg,
             vec![

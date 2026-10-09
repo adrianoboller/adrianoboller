@@ -305,6 +305,11 @@ impl Montagem {
             tools.push(crate::dap::ferramenta(bwrap));
         }
         tools.push(Arc::new(crate::calculadora::CalculatorTool));
+        // `http_request` (o no HTTP do fluxo): `http.request` fora do padrao, e rede para fora
+        // em nome do operador; destinos internos e credenciais em `http.json` (fluxo_http.rs).
+        tools.push(Arc::new(crate::fluxo_http::HttpTool {
+            raiz: self.raiz_do_agente().to_path_buf(),
+        }));
         // `weather` (MET Norway): sem chave; `weather.read` fora do padrao, e rede para fora.
         match crate::clima::WeatherTool::do_ambiente() {
             Ok(t) => tools.push(Arc::new(t)),

@@ -68,8 +68,9 @@ impl Agenda {
         spec: ScheduleSpec,
         now: DateTime<Utc>,
     ) -> Result<Schedule, String> {
-        // Pelo leitor de arquivo: os pins ao lado do fluxo valem no disparo da agenda.
-        let f = crate::fluxos::ler_arquivo(std::path::Path::new(caminho))?;
+        // O que vai rodar e a PUBLICADA (ou o arquivo, se nunca foi publicada): e ela que
+        // precisa ler, para o erro parar na mao de quem agenda e nao no disparo das 3h.
+        let f = crate::fluxo_versoes::ler_publicado(std::path::Path::new(caminho))?;
         self.add_com(
             name,
             &format!("{}{}", crate::api::PREFIXO_FLUXO, f.nome),
@@ -133,7 +134,14 @@ impl Agenda {
             .iter_mut()
             .filter(|s| s.enabled && s.next_run <= now)
         {
-            vencidos.push(s.clone());
+            // O disparo de um FLUXO roda a versao PUBLICADA (`fluxo_versoes`), nunca o
+            // rascunho: o caminho entregue a quem dispara ja e o da versao. Se a publicada
+            // nao le, o disparo NAO acontece (cair no rascunho rodaria o que ninguem
+            // publicou), e a agenda segue para a proxima hora como em qualquer disparo.
+            match publicada_do_disparo(s) {
+                Ok(d) => vencidos.push(d),
+                Err(e) => eprintln!("agenda: {} nao disparada: {e}", s.name),
+            }
             match next_fire(&s.spec, now) {
                 Some(n) => s.next_run = n,
                 None => s.enabled = false,
@@ -153,6 +161,22 @@ impl Agenda {
         // processos (CLI e servidor) escreverem no mesmo `.tmp`.
         phxclaw_types::arquivo::gravar_atomico(&self.path, &serde_json::to_vec_pretty(&self.items)?)
     }
+}
+
+/// A copia do agendamento que sai para disparar: se ele roda um fluxo (campo `fluxo` ou o
+/// prefixo `fluxo: ARQ` do objetivo), o campo `fluxo` da copia passa a ser o caminho da
+/// versao publicada. Objetivo de modelo passa intacto.
+fn publicada_do_disparo(s: &Schedule) -> Result<Schedule, String> {
+    let mut d = s.clone();
+    let arq = s
+        .fluxo
+        .clone()
+        .or_else(|| crate::api::fluxo_do_objetivo(&s.objective).map(str::to_string));
+    if let Some(arq) = arq {
+        let p = crate::fluxo_versoes::caminho_publicado(std::path::Path::new(&arq))?;
+        d.fluxo = Some(p.to_string_lossy().into_owned());
+    }
+    Ok(d)
 }
 
 #[cfg(test)]

@@ -196,6 +196,8 @@ pub const CAPACIDADES_QUE_ESCREVEM: &[&str] = &[
     // Sub-fluxo (`fluxo`): roda um fluxo gravado, cujos passos escrevem o que a politica
     // deixar; fora do padrao, porque e o modelo decidindo rodar um DAG inteiro.
     "flow.run",
+    // No HTTP generico (`http_request`): qualquer metodo, com credencial do operador.
+    "http.request",
 ];
 
 /// Capacidades cujas ferramentas criam processo. Para elas a regra de comando vale MESMO

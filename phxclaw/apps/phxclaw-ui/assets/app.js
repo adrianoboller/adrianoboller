@@ -924,6 +924,7 @@ const paleta = (() => {
     geral: () => txt('menu.geral', 'Visão geral'), agentes: () => txt('menu.agentes', 'Agentes'), ide: () => 'IDE',
     ferramentas: () => txt('menu.ferramentas', 'Ferramentas'), absorcao: () => txt('menu.absorcao', 'Absorção'),
     tarefas: () => txt('menu.tarefas', 'Tarefas'), config: () => txt('menu.config', 'Configuração'),
+    fluxos: () => txt('menu.fluxos', 'Fluxos'),
   };
   const filtrarEm = (tela, campo, nome) => () => {
     mostrarTela(tela);

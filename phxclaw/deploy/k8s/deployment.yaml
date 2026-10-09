@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phxclaw
+  namespace: phxclaw
+  labels:
+    app.kubernetes.io/name: phxclaw
+spec:
+  # Uma réplica só: o estado é um volume ReadWriteOnce e o cofre é de um escritor.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: phxclaw
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: phxclaw
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # O kubelet criaria /data/segredos como root ao montar a chave-mestra, e o cofre não
+      # conseguiria gravar ao lado dela. Criado antes, por 10001 (o fsGroup deixa o volume
+      # gravável), o diretório nasce do dono certo.
+      initContainers:
+        - name: prepara-dados
+          image: phxclaw:0.70.0
+          imagePullPolicy: IfNotPresent
+          command: ["mkdir", "-p", "/data/segredos"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: dados
+              mountPath: /data
+      containers:
+        - name: phxclaw
+          image: phxclaw:0.70.0
+          imagePullPolicy: IfNotPresent
+          args: ["servir", "--porta", "8787"]
+          envFrom:
+            - configMapRef:
+                name: phxclaw-config
+          ports:
+            - name: api
+              containerPort: 8787
+              protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: dados
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+            # Segredo por ARQUIVO (não por variável de ambiente): o agente já lê estes dois
+            # caminhos, e arquivo não aparece em `kubectl describe` nem em /proc/<pid>/environ.
+            - name: segredos
+              mountPath: /data/api.token
+              subPath: api-token
+              readOnly: true
+            - name: segredos
+              mountPath: /data/segredos/master.key
+              subPath: master.key
+              readOnly: true
+      volumes:
+        - name: dados
+          persistentVolumeClaim:
+            claimName: phxclaw-dados
+        - name: tmp
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: segredos
+          secret:
+            secretName: phxclaw-segredos
+            defaultMode: 0440

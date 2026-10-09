@@ -192,6 +192,7 @@ async fn api_grava_a_tarefa_inclusive_a_que_espera_o_plano() {
         ))
     });
     let s = ApiState {
+        usuarios: Default::default(),
         store: store.clone(),
         factory,
         default_model: "padrao".into(),

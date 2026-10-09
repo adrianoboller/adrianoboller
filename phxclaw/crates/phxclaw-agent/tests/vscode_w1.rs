@@ -50,6 +50,7 @@ fn ambiente_limpo(pares: &[(&str, &str)]) {
 fn estado(dir: &Path) -> ApiState {
     let factory: AgentFactory = Arc::new(|_: &str| Err("sem modelo".to_string()));
     ApiState {
+        usuarios: Default::default(),
         store: TaskStore::new(dir.join("tasks")).unwrap(),
         factory,
         default_model: "padrao".into(),

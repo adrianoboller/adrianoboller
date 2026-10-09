@@ -1,0 +1,31 @@
+{
+  "modelo": {
+    "nome": "resumo-diario-por-email",
+    "descricao": "Lê o resumo das tarefas do dia, pede a um subagente para condensá-lo em cinco linhas e envia por e-mail.",
+    "etiquetas": ["relatorio", "email", "agenda"],
+    "credenciais": ["smtp"]
+  },
+  "fluxo": {
+    "nome": "resumo-diario-por-email",
+    "variaveis": { "destinatario": "voce@exemplo.com" },
+    "passos": [
+      { "id": "dia", "ferramenta": "daily_summary", "args": { "date": "yesterday" } },
+      {
+        "id": "resumo",
+        "depende": ["dia"],
+        "tarefa": "Resuma o dia em no máximo cinco linhas, em português, destacando o que falhou: {{dia}}"
+      },
+      {
+        "id": "enviar",
+        "depende": ["resumo"],
+        "ferramenta": "send_email",
+        "tentativas": 2,
+        "args": {
+          "to": ["{{var.destinatario}}"],
+          "subject": "Resumo do dia",
+          "body": "{{resumo}}"
+        }
+      }
+    ]
+  }
+}

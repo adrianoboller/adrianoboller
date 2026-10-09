@@ -55,15 +55,37 @@ def mais_novo(*pastas):
     return max(arquivos, key=lambda p: p.stat().st_mtime)
 
 
+def sem_modulos_de_teste(txt):
+    """Tira os `#[cfg(test)] mod x { ... }`: dubles de teste (o `eco` do metricas.rs) nao
+    sao ferramenta do produto, e contados aqui viravam «so no fonte» no documento."""
+    saida, de = [], 0
+    for m in re.finditer(r"#\[cfg\(test\)\]\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{", txt):
+        if m.start() < de:
+            continue
+        nivel, i = 1, m.end()
+        while i < len(txt) and nivel:
+            nivel += {"{": 1, "}": -1}.get(txt[i], 0)
+            i += 1
+        saida.append(txt[de:m.start()])
+        de = i
+    saida.append(txt[de:])
+    return "".join(saida)
+
+
 def nomes_no_fonte():
-    """Nome de ToolSpec por arquivo. Literais direto; os das forjas se expandem pelo
+    """Nome de ToolSpec por arquivo. Literais direto; o nome por `const` do proprio arquivo
+    (`name: FERRAMENTA.into()`) pelo valor da const; os das forjas se expandem pelo
     `fn nome` do enum Forja, para a lista sair do codigo e nao de uma copia aqui."""
     achados = {}
     for arq in sorted(FONTE_AGENTE.rglob("*.rs")):
-        txt = arq.read_text(encoding="utf-8")
+        txt = sem_modulos_de_teste(arq.read_text(encoding="utf-8"))
         rel = arq.relative_to(RAIZ).as_posix()
         for m in re.finditer(r'ToolSpec\s*\{\s*name:\s*"([a-z0-9_]+)"', txt):
             achados.setdefault(m.group(1), rel)
+        consts = dict(re.findall(r'const\s+([A-Z_]+)\s*:\s*&str\s*=\s*"([a-z0-9_]+)"', txt))
+        for c in re.findall(r'name:\s*([A-Z_]+)\.(?:into|to_string)\(\)', txt):
+            if c in consts:
+                achados.setdefault(consts[c], rel)
         if re.search(r'name:\s*f\.into\(\)', txt):
             forjas = re.findall(r'Forja::\w+\s*=>\s*"([a-z]+)",', txt)
             # so os do `fn nome` (o primeiro match de cada variante)

@@ -1,0 +1,31 @@
+{
+  "modelo": {
+    "nome": "revisao-de-codigo-com-aviso",
+    "descricao": "Revisa o diff do ramo contra a main (achados com arquivo, linha e gravidade) e avisa o resumo numa conversa do canal de mensagens.",
+    "etiquetas": ["codigo", "revisao", "canal"],
+    "credenciais": ["canal-mensagens"]
+  },
+  "fluxo": {
+    "nome": "revisao-de-codigo-com-aviso",
+    "variaveis": { "conversa": "ID-DA-CONVERSA", "intervalo": "main..HEAD" },
+    "passos": [
+      {
+        "id": "revisar",
+        "ferramenta": "code_review",
+        "args": { "path": ".", "rev": "{{var.intervalo}}" },
+        "teto_ms": 300000
+      },
+      {
+        "id": "resumo",
+        "depende": ["revisar"],
+        "tarefa": "Em até seis linhas, liste os achados de gravidade crítica ou alta e diga se o diff pode ser integrado: {{revisar}}"
+      },
+      {
+        "id": "avisar",
+        "depende": ["resumo"],
+        "ferramenta": "channel_send",
+        "args": { "to": "{{var.conversa}}", "text": "{{resumo}}" }
+      }
+    ]
+  }
+}

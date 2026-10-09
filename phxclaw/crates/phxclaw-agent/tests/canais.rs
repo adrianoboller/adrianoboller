@@ -63,6 +63,7 @@ fn estado_com(
         ))
     });
     ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "roteiro".into(),
@@ -383,6 +384,7 @@ async fn pergunta_da_tarefa_vai_a_conversa_e_a_proxima_mensagem_e_a_resposta() {
         ))
     });
     let s = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "roteiro".into(),
@@ -2767,6 +2769,7 @@ async fn na_sala_so_quem_abriu_a_tarefa_responde_a_pergunta_dela() {
         ))
     });
     let s = ApiState {
+        usuarios: Default::default(),
         store,
         factory,
         default_model: "roteiro".into(),
