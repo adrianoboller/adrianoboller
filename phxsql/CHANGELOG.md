@@ -303,7 +303,7 @@ da seção `## 0.20.0`, regravado por
 
 ### O que NÃO está nesta versão
 
-- **Ficam para a 0.21, por decisão do dono (⏸):** **333** (chat e robô no PhxMail),
+- **Ficam para a 0.21, por decisão do dono (⏸):** **333** (chat e robô no PhxMail — CONGELADO pelo dono em 09/10/2026, sem versão-alvo),
   **454** e **455** (servidor web e `PhxZipCmd`, e o pacote só do PhxZip; a interface
   do PhxZip entrou), **495** e **496** (IA que analisa ataque e prevê catástrofe:
   decidido o desenho, nada implementado) e **707** (aquário de monitoramento: desenho
