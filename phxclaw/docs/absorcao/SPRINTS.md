@@ -30,7 +30,7 @@ abaixo aparece em exatamente uma sprint.
 | SP000012 | 5 | Integração da onda 5 e commit | — | CONCLUÍDA (f27402e5) |
 | SP000013 | — | Endurecimento (achados ⏸ das revisões) | — | CONCLUÍDA (02/10: A/B/C + D; o que sobrou está nas pendências avulsas) |
 | SP000014 | — | Prova real com credenciais | — | BLOQUEADA (dono) |
-| SP000015 | — | Ciclo de auto-evolução | — | BLOQUEADA (dono) |
+| SP000015 | — | Ciclo de auto-evolução | — | EM ANDAMENTO |
 | SP000016 | — | Entrega v0.71 | — | PLANEJADA |
 | SP000017 | — | Provedores ElevenLabs (fala e transcrição) e Nano Banana (gerar e editar imagem) | — | CONCLUÍDA (f27402e5) |
 | SP000018 | — | config.json central, fase 1: catálogo, precedência, recusa de segredo, `phxclaw config`, catraca | — | CONCLUÍDA (f27402e5) |
@@ -252,12 +252,12 @@ Troca «contra falso» por «real». Depende do dono:
 
 ---
 
-## SP000015 — Ciclo de auto-evolução — BLOQUEADA
+## SP000015 — Ciclo de auto-evolução — EM ANDAMENTO (desbloqueada pelo dono em 09/10/2026)
 
 | Campo | Conteúdo |
 |---|---|
 | **Objetivo** | O PhxClaw escolhe um item deste backlog, implementa numa worktree e entrega um branch verde esperando aprovação. |
-| **Bloqueio** | (1) modelo forte por API e a chave; (2) alcance permitido (proposta: ferramentas e testes; vetado: segurança, sandbox, capacidades) |
+| **Decisão do dono (09/10/2026)** | Desbloqueada: a auto-evolução **propõe e espera o Go** — nunca faz merge sozinha. Alcance: ferramentas e testes; vetado: segurança, sandbox, capacidades. A chave do modelo forte entra pelo comando local `phxclaw … chave`; sem ela, roda com o provedor configurado e diz qual. |
 
 **Tarefas:** heartbeat → escolher item → `git_worktree` → modo plano → implementar → portões (fmt, clippy, testes) → `code_review` do próprio diff → branch + relatório. Ligar ou aposentar `phxclaw-self-evolving-intelligence` e `phxclaw-skill-evolution` (hoje nenhum dos dois é dependência do agente).
 
