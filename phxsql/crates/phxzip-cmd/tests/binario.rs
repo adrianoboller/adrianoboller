@@ -8,7 +8,9 @@ mod comum;
 
 use std::fs;
 
-use comum::{cifrado, claro, marcar_como_link, phxzipcmd, trocar_nome, DirTemp};
+use comum::{
+    cifrado, claro, marcar_como_link, phxzipcmd, phxzipcmd_no_ambiente, trocar_nome, DirTemp,
+};
 
 const SEGREDO: &str = "SEGREDO-que-nao-ecoa-71";
 
@@ -618,6 +620,7 @@ fn o_eco_volta_no_ctrl_c_e_a_senha_nao_aparece() {
     .unwrap();
     for modo in ["intr", "normal"] {
         let o = Command::new("python3")
+            .env(phxzip_cmd::ENV_IDIOMA, "Portugues")
             .arg("-I")
             .arg(&roteiro)
             .arg(env!("CARGO_BIN_EXE_phxzipcmd"))
@@ -637,4 +640,39 @@ fn o_eco_volta_no_ctrl_c_e_a_senha_nao_aparece() {
         );
     }
     assert!(base.join("c.7z").exists(), "o modo normal nao compactou");
+}
+
+// ------------------------------------------------------------ o idioma
+
+/// O idioma sai do ambiente do PROCESSO: `PHXZIP_IDIOMA` manda, o `LANG` e a
+/// reserva, e o desconhecido fala portugues (fatia Z2 do pedido 454).
+///
+/// Prova real: com o `rodar` lendo so o `PHXZIP_IDIOMA`, o caso do `LANG`
+/// sai em portugues e cai; com o desconhecido passando a vez ao `LANG`, o
+/// terceiro caso sai em alemao e cai.
+#[test]
+fn o_idioma_vem_do_ambiente() {
+    let base = DirTemp::novo("idioma");
+    let casos: [(Option<&str>, Option<&str>, &str); 5] = [
+        (Some("en"), Some("de_DE.UTF-8"), "missing the ARCHIVE.7z"),
+        (None, Some("de_DE.UTF-8"), "das ARCHIV.7z fehlt"),
+        (Some("klingon"), Some("de_DE.UTF-8"), "falta o ARQUIVO.7z"),
+        (None, Some("C"), "falta o ARQUIVO.7z"),
+        (Some("Frances"), None, "il manque l'ARCHIVE.7z"),
+    ];
+    for (pedido, lang, esperado) in casos {
+        let s = phxzipcmd_no_ambiente(
+            &base,
+            &["listar"],
+            None,
+            b"",
+            &[(phxzip_cmd::ENV_IDIOMA, pedido), ("LANG", lang)],
+        );
+        assert_eq!(s.codigo, 2, "{pedido:?}/{lang:?}: {}", s.tudo());
+        assert!(
+            s.err.contains(esperado),
+            "{pedido:?}/{lang:?}: esperava {esperado:?}, veio {}",
+            s.err
+        );
+    }
 }

@@ -44,6 +44,14 @@ variante de erro, byte a byte. Guarda nova entra pedida, não imposta.
 Idioma desconhecido no config não derruba o servidor: vira AVISO no arranque
 (o mesmo padrão do campo com nome errado) e cai em português.
 
+**Onde mora o motor** (pedido 454, fatia Z2): a lista de idiomas, os degraus,
+o preenchimento dos `{marcadores}` (numa passada só: o valor nunca é relido
+como marcador) e o laço chave pedida × chave existente estão em
+`crates/phxsql-core/src/idiomas.rs`. As **tabelas** ficam com quem as mostra:
+`mensagens.rs` (protocolo), `idiomas.rs` do servidor (tela) e
+`crates/phxzip-cmd/src/textos.rs` (o PhxZipCmd, chaves `zipcmd.`, idioma por
+`PHXZIP_IDIOMA` e, sem ela, `LANG`). Célula só de espaço conta como vazia.
+
 ## O que passa pela tabela
 
 Todas as mensagens que o **servidor** devolve pelo protocolo, em duas camadas:

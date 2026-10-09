@@ -40,19 +40,10 @@ use std::time::{Duration, Instant, SystemTime};
 
 use phxsql_core::error::PhxError;
 
-/// As seis colunas de idioma, na ordem das colunas da tabela.
-///
-/// Os nomes sao exatamente os nomes das colunas -- e o valor aceito no campo
-/// `"idioma"` do `config.json`. `Portugues` e o indice 0 de proposito: e o
-/// degrau intermediario da resolucao.
-pub const IDIOMAS: [&str; 6] = [
-    "Portugues",
-    "Frances",
-    "Ingles",
-    "Italiano",
-    "Alemao",
-    "Espanhol",
-];
+// A lista de idiomas e os degraus da queda sao do MOTOR, no
+// `phxsql_core::idiomas` (pedido 454, fatia Z2): o PhxZipCmd resolve pela
+// mesma decisao sem depender do servidor. Aqui fica a tabela do protocolo.
+pub use phxsql_core::idiomas::IDIOMAS;
 
 /// Onde a tabela mora. Um database comum chamado `phxsys`: aparece na arvore,
 /// abre na grade, obedece a permissao por base como qualquer outro.
@@ -76,13 +67,9 @@ pub const INTERVALO_DE_CONFERENCIA: Duration = Duration::from_secs(2);
 
 /// Uma mensagem de fabrica: o nome estavel e o texto em cada idioma.
 ///
-/// `textos[0]` e o Portugues e nunca e vazio -- e o texto que o servidor
-/// sempre respondeu. Celula vazia nao e semeada e cai para o portugues na
-/// resolucao: melhor nenhuma traducao do que uma inventada.
-pub struct MensagemFabrica {
-    pub nome: &'static str,
-    pub textos: [&'static str; 6],
-}
+/// E a MESMA linha de fabrica da tela -- o tipo e do motor, e o nome antigo
+/// fica para as cento e tantas linhas desta tabela nao mudarem de forma.
+pub type MensagemFabrica = phxsql_core::idiomas::TextoDeFabrica;
 
 /// Todas as mensagens que o servidor devolve pelo protocolo.
 ///
@@ -1366,10 +1353,7 @@ impl Mensagens {
     /// `idioma_cfg` vem do `config.json`, ja validado la (desconhecido vira
     /// aviso no arranque e cai em Portugues -- aqui so se resolve o indice).
     pub fn nova(idioma_cfg: &str, base: &Path) -> Mensagens {
-        let idioma = IDIOMAS
-            .iter()
-            .position(|i| *i == idioma_cfg.trim())
-            .unwrap_or(0);
+        let idioma = phxsql_core::idiomas::indice_do_idioma(idioma_cfg);
         Mensagens {
             idioma,
             caminho_reg: base.join(DATABASE).join(format!("{TABELA}.reg")),
@@ -1434,17 +1418,10 @@ impl Mensagens {
     fn resolver(&self, nome: &str) -> Option<String> {
         let cache = self.cache.lock().ok()?;
         let linha = cache.linhas.get(nome)?;
-        let escolhida = &linha[self.idioma];
-        if !escolhida.is_empty() {
-            return Some(escolhida.clone());
-        }
         // Celula vazia cai para o portugues DA TABELA; portugues vazio cai
-        // para a fabrica, que e o mesmo texto que a semeadura gravou.
-        let portugues = &linha[0];
-        if !portugues.is_empty() {
-            return Some(portugues.clone());
-        }
-        None
+        // para a fabrica, que e o mesmo texto que a semeadura gravou. Os
+        // degraus sao os do motor -- os mesmos da tela.
+        phxsql_core::idiomas::da_linha(linha, self.idioma).map(str::to_string)
     }
 
     /// O texto de uma mensagem, com os parametros no lugar dos `{marcadores}`.
@@ -1453,13 +1430,10 @@ impl Mensagens {
     /// existe na fabrica volta como esta: e defeito de programacao, e sumir
     /// com o erro seria pior que um texto estranho na resposta.
     pub fn texto(&self, nome: &str, parametros: &[(&str, &str)]) -> String {
-        let mut moldura = self
+        let moldura = self
             .resolver(nome)
             .unwrap_or_else(|| fabrica_de(nome).unwrap_or(nome).to_string());
-        for (chave, valor) in parametros {
-            moldura = moldura.replace(&format!("{{{chave}}}"), valor);
-        }
-        moldura
+        phxsql_core::idiomas::preencher(&moldura, parametros)
     }
 
     /// O texto humano de um erro, pela moldura da variante.

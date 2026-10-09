@@ -45,47 +45,21 @@ use phxsql_store::table::Visao;
 
 use crate::valores::json_para_linha;
 
-// As tres constantes moram no `mensagens`, e este modulo as REUSA em vez de
-// repetir. Os dois conjuntos de texto (`erro.` do protocolo e `tela.` da
-// interface) dividem a MESMA tabela, entao duas listas de idioma seriam duas
-// verdades sobre a mesma coisa: quem mudasse uma so deixaria a outra errada
-// em silencio, e o esquema da tabela sairia com colunas que um dos lados nao
-// enxerga.
-pub use crate::mensagens::{DATABASE, IDIOMAS, TABELA};
+// O MOTOR -- a lista de idiomas, os degraus da queda, a linha de fabrica e a
+// macro que a escreve -- mora no `phxsql_core::idiomas` desde a fatia Z2 do
+// pedido 454: o PhxZipCmd e o PhxZipWeb resolvem pela mesma decisao, sem
+// depender deste crate. Aqui fica so a TABELA da tela e a ligacao dela com
+// `phxsys.mensagens`. O `DATABASE` e a `TABELA` continuam vindo do
+// `mensagens`, que divide a mesma tabela com este modulo.
+pub use crate::mensagens::{DATABASE, TABELA};
+pub use phxsql_core::idiomas::{indice_do_idioma, TextoDeFabrica, IDIOMAS, QUANTOS};
+use phxsql_core::texto;
 
 /// O prefixo dos `TextName` que sao texto de TELA.
 ///
 /// E o que separa o meu conjunto do conjunto do protocolo dentro da mesma
 /// tabela -- e o que a rota publica usa para nao servir mais do que precisa.
 pub const PREFIXO_DA_TELA: &str = "tela.";
-
-/// Quantos idiomas: escrito uma vez, para o resto derivar.
-pub const QUANTOS: usize = IDIOMAS.len();
-
-/// Um texto de fabrica: o nome estavel e o texto em cada idioma.
-///
-/// `textos[0]` e o portugues e nunca e vazio -- e o texto que a tela sempre
-/// mostrou. Celula vazia nao e semeada e cai para o portugues na resolucao:
-/// melhor nenhuma traducao do que uma inventada.
-pub struct TextoDeFabrica {
-    pub nome: &'static str,
-    pub textos: [&'static str; QUANTOS],
-}
-
-/// Uma linha da fabrica, na ordem das colunas.
-///
-/// Existe para que acrescentar um texto custe UMA LINHA. Enquanto a lista
-/// tinha trinta itens a forma longa cabia; com duzentos ela cobraria mil e
-/// duzentas linhas de cerimonia, e o preco de obedecer a regra do idioma
-/// passaria a ser o argumento para nao obedece-la.
-macro_rules! texto {
-    ($nome:literal, $pt:literal, $fr:literal, $en:literal, $it:literal, $de:literal, $es:literal) => {
-        TextoDeFabrica {
-            nome: $nome,
-            textos: [$pt, $fr, $en, $it, $de, $es],
-        }
-    };
-}
 
 /// Todo texto que a tela mostra, nos seis idiomas.
 ///
@@ -2490,18 +2464,9 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.cfg_em_exigir", "**O relé fala TLS sem conferir quem responde** (`exigir`): protege da escuta passiva, não de quem está no meio. Para conferir: `verificar`, ou um `pino_tls`.", "**Le relais parle TLS sans vérifier qui répond** (`exigir`) : protège de l'écoute passive, pas de l'homme du milieu. Pour vérifier : `verificar`, ou un `pino_tls`.", "**The relay speaks TLS without checking who answers** (`exigir`): guards against passive eavesdropping, not a man-in-the-middle. To check: `verificar`, or a `pino_tls`.", "**Il relay parla TLS senza verificare chi risponde** (`exigir`): protegge dall'ascolto passivo, non da chi sta nel mezzo. Per verificare: `verificar`, o un `pino_tls`.", "**Das Relay spricht TLS ohne Prüfung der Gegenstelle** (`exigir`): schützt vor passivem Mithören, nicht vor Man-in-the-Middle. Zum Prüfen: `verificar` oder ein `pino_tls`.", "**El relé habla TLS sin comprobar quién responde** (`exigir`): protege de la escucha pasiva, no de quien está en medio. Para comprobar: `verificar`, o un `pino_tls`."),
 ];
 
-/// A posicao de um idioma pelo nome da coluna. Desconhecido = portugues.
-///
-/// Cair no portugues em vez de recusar e a mesma escolha do degrau 2: idioma
-/// escrito errado no navegador de alguem mostra a tela em portugues, e nao uma
-/// tela em branco.
-pub fn indice_do_idioma(nome: &str) -> usize {
-    IDIOMAS.iter().position(|i| *i == nome).unwrap_or(0)
-}
-
 /// O texto de fabrica de um `TextName`, se ele for da tela.
 pub fn fabrica(nome: &str) -> Option<&'static TextoDeFabrica> {
-    FABRICA_TELA.iter().find(|f| f.nome == nome)
+    phxsql_core::idiomas::achar(FABRICA_TELA, nome)
 }
 
 /// Este `TextName` e texto de TELA?
@@ -2520,21 +2485,7 @@ pub fn resolver_um(
     fab: &TextoDeFabrica,
     idioma: usize,
 ) -> String {
-    if let Some(linha) = gravadas {
-        // Degrau 1: a celula do idioma pedido.
-        if !linha[idioma].trim().is_empty() {
-            return linha[idioma].clone();
-        }
-        // Degrau 2: o portugues gravado.
-        if !linha[0].trim().is_empty() {
-            return linha[0].clone();
-        }
-    }
-    // Degrau 3: a fabrica -- e nela o idioma vazio tambem cai no portugues.
-    if !fab.textos[idioma].is_empty() {
-        return fab.textos[idioma].to_string();
-    }
-    fab.textos[0].to_string()
+    phxsql_core::idiomas::resolver(gravadas, fab, idioma)
 }
 
 /// Os textos da tela inteira, ja resolvidos, prontos para a pagina.
@@ -3195,25 +3146,9 @@ mod testes {
         }
     }
 
-    /// Os `{nome}` de um texto, em ordem alfabetica e sem repetir.
-    fn marcadores(texto: &str) -> Vec<String> {
-        let mut achados: Vec<String> = Vec::new();
-        let mut resto = texto;
-        while let Some(i) = resto.find('{') {
-            resto = &resto[i + 1..];
-            let Some(f) = resto.find('}') else { break };
-            let nome = &resto[..f];
-            if !nome.is_empty()
-                && nome.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                && !achados.iter().any(|a| a == nome)
-            {
-                achados.push(nome.to_string());
-            }
-            resto = &resto[f + 1..];
-        }
-        achados.sort();
-        achados
-    }
+    // Os marcadores sao os do motor: a conferencia da tela e a do PhxZipCmd
+    // contam `{nome}` pela mesma funcao.
+    use phxsql_core::idiomas::marcadores;
 
     #[test]
     fn a_fabrica_e_bem_formada() {
@@ -3369,17 +3304,10 @@ mod testes {
     fn chaves_usadas_na_pagina() -> HashSet<String> {
         let mut usados = HashSet::new();
         for (_, fonte) in crate::conferidor::FONTES {
-            for pedaco in fonte.split(&format!("\"{PREFIXO_DA_TELA}")).skip(1) {
-                if let Some(resto) = pedaco.split('"').next() {
-                    let nome = format!("{PREFIXO_DA_TELA}{resto}");
-                    if resto
-                        .chars()
-                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
-                    {
-                        usados.insert(nome);
-                    }
-                }
-            }
+            usados.extend(phxsql_core::idiomas::chaves_no_fonte(
+                fonte,
+                PREFIXO_DA_TELA,
+            ));
         }
         usados
     }

@@ -40,11 +40,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::SystemTime;
 
+use phxsql_core::idiomas::{idioma_do_ambiente, Fala};
 use phxzip::disco::{marcado_como_link, Destino};
 use phxzip::{Arquivo, Erro, Escritor, Limites, Metodo, Opcoes};
 
+pub mod textos;
+
 /// A variavel de ambiente da senha. Documentada no `--help`.
 pub const ENV_SENHA: &str = "PHXZIP_SENHA";
+
+/// A variavel de ambiente do idioma; sem ela, o `LANG` do sistema. Documentada
+/// no `--help`.
+pub const ENV_IDIOMA: &str = "PHXZIP_IDIOMA";
 
 /// A maior senha aceita pela entrada padrao, em bytes. Teto para o que vem de
 /// um cano sem quebra de linha: sem ele, `cat /dev/zero | phxzipcmd ...`
@@ -60,49 +67,39 @@ pub const TETO_DO_ARQUIVO: u64 = 1 << 30;
 /// O codigo de saida de uso errado. Falha de operacao sai com 1.
 pub const SAIDA_USO: u8 = 2;
 
-const USO: &str = "\
-phxzipcmd -- o PhxZip no terminal (formato 7z: Copy, LZMA, LZMA2 e 7zAES)
+/// O `--help`, montado pela fabrica: cada paragrafo e uma chave, para o
+/// tradutor trabalhar paragrafo a paragrafo e uma frase nova nao invalidar a
+/// traducao do resto.
+fn uso(f: Fala) -> String {
+    let teto = TETO_DA_SENHA.to_string();
+    let var = [("var", ENV_SENHA), ("teto", teto.as_str())];
+    let idioma = [("var", ENV_IDIOMA)];
+    let paragrafos = [
+        f.texto("zipcmd.uso_titulo", &[]),
+        f.texto("zipcmd.uso_comandos", &[]),
+        f.texto("zipcmd.uso_senha", &var),
+        f.texto("zipcmd.uso_hifen", &[]),
+        f.texto("zipcmd.uso_exemplos", &var),
+        f.texto("zipcmd.uso_extracao", &[]),
+        f.texto("zipcmd.uso_pasta_alheia", &[]),
+        f.texto("zipcmd.uso_compactacao", &[]),
+        f.texto("zipcmd.uso_confiavel", &[]),
+        f.texto("zipcmd.uso_idioma", &idioma),
+        f.texto("zipcmd.uso_saida", &[]),
+    ];
+    let mut s = paragrafos.join("\n\n");
+    s.push('\n');
+    s
+}
 
-USO:
-  phxzipcmd listar    ARQUIVO.7z [--confiavel]
-  phxzipcmd testar    ARQUIVO.7z [--confiavel]
-  phxzipcmd extrair   ARQUIVO.7z [--destino PASTA] [--sobrescrever] [--confiavel]
-  phxzipcmd compactar ARQUIVO.7z CAMINHO... [--copia] [--sobrescrever]
-                      [--cifrar [--nomes-claros] [--ciclos N]]
-  phxzipcmd --help | --version
-
-A SENHA NUNCA VEM POR ARGUMENTO. --senha, --password, --pass, --pwd, -p (em
-qualquer caixa, com ou sem = ou :) sao recusados: o argumento aparece no `ps`
-de qualquer usuario e fica no historico do shell. Ela vem, nesta ordem:
-  1. da variavel PHXZIP_SENHA;
-  2. da entrada padrao: num terminal e perguntada SEM ECO (o /bin/stty desliga,
-     e o eco volta no fim, no ctrl+D e no ctrl+C); num cano, e a primeira
-     linha (ate 1024 bytes).
-
-CAMINHO QUE COMECA COM HIFEN vai com ./ na frente: ./-planilhas, e nao
--planilhas (que seria lido como opcao, e -p... como senha por argumento).
-
-  PHXZIP_SENHA='a senha' phxzipcmd extrair copia.7z --destino saida
-  phxzipcmd compactar copia.7z docs --cifrar < arquivo-da-senha
-
-A EXTRACAO NUNCA SAI DA PASTA DE DESTINO E NUNCA SEGUE LINK. Entrada marcada
-como link simbolico vira arquivo comum, com aviso; pasta do destino que e
-link recusa a entrada. Arquivo que ja existe recusa, a menos que venha
---sobrescrever (e ai o que se apaga e o arquivo ou o link, nunca o alvo).
-
-Nenhuma pasta do caminho pode aceitar escrita de outro usuario (nem ser
-dele): ele poderia trocar uma pasta por um link no meio da extracao. Extraia
-numa pasta sua. Conteudo que veio cifrado nasce com permissao 0600.
-
-A COMPACTACAO NAO SEGUE LINK: link e arquivo especial sao pulados, com aviso,
-e arquivo trocado por link durante a leitura aborta. O .7z nasce 0600.
-
---confiavel abre com a folga do 7-Zip (ciclos ate 24, sem o teto de 1 GiB do
-arquivo nem o de 4 GiB da soma descompactada). Use so para arquivo que voce
-mesmo gravou.
-
-SAIDA: 0 deu certo; 1 a operacao falhou; 2 uso errado.
-";
+/// O idioma de quem roda: [`ENV_IDIOMA`], senao o `LANG`. Desconhecido fala
+/// portugues -- a decisao e do motor do core, a mesma do servidor.
+pub fn fala_do_ambiente() -> Fala {
+    let pedido = std::env::var(ENV_IDIOMA).ok();
+    let lang = std::env::var("LANG").ok();
+    let idioma = idioma_do_ambiente(&[pedido.as_deref(), lang.as_deref()]);
+    Fala::nova(textos::FABRICA, idioma)
+}
 
 /// A senha. O `Debug` e escrito a mao: derivado, um `dbg!` a imprimiria.
 pub struct Senha(String);
@@ -196,33 +193,33 @@ fn nome_da_opcao(a: &str) -> &str {
 /// Le uma linha de senha de `r`, com teto. Sem `read_line` de proposito: ele
 /// nao tem teto, e o teto e o que impede um cano sem quebra de linha de
 /// encher a memoria.
-pub fn ler_linha_de_senha<R: BufRead>(r: R) -> Result<Senha, Falha> {
+pub fn ler_linha_de_senha<R: BufRead>(f: Fala, r: R) -> Result<Senha, Falha> {
     let mut bytes = Vec::new();
     let mut viu_algo = false;
     for b in r.take(TETO_DA_SENHA as u64 + 1).bytes() {
-        let b = b.map_err(|e| op(format!("nao consegui ler a senha da entrada padrao: {e}")))?;
+        let b =
+            b.map_err(|e| op(f.texto("zipcmd.senha_ler_falhou", &[("erro", &e.to_string())])))?;
         viu_algo = true;
         if b == b'\n' {
             break;
         }
         if bytes.len() == TETO_DA_SENHA {
-            return Err(op(format!(
-                "a senha passa de {TETO_DA_SENHA} bytes sem quebra de linha"
+            return Err(op(f.texto(
+                "zipcmd.senha_longa",
+                &[("teto", &TETO_DA_SENHA.to_string())],
             )));
         }
         bytes.push(b);
     }
     if !viu_algo {
-        return Err(op(format!(
-            "a entrada padrao terminou sem senha; use {ENV_SENHA} ou mande a senha pela entrada"
-        )));
+        return Err(op(f.texto("zipcmd.senha_ausente", &[("var", ENV_SENHA)])));
     }
     if bytes.last() == Some(&b'\r') {
         bytes.pop();
     }
-    let s = String::from_utf8(bytes).map_err(|_| op("a senha nao e UTF-8"))?;
+    let s = String::from_utf8(bytes).map_err(|_| op(f.texto("zipcmd.senha_nao_utf8", &[])))?;
     if s.is_empty() {
-        return Err(op("senha vazia"));
+        return Err(op(f.texto("zipcmd.senha_vazia", &[])));
     }
     Ok(Senha(s))
 }
@@ -263,7 +260,7 @@ const SCRIPT_SEM_ECO: &str = "trap '' HUP; \
      /bin/stty -echo 2>/dev/null || exit 3; \
      /usr/bin/head -n 1";
 
-fn ler_sem_eco(pergunta: &str) -> Result<Senha, Falha> {
+fn ler_sem_eco(f: Fala, pergunta: &str) -> Result<Senha, Falha> {
     let mut err = io::stderr();
     let _ = write!(err, "{pergunta}");
     let _ = err.flush();
@@ -276,51 +273,48 @@ fn ler_sem_eco(pergunta: &str) -> Result<Senha, Falha> {
         .spawn();
     let mut filho = match filho {
         Ok(f) => f,
-        Err(_) => return Err(sem_eco()),
+        Err(_) => return Err(sem_eco(f)),
     };
     let r = match filho.stdout.take() {
-        Some(cano) => ler_linha_de_senha(io::BufReader::new(cano)),
-        None => Err(sem_eco()),
+        Some(cano) => ler_linha_de_senha(f, io::BufReader::new(cano)),
+        None => Err(sem_eco(f)),
     };
     let codigo = filho.wait().ok().and_then(|s| s.code());
     let _ = writeln!(err);
     // Sem conseguir desligar o eco, NAO se pergunta: a senha apareceria na
     // tela, que e o furo que esta casca existe para fechar.
     if codigo == Some(3) {
-        return Err(sem_eco());
+        return Err(sem_eco(f));
     }
     r
 }
 
-fn sem_eco() -> Falha {
-    op(format!(
-        "nao consegui desligar o eco do terminal (/bin/stty), e a senha nao se digita a \
-         vista; use {ENV_SENHA} ou mande a senha pela entrada padrao (phxzipcmd ... < arquivo)"
-    ))
+fn sem_eco(f: Fala) -> Falha {
+    op(f.texto("zipcmd.sem_eco", &[("var", ENV_SENHA)]))
 }
 
 /// A senha: da variavel de ambiente, ou da entrada padrao.
-fn obter_senha(confirmar: bool) -> Result<Senha, Falha> {
+fn obter_senha(f: Fala, confirmar: bool) -> Result<Senha, Falha> {
     if let Some(v) = std::env::var_os(ENV_SENHA) {
         let s = v
             .into_string()
-            .map_err(|_| op(format!("{ENV_SENHA} nao e UTF-8")))?;
+            .map_err(|_| op(f.texto("zipcmd.var_nao_utf8", &[("var", ENV_SENHA)])))?;
         if s.is_empty() {
-            return Err(op(format!("{ENV_SENHA} esta definida e vazia")));
+            return Err(op(f.texto("zipcmd.var_vazia", &[("var", ENV_SENHA)])));
         }
         return Ok(Senha(s));
     }
     if io::stdin().is_terminal() {
-        let s = ler_sem_eco("senha: ")?;
+        let s = ler_sem_eco(f, &f.texto("zipcmd.pergunta_senha", &[]))?;
         if confirmar {
-            let de_novo = ler_sem_eco("a mesma senha, de novo: ")?;
+            let de_novo = ler_sem_eco(f, &f.texto("zipcmd.pergunta_de_novo", &[]))?;
             if de_novo.0 != s.0 {
-                return Err(op("as duas senhas digitadas nao conferem"));
+                return Err(op(f.texto("zipcmd.senhas_diferentes", &[])));
             }
         }
         return Ok(s);
     }
-    ler_linha_de_senha(io::stdin().lock())
+    ler_linha_de_senha(f, io::stdin().lock())
 }
 
 /// Nome que veio de dentro do arquivo vai para a tela com o caractere de
@@ -397,8 +391,9 @@ enum Comando {
     Compactar,
 }
 
-#[derive(Debug)]
 struct Pedido {
+    /// O idioma da tela -- viaja no pedido para toda mensagem sair dele.
+    fala: Fala,
     comando: Comando,
     arquivo: PathBuf,
     caminhos: Vec<PathBuf>,
@@ -411,19 +406,25 @@ struct Pedido {
     ciclos: Option<u8>,
 }
 
-fn analisar(args: &[String]) -> Result<Pedido, Falha> {
+fn analisar(f: Fala, args: &[String]) -> Result<Pedido, Falha> {
     let uso = |t: String| Falha::Uso(format!("{t} (phxzipcmd --help)"));
     let (cmd, resto) = args
         .split_first()
-        .ok_or_else(|| uso("falta o comando".into()))?;
+        .ok_or_else(|| uso(f.texto("zipcmd.falta_comando", &[])))?;
     let comando = match cmd.as_str() {
         "listar" => Comando::Listar,
         "testar" => Comando::Testar,
         "extrair" => Comando::Extrair,
         "compactar" => Comando::Compactar,
-        outro => return Err(uso(format!("comando desconhecido: {:?}", para_tela(outro)))),
+        outro => {
+            return Err(uso(f.texto(
+                "zipcmd.comando_desconhecido",
+                &[("comando", &format!("{:?}", para_tela(outro)))],
+            )))
+        }
     };
     let mut p = Pedido {
+        fala: f,
         comando,
         arquivo: PathBuf::new(),
         caminhos: Vec::new(),
@@ -446,7 +447,7 @@ fn analisar(args: &[String]) -> Result<Pedido, Falha> {
             if vale.contains(&comando) {
                 Ok(())
             } else {
-                Err(uso(format!("{a} nao vale para este comando")))
+                Err(uso(f.texto("zipcmd.opcao_nao_vale", &[("opcao", a)])))
             }
         };
         match a {
@@ -454,7 +455,7 @@ fn analisar(args: &[String]) -> Result<Pedido, Falha> {
                 so(&[Comando::Extrair])?;
                 let v = resto
                     .get(i)
-                    .ok_or_else(|| uso("--destino pede uma pasta".into()))?;
+                    .ok_or_else(|| uso(f.texto("zipcmd.destino_pede_pasta", &[])))?;
                 i += 1;
                 p.destino = Some(PathBuf::from(v));
             }
@@ -482,17 +483,19 @@ fn analisar(args: &[String]) -> Result<Pedido, Falha> {
                 so(&[Comando::Compactar])?;
                 let v = resto
                     .get(i)
-                    .ok_or_else(|| uso("--ciclos pede um numero".into()))?;
+                    .ok_or_else(|| uso(f.texto("zipcmd.ciclos_pede_numero", &[])))?;
                 i += 1;
                 let n: u8 = v
                     .parse()
                     .ok()
                     .filter(|n| *n <= phxzip::CICLOS_MAXIMO)
                     .ok_or_else(|| {
-                        uso(format!(
-                            "--ciclos vai de 0 a {}, veio {:?}",
-                            phxzip::CICLOS_MAXIMO,
-                            para_tela(v)
+                        uso(f.texto(
+                            "zipcmd.ciclos_fora",
+                            &[
+                                ("maximo", &phxzip::CICLOS_MAXIMO.to_string()),
+                                ("veio", &format!("{:?}", para_tela(v))),
+                            ],
                         ))
                     })?;
                 p.ciclos = Some(n);
@@ -500,24 +503,26 @@ fn analisar(args: &[String]) -> Result<Pedido, Falha> {
             _ if a.starts_with('-') && a.len() > 1 => {
                 // So o NOME: o que vem depois do `=` ou do `:` pode ser um segredo
                 // digitado com a grafia errada.
-                return Err(uso(format!(
-                    "opcao desconhecida: {:?}",
-                    para_tela(nome_da_opcao(a))
+                return Err(uso(f.texto(
+                    "zipcmd.opcao_desconhecida",
+                    &[("opcao", &format!("{:?}", para_tela(nome_da_opcao(a))))],
                 )));
             }
             _ => posicionais.push(PathBuf::from(a)),
         }
     }
     if (p.nomes_claros || p.ciclos.is_some()) && !p.cifrar {
-        return Err(uso("--nomes-claros e --ciclos so valem com --cifrar".into()));
+        return Err(uso(f.texto("zipcmd.so_com_cifrar", &[])));
     }
     let mut pos = posicionais.into_iter();
-    p.arquivo = pos.next().ok_or_else(|| uso("falta o ARQUIVO.7z".into()))?;
+    p.arquivo = pos
+        .next()
+        .ok_or_else(|| uso(f.texto("zipcmd.falta_arquivo", &[])))?;
     p.caminhos = pos.collect();
     match (comando, p.caminhos.is_empty()) {
-        (Comando::Compactar, true) => return Err(uso("compactar pede ao menos um CAMINHO".into())),
+        (Comando::Compactar, true) => return Err(uso(f.texto("zipcmd.falta_caminho", &[]))),
         (Comando::Compactar, false) => {}
-        (_, false) => return Err(uso("este comando recebe um ARQUIVO.7z so".into())),
+        (_, false) => return Err(uso(f.texto("zipcmd.arquivo_so_um", &[]))),
         (_, true) => {}
     }
     Ok(p)
@@ -535,6 +540,7 @@ fn limites(p: &Pedido) -> Limites {
 
 fn ler_arquivo(p: &Pedido) -> Result<Vec<u8>, Falha> {
     ler_com_teto(
+        p.fala,
         &p.arquivo,
         if p.confiavel {
             None
@@ -549,24 +555,24 @@ fn ler_arquivo(p: &Pedido) -> Result<Vec<u8>, Falha> {
 /// arquivos do `/proc` declaram 0 e entregam quanto quiserem -- conferir o
 /// `metadata().len()` e depois ler tudo deixava o `/dev/zero` encher a
 /// memoria (revisao SEC da Z9).
-pub fn ler_com_teto(caminho: &Path, teto: Option<u64>) -> Result<Vec<u8>, Falha> {
+pub fn ler_com_teto(f: Fala, caminho: &Path, teto: Option<u64>) -> Result<Vec<u8>, Falha> {
     let nome = caminho.display();
-    let f = fs::File::open(caminho).map_err(|e| op(format!("{nome}: {e}")))?;
+    let arq = fs::File::open(caminho).map_err(|e| op(format!("{nome}: {e}")))?;
     let mut dados = Vec::new();
     match teto {
         None => {
-            let mut f = f;
-            f.read_to_end(&mut dados)
+            let mut arq = arq;
+            arq.read_to_end(&mut dados)
                 .map_err(|e| op(format!("{nome}: {e}")))?;
         }
         Some(t) => {
-            f.take(t.saturating_add(1))
+            arq.take(t.saturating_add(1))
                 .read_to_end(&mut dados)
                 .map_err(|e| op(format!("{nome}: {e}")))?;
             if dados.len() as u64 > t {
-                return Err(op(format!(
-                    "{nome}: passa do teto de {t} bytes; para arquivo que voce mesmo \
-                     gravou, --confiavel"
+                return Err(op(f.texto(
+                    "zipcmd.passa_do_teto",
+                    &[("nome", &nome.to_string()), ("teto", &t.to_string())],
                 )));
             }
         }
@@ -579,7 +585,7 @@ pub fn ler_com_teto(caminho: &Path, teto: Option<u64>) -> Result<Vec<u8>, Falha>
 fn abrir<'a>(dados: &'a [u8], p: &Pedido, conteudo: bool) -> Result<Arquivo<'a>, Falha> {
     let lim = limites(p);
     if std::env::var_os(ENV_SENHA).is_some() {
-        let s = obter_senha(false)?;
+        let s = obter_senha(p.fala, false)?;
         return Arquivo::abrir(dados, Some(s.texto()), lim).map_err(do_motor);
     }
     match Arquivo::abrir(dados, None, lim) {
@@ -587,7 +593,7 @@ fn abrir<'a>(dados: &'a [u8], p: &Pedido, conteudo: bool) -> Result<Arquivo<'a>,
         Ok(a) if conteudo && a.entradas().iter().any(|e| e.cifrada) => {}
         r => return r.map_err(do_motor),
     }
-    let s = obter_senha(false)?;
+    let s = obter_senha(p.fala, false)?;
     Arquivo::abrir(dados, Some(s.texto()), lim).map_err(do_motor)
 }
 
@@ -607,7 +613,16 @@ fn listar(p: &Pedido, out: &mut dyn Write) -> Result<(), Falha> {
     let dados = ler_arquivo(p)?;
     let a = abrir(&dados, p, false)?;
     let mut total = 0u64;
-    let _ = writeln!(out, "     tamanho  modificado (UTC)     tipo  nome");
+    let f = p.fala;
+    // As larguras sao as das linhas abaixo; o rotulo e da fabrica.
+    let _ = writeln!(
+        out,
+        "{:>12}  {:<19}  {:<4}  {}",
+        f.texto("zipcmd.col_tamanho", &[]),
+        f.texto("zipcmd.col_modificado", &[]),
+        f.texto("zipcmd.col_tipo", &[]),
+        f.texto("zipcmd.col_nome", &[])
+    );
     for e in a.entradas() {
         total = total.saturating_add(e.tamanho);
         let tipo = format!(
@@ -630,12 +645,18 @@ fn listar(p: &Pedido, out: &mut dyn Write) -> Result<(), Falha> {
     }
     let _ = writeln!(
         out,
-        "{} entrada(s), {total} bytes{}",
-        a.entradas().len(),
+        "{}{}",
+        f.texto(
+            "zipcmd.total_listado",
+            &[
+                ("entradas", &a.entradas().len().to_string()),
+                ("bytes", &total.to_string()),
+            ],
+        ),
         if a.cabecalho_cifrado() {
-            ", cabecalho cifrado"
+            f.texto("zipcmd.sufixo_cabecalho_cifrado", &[])
         } else {
-            ""
+            String::new()
         }
     );
     Ok(())
@@ -647,7 +668,11 @@ fn testar(p: &Pedido, out: &mut dyn Write) -> Result<(), Falha> {
     let mut n = 0usize;
     // O CRC de cada entrada e conferido pelo motor antes de entrega-la.
     a.percorrer(|_, _| n += 1).map_err(do_motor)?;
-    let _ = writeln!(out, "ok: {n} entrada(s) conferida(s)");
+    let _ = writeln!(
+        out,
+        "{}",
+        p.fala.texto("zipcmd.testar_ok", &[("n", &n.to_string())])
+    );
     Ok(())
 }
 
@@ -659,10 +684,14 @@ fn extrair(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), F
     Destino::conferir_lote(a.entradas().iter().map(|e| (e.nome.as_str(), e.pasta)))
         .map_err(do_motor)?;
     let raiz = p.destino.clone().unwrap_or_else(|| PathBuf::from("."));
+    let f = p.fala;
     fs::create_dir_all(&raiz).map_err(|e| {
-        op(format!(
-            "nao consegui criar o destino {}: {e}",
-            raiz.display()
+        op(f.texto(
+            "zipcmd.destino_falhou",
+            &[
+                ("destino", &raiz.display().to_string()),
+                ("erro", &e.to_string()),
+            ],
         ))
     })?;
     let mut destino = Destino::novo(&raiz).map_err(do_motor)?;
@@ -678,9 +707,11 @@ fn extrair(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), F
         if marcado_como_link(e.atributos) {
             let _ = writeln!(
                 err,
-                "aviso: {:?} veio marcada como link simbolico; gravada como arquivo comum \
-                 (o PhxZipCmd nao cria link)",
-                para_tela(&e.nome)
+                "{}",
+                f.texto(
+                    "zipcmd.aviso_link_gravado_comum",
+                    &[("nome", &format!("{:?}", para_tela(&e.nome)))],
+                )
             );
         }
         let r = if e.pasta {
@@ -702,10 +733,13 @@ fn extrair(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), F
         }
     });
     let interrompida = |e: Erro| {
-        op(format!(
-            "{e} [{}]; extracao interrompida com {gravadas} entrada(s) ja gravada(s) em {}",
-            e.nome(),
-            raiz.display()
+        op(f.texto(
+            "zipcmd.extracao_interrompida",
+            &[
+                ("erro", &format!("{e} [{}]", e.nome())),
+                ("gravadas", &gravadas.to_string()),
+                ("destino", &raiz.display().to_string()),
+            ],
         ))
     };
     if let Some(e) = falha {
@@ -716,8 +750,14 @@ fn extrair(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), F
     }
     let _ = writeln!(
         out,
-        "{gravadas} entrada(s) extraida(s) em {}",
-        raiz.display()
+        "{}",
+        f.texto(
+            "zipcmd.extraidas",
+            &[
+                ("n", &gravadas.to_string()),
+                ("destino", &raiz.display().to_string()),
+            ],
+        )
     );
     Ok(())
 }
@@ -734,6 +774,7 @@ fn data_de(m: &fs::Metadata) -> Option<u64> {
 }
 
 struct Coleta<'a> {
+    fala: Fala,
     esc: Escritor,
     saida: Option<PathBuf>,
     err: &'a mut dyn Write,
@@ -748,8 +789,11 @@ impl Coleta<'_> {
         if tipo.is_symlink() {
             let _ = writeln!(
                 self.err,
-                "aviso: {} e link, pulado (o PhxZipCmd nao segue link)",
-                caminho.display()
+                "{}",
+                self.fala.texto(
+                    "zipcmd.aviso_link_pulado",
+                    &[("caminho", &caminho.display().to_string())],
+                )
             );
             return Ok(());
         }
@@ -765,9 +809,9 @@ impl Coleta<'_> {
             filhos.sort();
             for f in filhos {
                 let texto = f.to_str().ok_or_else(|| {
-                    op(format!(
-                        "{}: nome que nao e UTF-8 dentro da pasta",
-                        caminho.display()
+                    op(self.fala.texto(
+                        "zipcmd.nome_nao_utf8_na_pasta",
+                        &[("caminho", &caminho.display().to_string())],
                     ))
                 })?;
                 self.acrescentar(&caminho.join(&f), &format!("{nome}/{texto}"))?;
@@ -777,8 +821,11 @@ impl Coleta<'_> {
         if !tipo.is_file() {
             let _ = writeln!(
                 self.err,
-                "aviso: {} nao e arquivo comum nem pasta, pulado",
-                caminho.display()
+                "{}",
+                self.fala.texto(
+                    "zipcmd.aviso_especial_pulado",
+                    &[("caminho", &caminho.display().to_string())],
+                )
             );
             return Ok(());
         }
@@ -787,7 +834,7 @@ impl Coleta<'_> {
         if self.saida.is_some() && fs::canonicalize(caminho).ok() == self.saida {
             return Ok(());
         }
-        let dados = ler_o_mesmo(caminho, &m)?;
+        let dados = ler_o_mesmo(self.fala, caminho, &m)?;
         self.esc
             .arquivo(nome, &dados, data_de(&m))
             .map_err(do_motor)?;
@@ -805,7 +852,7 @@ impl Coleta<'_> {
 ///
 /// No Windows a `std` estavel nao expoe o indice do arquivo: la confere-se so
 /// que o aberto e arquivo comum, e a troca por link fica dita aqui.
-fn ler_o_mesmo(caminho: &Path, olhado: &fs::Metadata) -> Result<Vec<u8>, Falha> {
+fn ler_o_mesmo(fala: Fala, caminho: &Path, olhado: &fs::Metadata) -> Result<Vec<u8>, Falha> {
     let nome = caminho.display();
     let mut f = fs::File::open(caminho).map_err(|e| op(format!("{nome}: {e}")))?;
     let aberto = f.metadata().map_err(|e| op(format!("{nome}: {e}")))?;
@@ -820,10 +867,9 @@ fn ler_o_mesmo(caminho: &Path, olhado: &fs::Metadata) -> Result<Vec<u8>, Falha> 
         true
     };
     if !mesmo || !aberto.is_file() {
-        return Err(op(format!(
-            "{nome}: trocado durante a compactacao (o que se abriu nao e o arquivo que se \
-             olhou -- um link posto no lugar?); nada foi gravado"
-        )));
+        return Err(op(
+            fala.texto("zipcmd.trocado_durante", &[("nome", &nome.to_string())])
+        ));
     }
     let mut dados = Vec::new();
     f.read_to_end(&mut dados)
@@ -831,16 +877,25 @@ fn ler_o_mesmo(caminho: &Path, olhado: &fs::Metadata) -> Result<Vec<u8>, Falha> 
     Ok(dados)
 }
 
-fn nome_de_raiz(c: &Path) -> Result<String, Falha> {
+fn nome_de_raiz(f: Fala, c: &Path) -> Result<String, Falha> {
     let nome = match c.file_name() {
         Some(n) => n.to_os_string(),
         None => fs::canonicalize(c)
             .ok()
             .and_then(|a| a.file_name().map(|n| n.to_os_string()))
-            .ok_or_else(|| op(format!("{}: caminho sem nome para guardar", c.display())))?,
+            .ok_or_else(|| {
+                op(f.texto(
+                    "zipcmd.caminho_sem_nome",
+                    &[("caminho", &c.display().to_string())],
+                ))
+            })?,
     };
-    nome.into_string()
-        .map_err(|_| op(format!("{}: nome que nao e UTF-8", c.display())))
+    nome.into_string().map_err(|_| {
+        op(f.texto(
+            "zipcmd.nome_nao_utf8",
+            &[("caminho", &c.display().to_string())],
+        ))
+    })
 }
 
 fn gravar_arquivo_novo(destino: &Path, bytes: &[u8]) -> Result<(), Falha> {
@@ -872,14 +927,15 @@ fn gravar_arquivo_novo(destino: &Path, bytes: &[u8]) -> Result<(), Falha> {
 }
 
 fn compactar(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(), Falha> {
+    let f = p.fala;
     if fs::symlink_metadata(&p.arquivo).is_ok() && !p.sobrescrever {
-        return Err(op(format!(
-            "{} ja existe; use --sobrescrever",
-            p.arquivo.display()
+        return Err(op(f.texto(
+            "zipcmd.ja_existe",
+            &[("arquivo", &p.arquivo.display().to_string())],
         )));
     }
     let senha = if p.cifrar {
-        Some(obter_senha(true)?)
+        Some(obter_senha(f, true)?)
     } else {
         None
     };
@@ -895,33 +951,51 @@ fn compactar(p: &Pedido, out: &mut dyn Write, err: &mut dyn Write) -> Result<(),
     })
     .map_err(do_motor)?;
     let mut coleta = Coleta {
+        fala: f,
         esc,
         saida: fs::canonicalize(&p.arquivo).ok(),
         err,
         entradas: 0,
     };
     for c in &p.caminhos {
-        let nome = nome_de_raiz(c)?;
+        let nome = nome_de_raiz(f, c)?;
         coleta.acrescentar(c, &nome)?;
     }
     if coleta.entradas == 0 {
-        return Err(op("nada para compactar: so havia link ou arquivo especial"));
+        return Err(op(f.texto("zipcmd.nada_para_compactar", &[])));
     }
     let n = coleta.entradas;
     let bytes = coleta.esc.terminar();
     gravar_arquivo_novo(&p.arquivo, &bytes)?;
     let _ = writeln!(
         out,
-        "{n} entrada(s) em {}, {} bytes{}",
-        p.arquivo.display(),
-        bytes.len(),
-        if p.cifrar { ", cifrado" } else { "" }
+        "{}{}",
+        f.texto(
+            "zipcmd.compactado",
+            &[
+                ("n", &n.to_string()),
+                ("arquivo", &p.arquivo.display().to_string()),
+                ("bytes", &bytes.len().to_string()),
+            ],
+        ),
+        if p.cifrar {
+            f.texto("zipcmd.sufixo_cifrado", &[])
+        } else {
+            String::new()
+        }
     );
     Ok(())
 }
 
 /// Roda o comando. `args` sem o nome do programa. Devolve o codigo de saida.
+/// O idioma vem do ambiente ([`fala_do_ambiente`]).
 pub fn rodar(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    rodar_em(fala_do_ambiente(), args, out, err)
+}
+
+/// O mesmo [`rodar`], com o idioma dado -- para o teste nao depender do `LANG`
+/// de quem roda a suite.
+pub fn rodar_em(f: Fala, args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     let mut out = Tela(out);
     let mut err = Tela(err);
     let (out, err): (&mut dyn Write, &mut dyn Write) = (&mut out, &mut err);
@@ -930,10 +1004,11 @@ pub fn rodar(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
     if let Some(opcao) = argumento_de_senha(args) {
         let _ = writeln!(
             err,
-            "phxzipcmd: {opcao} recusado -- a senha nunca vem por argumento, porque o \
-             argumento aparece no `ps` de qualquer usuario e fica no historico do shell.\n\
-             Use a variavel {ENV_SENHA}, ou deixe o phxzipcmd perguntar (sem eco), ou mande \
-             a senha pela entrada padrao: phxzipcmd ... < arquivo-da-senha"
+            "phxzipcmd: {}",
+            f.texto(
+                "zipcmd.senha_por_argumento",
+                &[("opcao", opcao), ("var", ENV_SENHA)],
+            )
         );
         return SAIDA_USO;
     }
@@ -942,10 +1017,10 @@ pub fn rodar(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
         return 0;
     }
     if args.is_empty() || args.iter().any(|a| a == "-h" || a == "--help") {
-        let _ = write!(out, "{USO}");
+        let _ = write!(out, "{}", uso(f));
         return if args.is_empty() { SAIDA_USO } else { 0 };
     }
-    let r = analisar(args).and_then(|p| match p.comando {
+    let r = analisar(f, args).and_then(|p| match p.comando {
         Comando::Listar => listar(&p, out),
         Comando::Testar => testar(&p, out),
         Comando::Extrair => extrair(&p, out, err),
@@ -966,6 +1041,116 @@ mod testes {
 
     fn a(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn pt() -> Fala {
+        Fala::nova(textos::FABRICA, 0)
+    }
+
+    fn fala(idioma: &str) -> Fala {
+        Fala::nova(
+            textos::FABRICA,
+            phxsql_core::idiomas::indice_do_idioma(idioma),
+        )
+    }
+
+    /// As chaves que este crate pede, varridas do FONTE -- e nao de uma lista
+    /// escrita a mao, que envelheceria calada. A tabela mora no `textos.rs`,
+    /// fora da varredura, para nao se contar como pedida por ela mesma.
+    fn chaves_pedidas() -> std::collections::HashSet<String> {
+        let mut usadas = std::collections::HashSet::new();
+        for fonte in [include_str!("lib.rs"), include_str!("main.rs")] {
+            usadas.extend(phxsql_core::idiomas::chaves_no_fonte(
+                fonte,
+                textos::PREFIXO,
+            ));
+        }
+        usadas
+    }
+
+    /// **RED da Z2, o laco.** Chave pedida que nao existe sai na tela como a
+    /// chave crua; chave morta e traducao que ninguem ve. Os dois acusam.
+    ///
+    /// Prova real: trocar no fonte a chave `senha_vazia` por `senha_vazia_x`
+    /// reprova pelos DOIS lados (a nova falta, a velha morre); apagar uma
+    /// linha da tabela reprova pelo primeiro. (Chave entre aspas neste
+    /// comentario contaria como pedida -- a varredura e do fonte inteiro.)
+    #[test]
+    fn o_laco_de_chaves_fecha() {
+        let pedidas = chaves_pedidas();
+        assert!(
+            pedidas.len() > 40,
+            "so {} chaves no fonte: o laco se soltou",
+            pedidas.len()
+        );
+        let laco = phxsql_core::idiomas::conferir_laco(textos::FABRICA, &pedidas);
+        assert!(
+            laco.faltando.is_empty(),
+            "o fonte pede chaves que a tabela nao tem: {:?}",
+            laco.faltando
+        );
+        assert!(
+            laco.mortas.is_empty(),
+            "a tabela tem chaves que ninguem pede: {:?}",
+            laco.mortas
+        );
+    }
+
+    #[test]
+    fn a_tabela_e_bem_formada() {
+        let defeitos = phxsql_core::idiomas::defeitos_da_tabela(textos::FABRICA, textos::PREFIXO);
+        assert!(defeitos.is_empty(), "{defeitos:#?}");
+    }
+
+    /// Os seis idiomas tem toda chave traduzida -- nenhuma celula cai no
+    /// portugues por falta. Se um dia uma ficar vazia de proposito, o numero
+    /// aqui sobe com o motivo; calada, nao.
+    #[test]
+    fn nenhuma_celula_vazia() {
+        let vazias = phxsql_core::idiomas::vazias_por_idioma(textos::FABRICA);
+        assert_eq!(vazias, [0; phxsql_core::idiomas::QUANTOS]);
+    }
+
+    /// O idioma pedido manda, e o desconhecido fala portugues -- pelo `rodar`
+    /// inteiro, nao so pelo motor.
+    #[test]
+    fn o_comando_fala_o_idioma_pedido() {
+        let roda = |f: Fala, args: &[&str]| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let c = rodar_em(f, &a(args), &mut out, &mut err);
+            let t = String::from_utf8(out).unwrap() + &String::from_utf8(err).unwrap();
+            (c, t)
+        };
+        let (c, t) = roda(fala("Ingles"), &["listar"]);
+        assert_eq!(c, SAIDA_USO);
+        assert_eq!(t, "phxzipcmd: missing the ARCHIVE.7z (phxzipcmd --help)\n");
+        let (_, t) = roda(fala("Alemao"), &["--help"]);
+        assert!(t.starts_with("phxzipcmd -- PhxZip im Terminal"), "{t}");
+        assert!(
+            t.contains("PHXZIP_SENHA") && t.contains("PHXZIP_IDIOMA"),
+            "{t}"
+        );
+        let (_, t) = roda(fala("Klingon"), &["foo"]);
+        assert_eq!(
+            t,
+            "phxzipcmd: comando desconhecido: \"foo\" (phxzipcmd --help)\n"
+        );
+        // A recusa da senha tambem traduz, e continua sem repetir o valor.
+        let (c, t) = roda(fala("Espanhol"), &["listar", "x.7z", "--senha=s3gr3d0"]);
+        assert_eq!(c, SAIDA_USO);
+        assert!(t.contains("nunca viene por argumento"), "{t}");
+        assert!(!t.contains("s3gr3d0"), "{t}");
+    }
+
+    /// O `--help` em portugues e o de antes da fabrica, linha a linha nas
+    /// partes que um script ou um teste procuram.
+    #[test]
+    fn o_help_em_portugues_e_o_de_sempre() {
+        let u = uso(pt());
+        assert!(u.starts_with("phxzipcmd -- o PhxZip no terminal (formato 7z"));
+        assert!(u.contains("  1. da variavel PHXZIP_SENHA;\n"));
+        assert!(u.contains("     linha (ate 1024 bytes).\n\nCAMINHO QUE COMECA"));
+        assert!(u.ends_with("SAIDA: 0 deu certo; 1 a operacao falhou; 2 uso errado.\n"));
     }
 
     #[test]
@@ -997,17 +1182,25 @@ mod testes {
     #[test]
     fn linha_de_senha_tem_teto_e_tira_a_quebra() {
         assert_eq!(
-            ler_linha_de_senha(&b"abc\r\nresto"[..]).unwrap().texto(),
+            ler_linha_de_senha(pt(), &b"abc\r\nresto"[..])
+                .unwrap()
+                .texto(),
             "abc"
         );
-        assert_eq!(ler_linha_de_senha(&b"abc"[..]).unwrap().texto(), "abc");
-        assert!(ler_linha_de_senha(&b""[..]).is_err());
-        assert!(ler_linha_de_senha(&b"\n"[..]).is_err());
+        assert_eq!(
+            ler_linha_de_senha(pt(), &b"abc"[..]).unwrap().texto(),
+            "abc"
+        );
+        assert!(ler_linha_de_senha(pt(), &b""[..]).is_err());
+        assert!(ler_linha_de_senha(pt(), &b"\n"[..]).is_err());
         let longa = vec![b'x'; TETO_DA_SENHA + 10];
-        assert!(ler_linha_de_senha(&longa[..]).is_err());
+        assert!(ler_linha_de_senha(pt(), &longa[..]).is_err());
         let no_teto = vec![b'x'; TETO_DA_SENHA];
         assert_eq!(
-            ler_linha_de_senha(&no_teto[..]).unwrap().texto().len(),
+            ler_linha_de_senha(pt(), &no_teto[..])
+                .unwrap()
+                .texto()
+                .len(),
             TETO_DA_SENHA
         );
     }
@@ -1021,11 +1214,11 @@ mod testes {
     #[cfg(target_os = "linux")]
     #[test]
     fn o_teto_do_arquivo_vale_no_que_se_le() {
-        assert!(ler_com_teto(Path::new("/proc/self/maps"), Some(64)).is_err());
-        let ok = ler_com_teto(Path::new("/proc/self/maps"), Some(1 << 30)).unwrap();
+        assert!(ler_com_teto(pt(), Path::new("/proc/self/maps"), Some(64)).is_err());
+        let ok = ler_com_teto(pt(), Path::new("/proc/self/maps"), Some(1 << 30)).unwrap();
         assert!(ok.len() > 64, "o irmao: sob o teto le inteiro");
         // Por ultimo: com a conferencia antiga, este nao acaba nunca.
-        assert!(ler_com_teto(Path::new("/dev/zero"), Some(1024)).is_err());
+        assert!(ler_com_teto(pt(), Path::new("/dev/zero"), Some(1024)).is_err());
     }
 
     /// Caractere de formato muda o que a tela mostra sem ser controle.

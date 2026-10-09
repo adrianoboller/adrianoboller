@@ -55,10 +55,34 @@ impl Saida {
 }
 
 /// Roda o binario de verdade, com a variavel da senha APAGADA do ambiente
-/// herdado (senao o teste dependeria de quem o roda) e a entrada padrao como
-/// cano -- nunca um terminal.
+/// herdado (senao o teste dependeria de quem o roda), o idioma FIXO em
+/// portugues (as provas procuram frases, e o `LANG` de quem roda a suite nao
+/// pode mudar o veredito) e a entrada padrao como cano -- nunca um terminal.
 pub fn phxzipcmd(cwd: &Path, args: &[&str], senha_env: Option<&str>, entrada: &[u8]) -> Saida {
+    phxzipcmd_no_ambiente(
+        cwd,
+        args,
+        senha_env,
+        entrada,
+        &[(phxzip_cmd::ENV_IDIOMA, Some("Portugues"))],
+    )
+}
+
+/// O mesmo, com variaveis de ambiente escolhidas: `Some` define, `None` apaga.
+pub fn phxzipcmd_no_ambiente(
+    cwd: &Path,
+    args: &[&str],
+    senha_env: Option<&str>,
+    entrada: &[u8],
+    ambiente: &[(&str, Option<&str>)],
+) -> Saida {
     let mut c = Command::new(env!("CARGO_BIN_EXE_phxzipcmd"));
+    for (k, v) in ambiente {
+        match v {
+            Some(v) => c.env(k, v),
+            None => c.env_remove(k),
+        };
+    }
     c.args(args)
         .current_dir(cwd)
         .env_remove(phxzip_cmd::ENV_SENHA)
