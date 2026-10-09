@@ -2307,6 +2307,19 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "ocorrencias",
+        apelidos: &[],
+        resumo: "As ocorrências do `ocorrencias.log`: cada alarme com quando, quem, de onde e sobre o quê, já redigido — do mais novo para o mais antigo. Só quem administra o servidor.",
+        parametros: &[
+            opc("desde", "integer", "milissegundos desde 1970: só ocorrências a partir daqui"),
+            opc("ate", "integer", "milissegundos desde 1970: só ocorrências até aqui"),
+            opc("alarme", "string", "o nome de um alarme (`forca_bruta`, `senha_em_claro`…), ou uma lista deles; a resposta traz a lista inteira em `alarmes`"),
+            opc("max", "integer", "quantas ocorrências devolver, no máximo"),
+        ],
+        exemplo: r#"{"op":"ocorrencias","alarme":"forca_bruta","max":50}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "painel",
         apelidos: &[],
         resumo: "Os números do painel: bancos, tabelas e linhas que quem olha poderia abrir.",

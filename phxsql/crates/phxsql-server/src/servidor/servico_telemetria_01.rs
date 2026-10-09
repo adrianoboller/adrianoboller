@@ -567,8 +567,14 @@ impl Servidor {
 
     /// A ocorrencia no `ocorrencias.log`. A falha de gravar e noticia de
     /// disco, e vai ao mesmo destino da falha do `aquario.log`.
+    ///
+    /// E o e-mail (F9) sai DAQUI, e nao do `sinal`: o produtor pode estar com
+    /// a trava de dados na mao, e o carteiro nunca esta. O e-mail vem depois
+    /// da gravacao -- o arquivo e o registro; o e-mail e o recado.
     pub(super) fn gravar_ocorrencia(&self, o: &crate::ocorrencias::Ocorrencia) {
-        if let Err(PhxError::Io(io)) = self.ocorrencias.gravar(o) {
+        let gravou = self.ocorrencias.gravar(o);
+        self.avisar_ocorrencia_por_email(o);
+        if let Err(PhxError::Io(io)) = gravou {
             self.evento_de_disco(
                 crate::saude_do_disco::classificar(&io),
                 crate::ocorrencias::NOME_DO_ARQUIVO,

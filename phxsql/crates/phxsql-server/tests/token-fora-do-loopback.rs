@@ -285,6 +285,41 @@ fn do_loopback_o_desafio_e_o_login_entram_e_o_id_gira() {
     assert!(!sessao_de(&r).is_empty(), "{}", r.escrever());
 }
 
+/// O id de sessao e a credencial do `X-Sessao`, e a chave da atividade web
+/// sai no `telemetria` e no `aquario_retrato` (que quem so monitora le): ela
+/// e o RESUMO da sessao, nunca o id. Achado exercitando a F9 do pedido 495 --
+/// a ocorrencia gravava `"tarefa":"web:<id>"`.
+///
+/// Vermelho medido: com `format!("web:{id_sessao}")` de volta no
+/// `servico_web_01.rs`, o id aparece nas duas respostas.
+#[test]
+fn o_id_da_sessao_nao_sai_como_chave_da_atividade() {
+    let d = DirTemp::novo("token-chave-da-atividade");
+    let s = subir(&d.0, false, "");
+    let web = comum::porta_real(|| s.porta_web());
+    let d1 = api(loopback(), web, "", &desafio(""));
+    let l = api(loopback(), web, &sessao_de(&d1), &login_por_prova(&d1, ""));
+    let id = sessao_de(&l);
+    assert!(!id.is_empty(), "{}", l.escrever());
+    for op in ["telemetria", "aquario_retrato"] {
+        let r = api(
+            loopback(),
+            web,
+            &id,
+            &format!(r#"{{"token":"{TOKEN}","op":"{op}"}}"#),
+        );
+        assert!(r.booleano_ou("ok", false), "{op}: {}", r.escrever());
+        // So o `resultado`: o envelope da resposta HTTP devolve o id ao
+        // PROPRIO dono no campo `sessao`, e isso e o protocolo da tela.
+        let texto = r.campo("resultado").map(Json::escrever).unwrap_or_default();
+        assert!(
+            texto.contains("web:"),
+            "{op}: a atividade web sumiu: {texto}"
+        );
+        assert!(!texto.contains(&id), "{op}: o id da sessao saiu: {texto}");
+    }
+}
+
 /// O escape do 667 abre a emissao do id tambem: um escape so.
 #[test]
 fn com_o_escape_escrito_o_id_sai_de_fora() {

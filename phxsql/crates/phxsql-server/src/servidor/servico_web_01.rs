@@ -1469,10 +1469,17 @@ impl Servidor {
         // nasce e morre a cada volta da tela. Sem sessao -- o login e o
         // `saude` --, a chave e o IP, que e o dono que existe naquele
         // instante.
+        //
+        // A chave e o RESUMO da sessao, e nunca o id dela: o id e a
+        // credencial do `X-Sessao`, e a chave da atividade sai no `telemetria`,
+        // no `aquario_retrato` (que quem so MONITORA le), no `aquario.log` e
+        // no `ocorrencias.log`. Com o id cru, a TV levava a sessao do
+        // administrador para casa. Achado exercitando a F9 do 495: a
+        // ocorrencia gravava `"tarefa":"web:<id da sessao>"`.
         let chave_da_atividade = if id_sessao.is_empty() {
             format!("web:{ip}")
         } else {
-            format!("web:{id_sessao}")
+            format!("web:{}", resumo_da_sessao(&id_sessao))
         };
         let atividade = self
             .telemetria
@@ -1693,4 +1700,16 @@ pub(super) fn objeto_do_pedido(corpo: &str, resultado: &Result<Json>) -> Acesso 
         codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
         ..Acesso::default()
     }
+}
+
+/// O nome PUBLICO de uma sessao web: 8 bytes do SHA-256 do id, em hex.
+///
+/// O id da sessao e credencial (o `X-Sessao` que autentica cada clique), e
+/// a chave da atividade e mostrada a quem administra e a quem so monitora.
+/// O resumo continua um por sessao -- a bolha da mesma sessao e a mesma, e o
+/// `telemetria_encerrar` acha a atividade por ele --, mas nao abre porta
+/// nenhuma: do resumo nao se volta ao id.
+pub(super) fn resumo_da_sessao(id_sessao: &str) -> String {
+    let h = phxsql_core::hash::sha256(id_sessao.as_bytes());
+    phxsql_core::hash::para_hex(&h[..8])
 }

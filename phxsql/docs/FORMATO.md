@@ -4921,6 +4921,7 @@ Campo vazio não entra.
 | campo | o que é |
 |---|---|
 | `id` | semeado com o relógio (ms × 1000) e crescente: não se repete entre arranques |
+| `tarefa` | a chave da atividade: `dados:17` (a conexão) ou `web:<16 hex>` — na web, os 8 primeiros bytes do SHA-256 do id da sessão, **nunca o id**, que é a credencial do `X-Sessao` (achado na F9, 09/10/2026: até então a linha gravava o id cru, e o mesmo valor saía no `telemetria` e no `aquario_retrato`) |
 | `alarme` / `gravidade` / `grupo` | o `enum Alarme` do 707 — o tipo da ocorrência é ele |
 | `tabelas` | `[{"database","tabela"}]`: toda tabela que o pedido nomeia, **pela árvore inteira** (o lado B de `juntar`, a lista do `unir`) |
 | `digital` | a digital do SQL (F1), hexadecimal (u64 não cabe num número JSON) |
@@ -4929,3 +4930,10 @@ Campo vazio não entra.
 
 **Silêncio** por (alarme, usuário, IP), 60 s, no máximo 1.024 chaves (acima
 disso, uma coringa por alarme); o calado conta em `caladas` e não vai ao arquivo.
+
+**Quem lê (F9):** só a op `ocorrencias`, com `administrar` na regra do servidor
+(`OPS_DO_SERVIDOR`), pela mesma consulta do `aquario_log` (`desde`, `ate`, `max`
+até 5.000, de trás para a frente pelo rodízio) mais o filtro `alarme` — um nome
+ou uma lista; nome desconhecido é erro. A resposta traz `alarmes` (nome,
+gravidade e grupo de todos, na ordem do `Alarme::TODOS`). Nada se redige na
+leitura: a linha já nasceu redigida.

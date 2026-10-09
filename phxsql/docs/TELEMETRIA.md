@@ -161,8 +161,14 @@ Os números medidos estão na secção 7.
 
 ### 3.1 O identificador é do DONO, não do pedido
 
-`dados:17` é a **conexão** 17 da porta de dados; `web:a1b2c3d4` é a **sessão**
+`dados:17` é a **conexão** 17 da porta de dados; `web:a1b2c3d4…` é a **sessão**
 do navegador. A operação dentro dela troca; a bolha não.
+
+O que vem depois de `web:` é o **resumo** da sessão (8 bytes do SHA-256 do id,
+em hex), e nunca o id: o id é a credencial do `X-Sessao`, e esta chave sai no
+`telemetria`, no `aquario_retrato` — que quem só monitora lê —, no
+`aquario.log` e no `ocorrencias.log`. Até 09/10/2026 era o id cru; achado
+exercitando a F9 do pedido 495 (`testes-web/prova-495-f9-ocorrencias.mjs`).
 
 Se o identificador fosse do pedido, a tela redesenharia bolhas novas duas vezes
 por segundo e ninguém conseguiria clicar em nenhuma. Uma sessão web fechada sai

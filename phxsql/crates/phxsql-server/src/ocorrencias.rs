@@ -32,8 +32,9 @@
 //! O `aquario.log` e lido por quem tem `monitorar` e pela TV, e nunca leva
 //! login nem IP. O `ocorrencias.log` leva os dois, porque e o fato de
 //! seguranca, e por isso so quem ADMINISTRA o le: nasce 0600 pelo motor de
-//! permissao do banco, e nenhuma operacao o devolve antes da F9 (que o poe
-//! atras de `administrar`). Um arquivo so para os dois obrigaria um filtro na
+//! permissao do banco, e so a op `ocorrencias` (F9) o devolve, atras de
+//! `administrar` na regra do SERVIDOR (`OPS_DO_SERVIDOR`, o furo do 756).
+//! Um arquivo so para os dois obrigaria um filtro na
 //! leitura, e o filtro esquecido vazaria o IP.
 //!
 //! O ESCRITOR e o mesmo dos dois (e do `acessos.log`): o
@@ -47,7 +48,7 @@ use std::sync::{Arc, Condvar, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
 use phxsql_core::datahora::instante_iso;
-use phxsql_core::error::Result;
+use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
 
 use crate::aquario::log::LogDoAquario;
@@ -232,13 +233,7 @@ impl Ocorrencia {
             ("quando_ms", Json::de_i64(self.quando_ms)),
             ("id", Json::de_u64(self.id)),
             ("alarme", Json::texto_de(self.alarme.nome())),
-            (
-                "gravidade",
-                Json::texto_de(match self.alarme.gravidade() {
-                    crate::aquario::Gravidade::Vermelho => "vermelho",
-                    crate::aquario::Gravidade::Amarelo => "amarelo",
-                }),
-            ),
+            ("gravidade", Json::texto_de(nome_da_gravidade(self.alarme))),
             ("grupo", Json::texto_de(self.alarme.grupo().nome())),
         ];
         for (nome, valor) in [
@@ -457,6 +452,79 @@ impl Ocorrencias {
     /// falha volta para quem chamou a levar a saude do disco.
     pub fn gravar(&self, o: &Ocorrencia) -> Result<()> {
         self.log.gravar_json(&o.para_json())
+    }
+
+    /// A op `ocorrencias` (pedido 495, F9): o arquivo lido pela MESMA
+    /// consulta do `aquario_log` -- periodo (`desde`/`ate`), `max` --, e o
+    /// filtro `alarme` (um nome, ou uma lista).
+    ///
+    /// # O que volta ja e redigido
+    ///
+    /// Nada se redige aqui: a linha ja nasceu redigida na F2 (o `dados` passou
+    /// pela forma do Profiler antes de existir no disco). Redigir de novo na
+    /// leitura seria a mesma decisao escrita duas vezes, e a segunda copia e
+    /// a que alguem «conserta» sem mexer na primeira.
+    ///
+    /// # Nome de alarme desconhecido e ERRO
+    ///
+    /// E nao «nenhuma linha»: `"alarme":"forca_brutta"` devolvendo vazio diria
+    /// ao administrador que ninguem tentou senha nenhuma.
+    ///
+    /// # A lista dos alarmes vai junto
+    ///
+    /// `alarmes` traz nome, gravidade e grupo de todos, na ordem do
+    /// [`Alarme::TODOS`]: o filtro da tela sai do codigo, e nao de uma lista
+    /// digitada no JavaScript que envelheceria no primeiro alarme novo.
+    pub fn consultar(&self, pedido: &Json) -> Result<Json> {
+        let forma =
+            || PhxError::Tipo("ocorrencias: \"alarme\" e um nome ou uma lista de nomes".into());
+        let nomes: Vec<String> = match pedido.campo("alarme") {
+            None | Some(Json::Nulo) => Vec::new(),
+            Some(Json::Texto(t)) if t.is_empty() => Vec::new(),
+            Some(Json::Texto(t)) => vec![t.clone()],
+            Some(Json::Lista(l)) => l
+                .iter()
+                .map(|v| v.texto().map(String::from).ok_or_else(forma))
+                .collect::<Result<_>>()?,
+            Some(_) => return Err(forma()),
+        };
+        if let Some(errado) = nomes.iter().find(|n| Alarme::de_nome(n).is_none()) {
+            return Err(PhxError::Tipo(format!(
+                "ocorrencias: alarme desconhecido \"{}\"; os que existem: {}",
+                crate::profiler::de_uma_linha(errado, crate::profiler::TETO_DO_CAMPO),
+                Alarme::TODOS.map(Alarme::nome).join(", ")
+            )));
+        }
+        let mut r = self
+            .log
+            .consultar_como("ocorrencias", NOME_DO_ARQUIVO, pedido, |j| {
+                nomes.is_empty() || nomes.iter().any(|n| j.texto_ou("alarme", "") == n)
+            })?;
+        r.definir(
+            "alarmes",
+            Json::Lista(
+                Alarme::TODOS
+                    .iter()
+                    .map(|a| {
+                        Json::objeto(vec![
+                            ("nome", Json::texto_de(a.nome())),
+                            ("gravidade", Json::texto_de(nome_da_gravidade(*a))),
+                            ("grupo", Json::texto_de(a.grupo().nome())),
+                        ])
+                    })
+                    .collect(),
+            ),
+        );
+        Ok(r)
+    }
+}
+
+/// O nome da gravidade como a linha do arquivo o grava -- um lugar so, para
+/// a linha e a lista do filtro nunca discordarem.
+pub fn nome_da_gravidade(a: Alarme) -> &'static str {
+    match a.gravidade() {
+        crate::aquario::Gravidade::Vermelho => "vermelho",
+        crate::aquario::Gravidade::Amarelo => "amarelo",
     }
 }
 

@@ -134,6 +134,8 @@
 #iaExecutar
 #iaIr
 #iaNaoEnviar
+#iaOcAprovar
+#iaOcNaoEnviar
 #iaRemover
 #iaSalvar
 #iaTestar
@@ -152,6 +154,7 @@
 #nt_addIdx
 #nt_criar
 #nt_voltar
+#ocFiltrar
 #opBackup
 #opConferir
 #opRestaurar
@@ -208,6 +211,7 @@
 .botao
 .bt-editar
 .bt-editar-usuario
+.bt-explicar-oc
 .bt-gt
 .bt-guardar
 .bt-job
@@ -346,6 +350,9 @@
 [data-i="8"]
 [data-i="9"]
 [data-i]
+[data-id="1791553835832000"]
+[data-id="1791553835832001"]
+[data-id]
 [data-idi="Frances"]
 [data-idi]
 [data-ip="127.0.0.2"]
@@ -362,8 +369,8 @@
 [data-kill="20"]
 [data-kill="4"]
 [data-kill]
-[data-killweb="084a7153"]
-[data-killweb="786f0a98"]
+[data-killweb="0fe9ee17"]
+[data-killweb="910e578c"]
 [data-killweb]
 [data-login="fichausuc"]
 [data-login="fichausue"]
@@ -400,7 +407,7 @@
 [data-op="7"]
 [data-op="8"]
 [data-op]
-[data-origem="/tmp/phx-bateria-ozzzCo/backups"]
+[data-origem="/tmp/phx-bateria-5YHplp/backups"]
 [data-origem]
 [data-p="1"]
 [data-p="2"]
@@ -442,8 +449,8 @@
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
-[data-uuid="01a120db-af03-7021-a68c-d9fea9cf8d97"]
-[data-uuid="01a120df-f4ba-7197-a8c5-aa5f7878eca6"]
+[data-uuid="01a120f2-9722-7714-9eef-6a7602a6136f"]
+[data-uuid="01a120f6-b352-75fb-9cbd-d789cea30b34"]
 [data-uuid]
 [data-x="0"]
 [data-x="1"]

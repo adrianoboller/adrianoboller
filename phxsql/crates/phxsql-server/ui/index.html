@@ -2924,6 +2924,7 @@ async function montarArvore(abrirPainel = true) {
   for (const [chave, rotulo, ic, ch] of
        [["usuarios","Usuários","◉","tela.usuarios"],
         ["acessos","Acessos","◈","tela.acessos"],
+        ["ocorrencias","Ocorrências","⚠","tela.ocorrencias"],
         ["bloqueios","Bloqueios","⛔","tela.bloqueios"],
         ["idiomas","Idiomas","⚑","tela.idiomas"]])
     html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${
@@ -4188,6 +4189,106 @@ function aindaNoPainel(v) { return v === painelGeracao; }
  * a conferir. Prova: `testes-web/casos/38-pintura-tardia.mjs`. */
 function vezDoPainel() { return painelGeracao; }
 
+/** O painel das OCORRENCIAS (pedido 495, F9): a lista do `ocorrencias.log`
+ *  pela op `ocorrencias`, que so quem administra o servidor le.
+ *
+ *  O filtro e do SERVIDOR (periodo, alarme, maximo), e nao da grade: a grade
+ *  so enxerga o que veio, e «as 200 ultimas de forca bruta» sao outras 200
+ *  que «as de forca bruta entre as 200 ultimas». A lista dos alarmes do
+ *  filtro chega na resposta (`alarmes`), e nao digitada aqui.
+ *
+ *  O «explicar» de cada linha e da Claude, PELO NAVEGADOR (`PhxIA.
+ *  explicarOcorrencia`): a chave nunca passa pelo servidor do PhxSql, e o
+ *  corpo so sai com o clique sobre ELE. Sem a integracao ligada o botao nem
+ *  e desenhado -- o comportamento velho, como na tela de Query. */
+async function telaOcorrencias(p, aindaEMinha) {
+  const PERIODOS = [
+    ["h", 3600e3, () => txt("tela.oc_p_hora", "última hora")],
+    ["d", 86400e3, () => txt("tela.oc_p_dia", "últimas 24 h")],
+    ["s", 7 * 86400e3, () => txt("tela.oc_p_semana", "últimos 7 dias")],
+    ["t", 0, () => txt("tela.oc_p_tudo", "tudo")],
+  ];
+  const filtro = est.filtroOcorrencias ||= { periodo: "d", alarme: "", max: 200 };
+  const pedido = { max: filtro.max };
+  const janela = PERIODOS.find(x => x[0] === filtro.periodo);
+  if (janela && janela[1]) pedido.desde = Date.now() - janela[1];
+  if (filtro.alarme) pedido.alarme = filtro.alarme;
+  const r = await api("ocorrencias", pedido);
+  if (!aindaEMinha()) return;
+  const motivo = nome => {
+    const f = window.PhxAquario && PhxAquario.MOTIVOS["aquario.motivo." + nome];
+    return f ? f() : nome;
+  };
+  const ia = !!(window.PhxIA && PhxIA.ligada());
+  const opt = (v, rot, sel) =>
+    `<option value="${esc(v)}"${sel ? " selected" : ""}>${esc(rot)}</option>`;
+  p.innerHTML = `<div class="ferramentas">
+      <label for="ocPeriodo">${esc(txt("tela.oc_periodo", "Período"))}</label>
+      <select id="ocPeriodo" style="width:auto">${PERIODOS.map(([v, , rot]) =>
+        opt(v, rot(), v === filtro.periodo)).join("")}</select>
+      <label for="ocAlarme">${esc(txt("tela.oc_alarme", "Alarme"))}</label>
+      <select id="ocAlarme" style="width:auto;max-width:22rem">${
+        opt("", txt("tela.oc_todos", "todos"), !filtro.alarme)}${
+        (r.alarmes || []).map(a => opt(a.nome, motivo(a.nome), a.nome === filtro.alarme)).join("")}</select>
+      <label for="ocMax">${esc(txt("tela.oc_max", "Máximo"))}</label>
+      <input id="ocMax" type="number" min="1" max="5000" value="${esc(String(filtro.max))}" style="width:6rem">
+      <button class="botao consultar" id="ocFiltrar">${esc(txt("tela.oc_filtrar", "Filtrar"))}</button>
+      <span class="conta">${esc(preencher(txt("tela.oc_contagem", "{n} ocorrência(s)"),
+        { n: (r.linhas || []).length }))}</span>
+    </div>
+    ${r.truncado ? `<div class="aviso">${esc(txt("tela.oc_truncado",
+      "Há mais ocorrências do que as mostradas: aumente o máximo ou estreite o período."))}</div>` : ""}
+    ${ia ? "" : `<div class="nota">${esc(txt("tela.oc_sem_ia",
+      "Para pedir à Claude que explique uma ocorrência, ligue a integração em Configurações → Integração com a Claude. A chave fica só neste navegador."))}</div>`}
+    <div id="ocExplicacao"></div>
+    <div id="gradeOcorrencias"></div>`;
+  const linhas = (r.linhas || []).slice().reverse();
+  const colunas = [
+    { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
+    { campo:"alarme", titulo:txt("tela.oc_alarme","Alarme"),
+      formato:v => `${esc(motivo(v))} <code>${esc(v)}</code>` },
+    { campo:"gravidade", titulo:txt("tela.oc_gravidade","gravidade"),
+      formato:v => v === "vermelho"
+        ? `<span class="pino mal">${esc(txt("tela.aq_cor_vermelho","alarme"))}</span>`
+        : `<span class="pino aviso">${esc(txt("tela.aq_cor_amarelo","aviso"))}</span>` },
+    { campo:"usuario", titulo:txt("tela.col_usuario","usuário"), formato:v => esc(v || "—") },
+    { campo:"ip", titulo:txt("tela.col_ip","ip"), formato:v => esc(v || "—") },
+    { campo:"op", titulo:txt("tela.col_operacao","operação"), formato:v => esc(v || "—") },
+    { campo:"database", titulo:txt("tela.col_database","database"), formato:v => esc(v || "—") },
+    { campo:"tabela", titulo:txt("tela.col_tabela","tabela"), formato:v => esc(v || "—") },
+    // O `dados` ja chega redigido (F2): a FORMA do pedido, com `?` no lugar
+    // de todo valor. Mostra-se como veio -- texto ou JSON --, sem cortar.
+    { campo:"dados", titulo:txt("tela.oc_forma","forma do pedido"), ordenavel:false,
+      formato:v => v == null ? "—"
+        : `<code>${esc(typeof v === "string" ? v : JSON.stringify(v))}</code>` },
+  ];
+  if (ia) colunas.unshift({ campo:"__acao", titulo:"", ordenavel:false, filtravel:false, largura:90,
+    formato:(_, o) => `<button class="botao mini consultar bt-explicar-oc" data-id="${esc(String(o.id))}">${
+      esc(txt("tela.oc_explicar","explicar"))}</button>` });
+  PhxGrid.criar("#gradeOcorrencias", {
+    agrupavel: true, buscaGlobal: true, filterRow: true,
+    lembrar: "admocorrencias",
+    nomeVista: "adm-ocorrencias",
+    colunas,
+    dados: linhas,
+    pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+  });
+  // Delegacao, e nao `onclick` no botao: o corpo da PhxGrid e reescrito a
+  // cada ordenacao, filtro e virada de pagina.
+  $("#gradeOcorrencias").addEventListener("click", ev => {
+    const b = ev.target.closest(".bt-explicar-oc");
+    if (!b) return;
+    const o = linhas.find(x => String(x.id) === b.dataset.id);
+    if (o) PhxIA.explicarOcorrencia($("#ocExplicacao"), o);
+  });
+  $("#ocFiltrar").onclick = () => {
+    filtro.periodo = $("#ocPeriodo").value;
+    filtro.alarme = $("#ocAlarme").value;
+    filtro.max = Math.min(5000, Math.max(1, +$("#ocMax").value || 200));
+    abrirAdmin("ocorrencias").catch(e => avisar(`${e}`, true));
+  };
+}
+
 async function abrirAdmin(qual) {
   const minhaVez = tomarPainel();
   const aindaEMinha = () => aindaNoPainel(minhaVez);
@@ -4302,6 +4403,11 @@ async function abrirAdmin(qual) {
         dados: a.acessos,
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
+    } else if (qual === "ocorrencias") {
+      $("#titulo").textContent = txt("tela.ocorrencias", "Ocorrências");
+      $("#subtitulo").textContent = txt("tela.oc_sub",
+        "ocorrencias.log · cada alarme com quando, quem e de onde, já redigido");
+      await telaOcorrencias(p, aindaEMinha);
     } else if (qual === "idiomas") {
       $("#titulo").textContent = txt("tela.idiomas", "Idiomas");
       $("#subtitulo").textContent = txt("tela.idi_sub",

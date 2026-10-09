@@ -2121,6 +2121,10 @@ impl Servidor {
             "aquario_log" => self.op_aquario_log(p, sessao),
             "aquario_contagens" => self.op_aquario_contagens(p, sessao),
             "aquario_retrato" => self.op_aquario_retrato(p, sessao),
+            // Sem portao proprio, de proposito: esta em `OPS_DO_SERVIDOR`, e
+            // o portao UNICO ja pergunta `administrar` na regra do servidor,
+            // venha o `"database"` que vier (o furo do 756).
+            "ocorrencias" => self.ocorrencias.consultar(p),
             "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p, sessao),
             "checksum" | "soma_de_verificacao" => self.op_checksum(p, sessao),
             "exportar" | "export" => self.op_exportar(p, sessao),

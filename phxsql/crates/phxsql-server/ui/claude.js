@@ -1604,8 +1604,120 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     }
   }
 
+  /* ========================================= explicar uma ocorrencia (495, F9)
+
+     A IA fica SO na tela -- decisao do dono, 09/10/2026: o servidor detecta,
+     registra e avisa; quem explica e a Claude, chamada DAQUI, com a chave de
+     quem usa e o corpo que essa pessoa aprovou. Nada de IA autonoma no
+     servidor, e nada sai sem o clique.
+
+     O que SOBE e uma lista de PERMISSAO, e nao de recusa: campo novo que a
+     ocorrencia ganhar amanha nao sobe ate alguem o pôr aqui. Ficam de fora,
+     de proposito:
+       - `usuario` e `ip`: dado pessoal de quem disparou o alarme, e a
+         explicacao nao depende de quem foi;
+       - `tarefa`, `id`, `quando_ms`: so servem para achar a linha AQUI.
+     E NENHUMA linha de dado: nao ha `montarContexto` nem leitura de tabela
+     neste caminho. O `dados` que sobe ja nasceu redigido no servidor (F2):
+     a FORMA do pedido, com `?` no lugar de todo literal. */
+  const CAMPOS_DA_OCORRENCIA = ["quando", "alarme", "gravidade", "grupo", "op",
+    "database", "tabela", "tabelas", "digital", "dados"];
+
+  const RECEITA_OCORRENCIA = {
+    sistema: `Você explica ocorrências do PhxSql, um motor de dados próprio, para
+o administrador do servidor. Responda em português do Brasil, em prosa curta.
+
+Uma ocorrência é um alarme que o servidor registrou sozinho, por regra ou por
+linha de base. O campo "dados", quando existe, é a FORMA do pedido: todo valor
+literal foi trocado por "?" antes de a ocorrência existir — não tente adivinhar
+o valor.
+
+Diga, nesta ordem: o que o alarme significa; as causas prováveis, da mais comum
+para a menos; o que conferir primeiro no servidor; e o que NÃO concluir só com
+esta linha. O servidor detecta e avisa — ele não bloqueia nada por causa deste
+alarme, e você também não recomenda ação automática.
+
+Termine SEMPRE com a linha:
+"Isto é hipótese a CONFERIR, não diagnóstico."`,
+  };
+
+  /** O evento que sobe: so os campos da lista, e o motivo pela CHAVE do
+   *  alarme (o rotulo ja traduzido que a pessoa le na tela). */
+  function eventoDaOcorrencia(o) {
+    const ev = {};
+    for (const k of CAMPOS_DA_OCORRENCIA)
+      if (o && o[k] !== undefined && o[k] !== null && o[k] !== "") ev[k] = o[k];
+    const f = window.PhxAquario && o && PhxAquario.MOTIVOS["aquario.motivo." + o.alarme];
+    if (f) ev.motivo = f();
+    return ev;
+  }
+
+  /** Mostra o corpo EXATO que subiria, e so o envia no clique sobre ele --
+   *  o mesmo contrato do «Perguntar» da Query (339(a)): o que se aprova e o
+   *  que sai, byte a byte, pelo `corpoAprovado` do `perguntar`. */
+  async function explicarOcorrencia(onde, o) {
+    if (!ligada()) {
+      onde.innerHTML = `<div class="aviso mal">${E(txt("tela.oc_sem_ia",
+        "Para pedir à Claude que explique uma ocorrência, ligue a integração em Configurações → Integração com a Claude. A chave fica só neste navegador."))}</div>`;
+      return;
+    }
+    const c = cfg();
+    const pergunta = "Explique esta ocorrência do PhxSql:\n"
+      + JSON.stringify(eventoDaOcorrencia(o), null, 1);
+    const aprovado = JSON.stringify(corpo(RECEITA_OCORRENCIA, pergunta, null,
+                                          c.modelo || MODELO_PADRAO));
+    const cab = Object.assign({}, cabecalhos(c.chave));
+    cab["x-api-key"] = fim(c.chave);
+    onde.innerHTML = `
+      <details class="nota" open>
+        <summary>${marcado(txt("tela.oc_vai_subir",
+          "**O que vai subir para a Anthropic** — a ocorrência, sem login, sem IP e sem linha de dado."))}</summary>
+        <p class="leg">POST <code>${E(c.endpoint || ENDPOINT_OFICIAL)}</code></p>
+        <pre class="dado" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(JSON.stringify(cab, null, 1))}</pre>
+        <pre class="dado" id="iaOcCorpo" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(JSON.stringify(JSON.parse(aprovado), null, 1))}</pre>
+      </details>
+      <div class="aviso" id="iaOcAprovacao">${marcado(txt("tela.oc_aprovar_pede",
+        "**Nada saiu ainda.** Confira acima o que vai para a Anthropic. Só o clique em «Enviar isto» manda, e manda exatamente o que está mostrado."))}
+        <div class="dbl-titulo" style="margin-top:10px">
+          <button class="botao incluir" id="iaOcAprovar">${E(txt("tela.ia_aprovar", "Enviar isto à Anthropic"))}</button>
+          <button class="botao secundario" id="iaOcNaoEnviar">${E(txt("tela.ia_nao_enviar", "Não enviar"))}</button>
+        </div></div>
+      <div id="iaOcSaida"></div>`;
+    const aprovou = await new Promise(fimDaEspera => {
+      onde.querySelector("#iaOcAprovar").onclick = () => fimDaEspera(true);
+      onde.querySelector("#iaOcNaoEnviar").onclick = () => fimDaEspera(false);
+    });
+    const saida = onde.querySelector("#iaOcSaida");
+    onde.querySelector("#iaOcAprovacao").remove();
+    if (!aprovou) {
+      saida.innerHTML = `<div class="aviso" id="iaOcNaoEnviado">${E(txt("tela.ia_nao_enviado",
+        "Nada foi enviado. O que estava no painel continua só nesta tela."))}</div>`;
+      return;
+    }
+    saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3>
+      <pre class="dado" id="iaOcTexto" style="white-space:pre-wrap;word-break:break-word">…</pre>
+      <p class="leg" id="iaOcTokens"></p>`;
+    const alvo = saida.querySelector("#iaOcTexto");
+    const tok = saida.querySelector("#iaOcTokens");
+    try {
+      const r = await perguntar(RECEITA_OCORRENCIA, pergunta, null,
+        (parcial, uso) => {
+          alvo.textContent = parcial;
+          tok.innerHTML = E(preencher(txt("tela.ia_tokens",
+            "entrada {entrada} · saída {saida} token(s)"),
+            { entrada: uso.entrada, saida: uso.saida }));
+        }, aprovado);
+      alvo.textContent = r.texto;
+      tok.innerHTML = marcado(txt("tela.ia_tokens_fim",
+        "entrada **{entrada}** · saída **{saida}** token(s) — o custo é da sua conta"),
+        { entrada: r.uso.entrada, saida: r.uso.saida });
+    } catch (err) {
+      saida.innerHTML = `<div class="aviso mal">${E(err.message || String(err))}</div>`;
+    }
+  }
+
   return {
-    telaConfig, botaoDaConsulta, ligada,
+    telaConfig, botaoDaConsulta, ligada, explicarOcorrencia,
     // Expostos para o exercício automatizado poder olhar por dentro sem
     // depender do desenho da tela.
     // `_gravar` existe porque a chave saiu de todo armazenamento (339(a)):
@@ -1613,6 +1725,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     // MESMA funcao que o botao Salvar chama, e nao por um atalho.
     _cfg: cfg, _gravar: gravar, _corpo: corpo, _cabecalhos: cabecalhos, _limparSql: limparSql,
     _redigir: redigir, _conferirTipo: conferirTipo, _analisarPlano: analisarPlano,
-    _conferirPlano: conferirPlano, ENDPOINT_OFICIAL, CABECALHO_NAVEGADOR,
+    _conferirPlano: conferirPlano, _eventoDaOcorrencia: eventoDaOcorrencia,
+    ENDPOINT_OFICIAL, CABECALHO_NAVEGADOR,
   };
 })();

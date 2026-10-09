@@ -96,32 +96,82 @@ impl Servidor {
     /// escrito: uma segunda investida do MESMO IP dentro da janela nao manda
     /// segundo e-mail; ela continua na blacklist e no `acessos.log`.
     fn avisar_violacao_por_email(&self, b: &crate::blacklist::Bloqueio) {
-        let email = self.config.alertas.email.clone();
+        self.avisar_seguranca_por_email(&format!("grave:{}", b.ip), || {
+            (
+                format!("PhxSql: IP {} bloqueado ({})", b.ip, b.motivo),
+                Self::texto_da_violacao(b),
+            )
+        });
+    }
+
+    /// O aviso de uma OCORRENCIA (pedido 495, F9), pelo mesmo interruptor e
+    /// pelo mesmo motor do aviso de violacao.
+    ///
+    /// # So o vermelho
+    ///
+    /// O amarelo e, por definicao do alarme, o motor fazendo o trabalho dele
+    /// -- a integridade que recusou, a consulta acima do habitual, a previsao
+    /// a mais de duas horas. Um e-mail por cada um faria o administrador
+    /// aprender a apagar os e-mails, e o vermelho chegaria a uma caixa que
+    /// ninguem le. O amarelo continua no arquivo e no painel.
+    ///
+    /// # A chave do silencio e o ALARME, e nao o IP
+    ///
+    /// Quem varia o IP para forcar a senha escolheria quantos e-mails o
+    /// administrador recebe. Um por alarme por janela: o resto conta no
+    /// arquivo, que e onde a contagem mora.
+    pub(super) fn avisar_ocorrencia_por_email(&self, o: &crate::ocorrencias::Ocorrencia) {
+        if o.alarme.gravidade() != crate::aquario::Gravidade::Vermelho {
+            return;
+        }
+        self.avisar_seguranca_por_email(&format!("ocorrencia:{}", o.alarme.nome()), || {
+            (
+                format!(
+                    "PhxSql: ocorrência {} ({})",
+                    o.alarme.nome(),
+                    o.alarme.grupo().nome()
+                ),
+                Self::texto_da_ocorrencia(o),
+            )
+        });
+    }
+
+    /// O motor UNICO dos avisos de seguranca por e-mail: o interruptor, o
+    /// silencio e a thread. A violacao grave e a ocorrencia chegam por aqui
+    /// -- o interruptor escrito duas vezes seria o que alguem esquece de
+    /// desligar num dos dois.
+    ///
+    /// O portao vem ANTES de montar qualquer texto (`montar` so roda depois
+    /// dele): interruptor desligado custa duas leituras de booleano.
+    fn avisar_seguranca_por_email(&self, chave: &str, montar: impl FnOnce() -> (String, String)) {
+        let email = &self.config.alertas.email;
         if !email.ligado || !email.avisar_seguranca {
             return;
         }
+        let email = email.clone();
         let agora = crate::agora_ms();
         let silencio = self.config.alertas.repetir_horas as i64 * 3_600_000;
         {
             let Ok(mut avisados) = self.avisos_de_seguranca.lock() else {
                 return;
             };
-            let chave = format!("grave:{}", b.ip);
-            if !crate::jobs::pode_avisar(&mut avisados, &chave, agora, silencio) {
+            if !crate::jobs::pode_avisar(&mut avisados, chave, agora, silencio) {
                 return;
             }
         }
-        let assunto = format!("PhxSql: IP {} bloqueado ({})", b.ip, b.motivo);
-        let corpo = Self::texto_da_violacao(b);
+        let (assunto, corpo) = montar();
         // Linha de execucao propria pelo mesmo motivo do aviso de job, com um
         // peso a mais: quem dispara aqui e o portao de politica, no caminho de
         // um pedido da rede -- um rele fora do ar seguraria a RESPOSTA de quem
-        // pediu pelo `timeout_s` inteiro.
+        // pediu pelo `timeout_s` inteiro. E a ocorrencia chega pelo carteiro,
+        // que nao pode parar a fila do `ocorrencias.log` esperando o rele.
         self.telemetria.subir(
             "aviso-seguranca",
-            "entrega UM e-mail de violacao grave e sai; existe em thread \
-             propria porque quem dispara e o portao de politica, no caminho \
-             de um pedido da rede -- e um rele fora do ar seguraria a resposta",
+            "entrega UM e-mail de seguranca (violacao grave ou ocorrencia \
+             vermelha) e sai; existe em thread propria porque quem dispara e \
+             o portao de politica, no caminho de um pedido da rede, ou o \
+             carteiro das ocorrencias -- e um rele fora do ar seguraria a \
+             resposta, ou a fila",
             "servico",
             agora,
             move |fio| {
@@ -163,6 +213,37 @@ impl Servidor {
         t.push_str("Para soltar: phxsqld --desbloquear ");
         t.push_str(&b.ip);
         t.push('\n');
+        t.push_str(&format!("Servidor PhxSql {VERSAO}\n"));
+        t
+    }
+
+    /// O corpo do e-mail de uma ocorrencia: o que, quando, quem e onde -- e
+    /// NADA do `dados`. Ele ja vem redigido, mas o e-mail atravessa reles que
+    /// ninguem aqui controla; quem quiser a forma do pedido abre o painel
+    /// Ocorrencias, atras de `administrar`, pelo `id`.
+    fn texto_da_ocorrencia(o: &crate::ocorrencias::Ocorrencia) -> String {
+        let linha = |s: &str| crate::profiler::de_uma_linha(s, crate::profiler::TETO_DO_CAMPO);
+        let mut t = String::new();
+        t.push_str("O PhxSql registrou uma ocorrência grave.\n\n");
+        t.push_str(&format!("  alarme      {}\n", o.alarme.nome()));
+        t.push_str(&format!("  grupo       {}\n", o.alarme.grupo().nome()));
+        t.push_str(&format!(
+            "  quando      {}\n",
+            phxsql_core::datahora::instante_iso(o.quando_ms)
+        ));
+        for (rotulo, valor) in [
+            ("usuário    ", &o.usuario),
+            ("endereço   ", &o.ip),
+            ("operação   ", &o.op),
+            ("database   ", &o.database),
+            ("tabela     ", &o.tabela),
+        ] {
+            if !valor.is_empty() {
+                t.push_str(&format!("  {rotulo} {}\n", linha(valor)));
+            }
+        }
+        t.push_str(&format!("  id          {}\n\n", o.id));
+        t.push_str("O detalhe redigido está no painel Ocorrências (Administração), pelo id.\n");
         t.push_str(&format!("Servidor PhxSql {VERSAO}\n"));
         t
     }

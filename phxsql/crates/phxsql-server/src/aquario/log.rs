@@ -454,20 +454,38 @@ impl LogDoAquario {
     /// por arquivo isso seria o parse de dezenas de milhares de linhas por
     /// clique (§4.3).
     pub fn consultar(&self, pedido: &Json) -> Result<Json> {
-        let desde = inteiro_opcional(pedido, "desde")?;
-        let ate = inteiro_opcional(pedido, "ate")?;
+        self.consultar_como("aquario_log", NOME_DO_ARQUIVO, pedido, |_| true)
+    }
+
+    /// A consulta de qualquer arquivo deste escritor: o `aquario_log` e a
+    /// `ocorrencias` (495, F9) sao a MESMA leitura -- periodo, `max`, de tras
+    /// para a frente, rodizio --, e duas copias divergiriam no dia em que uma
+    /// aprendesse a pular um lixo que a outra nao pula. O que muda entre as
+    /// duas e o nome que o erro diz e o `quer`, o filtro por linha.
+    ///
+    /// O `quer` roda ANTES de contar o `max`: «as 50 ultimas de forca bruta»
+    /// sao 50 de forca bruta, e nao as de forca bruta entre as 50 ultimas.
+    pub fn consultar_como(
+        &self,
+        op: &str,
+        arquivo: &str,
+        pedido: &Json,
+        quer: impl Fn(&Json) -> bool,
+    ) -> Result<Json> {
+        let desde = inteiro_opcional(op, pedido, "desde")?;
+        let ate = inteiro_opcional(op, pedido, "ate")?;
         if let (Some(d), Some(a)) = (desde, ate) {
             if d > a {
                 return Err(PhxError::Tipo(format!(
-                    "aquario_log: \"desde\" ({d}) depois de \"ate\" ({a})"
+                    "{op}: \"desde\" ({d}) depois de \"ate\" ({a})"
                 )));
             }
         }
-        let max = match inteiro_opcional(pedido, "max")? {
+        let max = match inteiro_opcional(op, pedido, "max")? {
             None => MAX_PADRAO,
             Some(m) if m < 1 => {
                 return Err(PhxError::Tipo(format!(
-                    "aquario_log: \"max\" tem de ser ao menos 1, veio {m}"
+                    "{op}: \"max\" tem de ser ao menos 1, veio {m}"
                 )))
             }
             Some(m) => (m as u64).min(MAX_TETO as u64) as usize,
@@ -478,7 +496,7 @@ impl LogDoAquario {
                 .map(|f| format!(" ({f})"))
                 .unwrap_or_default();
             return Err(PhxError::NaoEncontrado(format!(
-                "aquario_log: o aquario.log ainda nao esta aberto neste servidor{porque}"
+                "{op}: o {arquivo} ainda nao esta aberto neste servidor{porque}"
             )));
         };
 
@@ -488,7 +506,7 @@ impl LogDoAquario {
             if desde.is_some_and(|d| q < d) {
                 return false;
             }
-            if ate.is_some_and(|a| q > a) {
+            if ate.is_some_and(|a| q > a) || !quer(&j) {
                 return true;
             }
             if linhas.len() == max {
@@ -569,12 +587,12 @@ fn percorrer(caminho: &Path, mut cada: impl FnMut(Json, i64) -> bool) -> Result<
 /// Um inteiro opcional do pedido. Presente com outro tipo e ERRO, e nao
 /// ausente: `"desde":"ontem"` tratado como sem filtro devolveria o arquivo
 /// inteiro a quem pediu so um pedaco.
-fn inteiro_opcional(p: &Json, campo: &str) -> Result<Option<i64>> {
+fn inteiro_opcional(op: &str, p: &Json, campo: &str) -> Result<Option<i64>> {
     match p.campo(campo) {
         None | Some(Json::Nulo) => Ok(None),
         Some(v) => v.inteiro().map(Some).ok_or_else(|| {
             PhxError::Tipo(format!(
-                "aquario_log: \"{campo}\" e um inteiro (ms desde a epoca, ou a contagem)"
+                "{op}: \"{campo}\" e um inteiro (ms desde a epoca, ou a contagem)"
             ))
         }),
     }

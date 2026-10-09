@@ -407,6 +407,11 @@ impl Atividade {
             // dentro (`portao_do_aquario`) na regra do servidor, e nao na base
             // que o pedido inventasse.
             "aquario_log" | "aquario_contagens" | "aquario_retrato" => Atividade::Monitorar,
+            // As ocorrencias (pedido 495, F9) levam o login e o IP de quem
+            // disparou o alarme -- e o fato de SEGURANCA, que o aquario nao
+            // leva de proposito. Ver o login dos outros e poder de quem
+            // administra (o mesmo do `acessos`), e nao de quem so monitora.
+            "ocorrencias" => Atividade::Administrar,
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.
@@ -562,6 +567,8 @@ pub const OPS_DO_SERVIDOR: &[&str] = &[
     "profiler_limpar",
     // O movimento de todo mundo, e a porta da rede.
     "acessos",
+    // O fato de seguranca de todas as bases, com login e IP (495, F9).
+    "ocorrencias",
     "ips",
     "estatisticas",
     "estatisticas_uso",

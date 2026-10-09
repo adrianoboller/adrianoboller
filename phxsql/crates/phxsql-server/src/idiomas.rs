@@ -783,6 +783,30 @@ pub const FABRICA_TELA: &[TextoDeFabrica] = &[
     texto!("tela.tl_th_viva_ha", "viva há", "vivante depuis", "alive for", "viva da", "lebt seit", "viva hace"),
     texto!("tela.tl_th_encerrada", "encerrada", "arrêtée", "stopped", "chiusa", "beendet", "finalizada"),
 
+    // ============================================ as ocorrencias (pedido 495, F9)
+    // O nome do alarme vem pela CHAVE (`aquario.motivo.*`, a tabela `MOTIVOS`
+    // do `aquario.js`); aqui so o que a tela das ocorrencias e o «explicar»
+    // escrevem por conta.
+    texto!("tela.ocorrencias", "Ocorrências", "Incidents", "Incidents", "Eventi", "Vorfälle", "Incidencias"),
+    texto!("tela.oc_sub", "ocorrencias.log · cada alarme com quando, quem e de onde, já redigido", "ocorrencias.log · chaque alarme avec quand, qui et d'où, déjà expurgé", "ocorrencias.log · each alarm with when, who and from where, already redacted", "ocorrencias.log · ogni allarme con quando, chi e da dove, già oscurato", "ocorrencias.log · jeder Alarm mit wann, wer und woher, bereits geschwärzt", "ocorrencias.log · cada alarma con cuándo, quién y desde dónde, ya redactada"),
+    texto!("tela.oc_periodo", "Período", "Période", "Period", "Periodo", "Zeitraum", "Período"),
+    texto!("tela.oc_p_hora", "última hora", "dernière heure", "last hour", "ultima ora", "letzte Stunde", "última hora"),
+    texto!("tela.oc_p_dia", "últimas 24 h", "dernières 24 h", "last 24 h", "ultime 24 h", "letzte 24 h", "últimas 24 h"),
+    texto!("tela.oc_p_semana", "últimos 7 dias", "7 derniers jours", "last 7 days", "ultimi 7 giorni", "letzte 7 Tage", "últimos 7 días"),
+    texto!("tela.oc_p_tudo", "tudo", "tout", "all", "tutto", "alles", "todo"),
+    texto!("tela.oc_alarme", "Alarme", "Alarme", "Alarm", "Allarme", "Alarm", "Alarma"),
+    texto!("tela.oc_todos", "todos", "tous", "all", "tutti", "alle", "todos"),
+    texto!("tela.oc_max", "Máximo", "Maximum", "Maximum", "Massimo", "Maximum", "Máximo"),
+    texto!("tela.oc_filtrar", "Filtrar", "Filtrer", "Filter", "Filtra", "Filtern", "Filtrar"),
+    texto!("tela.oc_contagem", "{n} ocorrência(s)", "{n} incident(s)", "{n} incident(s)", "{n} evento/i", "{n} Vorfall/Vorfälle", "{n} incidencia(s)"),
+    texto!("tela.oc_truncado", "Há mais ocorrências do que as mostradas: aumente o máximo ou estreite o período.", "Il y a plus d'incidents que ceux affichés : augmentez le maximum ou réduisez la période.", "There are more incidents than shown: raise the maximum or narrow the period.", "Ci sono più eventi di quelli mostrati: aumenta il massimo o restringi il periodo.", "Es gibt mehr Vorfälle als angezeigt: Maximum erhöhen oder Zeitraum eingrenzen.", "Hay más incidencias de las mostradas: aumente el máximo o acorte el período."),
+    texto!("tela.oc_sem_ia", "Para pedir à Claude que explique uma ocorrência, ligue a integração em Configurações → Integração com a Claude. A chave fica só neste navegador.", "Pour demander à Claude d'expliquer un incident, activez l'intégration dans Configuration → Intégration avec Claude. La clé reste uniquement dans ce navigateur.", "To ask Claude to explain an incident, turn on the integration in Settings → Claude integration. The key stays in this browser only.", "Per chiedere a Claude di spiegare un evento, attiva l'integrazione in Impostazioni → Integrazione con Claude. La chiave resta solo in questo browser.", "Um Claude einen Vorfall erklären zu lassen, die Integration unter Einstellungen → Claude-Integration einschalten. Der Schlüssel bleibt nur in diesem Browser.", "Para pedir a Claude que explique una incidencia, active la integración en Configuración → Integración con Claude. La clave queda solo en este navegador."),
+    texto!("tela.oc_gravidade", "gravidade", "gravité", "severity", "gravità", "Schweregrad", "gravedad"),
+    texto!("tela.oc_forma", "forma do pedido", "forme de la requête", "request shape", "forma della richiesta", "Form der Anfrage", "forma de la petición"),
+    texto!("tela.oc_explicar", "explicar", "expliquer", "explain", "spiega", "erklären", "explicar"),
+    texto!("tela.oc_vai_subir", "**O que vai subir para a Anthropic** — a ocorrência, sem login, sem IP e sem linha de dado.", "**Ce qui sera envoyé à Anthropic** — l'incident, sans identifiant, sans IP et sans ligne de données.", "**What will go to Anthropic** — the incident, with no login, no IP and no data row.", "**Cosa verrà inviato ad Anthropic** — l'evento, senza login, senza IP e senza righe di dati.", "**Was an Anthropic geht** — der Vorfall, ohne Login, ohne IP und ohne Datenzeile.", "**Lo que se enviará a Anthropic** — la incidencia, sin usuario, sin IP y sin fila de datos."),
+    texto!("tela.oc_aprovar_pede", "**Nada saiu ainda.** Confira acima o que vai para a Anthropic. Só o clique em «Enviar isto» manda, e manda exatamente o que está mostrado.", "**Rien n'est encore parti.** Vérifiez ci-dessus ce qui va à Anthropic. Seul le clic sur « Envoyer ceci » l'envoie, et il envoie exactement ce qui est affiché.", "**Nothing has been sent yet.** Check above what goes to Anthropic. Only clicking «Send this» sends it, and it sends exactly what is shown.", "**Non è ancora partito nulla.** Controlla sopra cosa va ad Anthropic. Solo il clic su «Invia questo» lo invia, ed esattamente ciò che è mostrato.", "**Noch wurde nichts gesendet.** Oben prüfen, was an Anthropic geht. Erst der Klick auf «Dies senden» sendet, und zwar genau das Gezeigte.", "**Aún no ha salido nada.** Revise arriba lo que va a Anthropic. Solo el clic en «Enviar esto» lo envía, y envía exactamente lo que se muestra."),
+
     // ============================================ o aquario (`aquario.js`, pedido 707)
     // A tela traduz o motivo da cor pela CHAVE que o servidor manda
     // (`aquario.motivo.*`, neutra de idioma, a mesma do `aquario.log`): a

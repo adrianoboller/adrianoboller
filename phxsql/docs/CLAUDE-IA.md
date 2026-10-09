@@ -565,3 +565,57 @@ discutir antes.
   a replicação **virou verdade** (medida com quatro servidores,
   `docs/REPLICACAO.md`) e o *ACID compliant* **continua falso** enquanto não
   houver o A e o I (`docs/ACID.md`); esta integração não muda nenhuma das duas.
+
+---
+
+## 11. Explicar uma ocorrência (pedido 495, fatia F9)
+
+Decisão do dono, 09/10/2026: **a IA fica só na tela.** O servidor detecta,
+registra no `ocorrencias.log` e avisa por e-mail; quem explica é a Claude,
+chamada **deste navegador**, com a chave de quem usa e o corpo que essa
+pessoa aprovou. Não há IA autônoma no servidor.
+
+**Onde:** *Administração → Ocorrências* (a op `ocorrencias`, que exige
+`administrar` na regra do servidor). Cada linha ganha o botão **explicar**
+só com a integração ligada — sem ela, a tela é a de antes e diz onde ligar.
+
+**O que sobe** é uma lista de **permissão** (`CAMPOS_DA_OCORRENCIA` no
+`claude.js`): `quando`, `alarme`, `gravidade`, `grupo`, `op`, `database`,
+`tabela`, `tabelas`, `digital`, `dados` e o rótulo traduzido do alarme. Ficam
+de fora o `usuario` e o `ip` (dado pessoal de quem disparou o alarme) e o que
+só serve para achar a linha aqui (`tarefa`, `id`). **Nenhuma linha de dado**:
+este caminho não chama `montarContexto` nem lê tabela. O `dados` já nasceu
+redigido no servidor (F2): a forma do pedido, com `?` no lugar de todo
+literal.
+
+**Aprovação:** o mesmo contrato do «Perguntar» (§3): o corpo é montado uma
+vez, mostrado inteiro com os cabeçalhos (a chave mascarada), e sai **o mesmo
+texto** pelo `corpoAprovado` do `perguntar` só no clique em «Enviar isto à
+Anthropic». «Não enviar» fecha sem subir nada.
+
+**E-mail:** a ocorrência **vermelha** sai pelo motor único do aviso de
+segurança (`avisar_seguranca_por_email`, o mesmo da violação grave), só com
+`alertas.email.ligado` **e** `alertas.email.avisar_seguranca`. Silêncio por
+**alarme** (não por IP: quem varia o IP escolheria quantos e-mails chegam), na
+janela do `alertas.repetir_horas`. O corpo leva alarme, grupo, quando, quem,
+de onde e o `id` — e nada do `dados`. O amarelo fica no arquivo e no painel.
+
+**As provas.** Em Rust: `a_op_ocorrencias_le_redigido_e_filtra_por_alarme_periodo_e_max`
+e `a_ocorrencia_vermelha_avisa_por_email_so_com_o_interruptor` (SMTP falso,
+os dois sentidos). No navegador, contra o `phxsqld` real e uma Claude falsa:
+
+```
+node testes-web/prova-495-f9-ocorrencias.mjs                 # 17/17
+node testes-web/prova-495-f9-ocorrencias.mjs --defeito <nome> # tem de sair vermelha
+```
+
+com a ocorrência nascendo pelo caminho real (o `.reg` trocado por um
+diretório, um `PhxError::Io` do sistema operacional). Os quatro defeitos
+repostos sem recompilar — `chave-no-pedido`, `envio-sem-clique`,
+`corpo-com-pessoa`, `corpo-com-linha` — saem vermelhos, cada um no seu teste.
+
+**O que exercitar achou:** a chave da atividade web era o **id da sessão** —
+a credencial do `X-Sessao` — e saía na ocorrência, no `telemetria` e no
+`aquario_retrato`, que quem só monitora lê. Hoje é o resumo SHA-256 dela
+(`resumo_da_sessao`, `servico_web_01.rs`); o vermelho foi medido no binário de
+antes (`o_id_da_sessao_nao_sai_na_ocorrencia_no_aquario_nem_na_telemetria`).
