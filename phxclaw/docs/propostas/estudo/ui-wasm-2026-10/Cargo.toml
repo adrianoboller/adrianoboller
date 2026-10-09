@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = ["leptos","dioxus","yew","dioxus2","leptos2"]
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+debug = false
+strip = true

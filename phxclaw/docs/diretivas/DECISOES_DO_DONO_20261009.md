@@ -34,3 +34,13 @@ relicenciar o PhxClaw). Duas equipes separadas:
 O que a licença dele não alcança e o PhxClaw continua respeitando: o FFmpeg entra como programa
 externo; dependência GPL (ex. `piper-tts`) não entra; serviços pagos (Remotion para empresas,
 provedores de vídeo) só por escolha do operador e com a licença deles.
+
+## Phoenix Studio (09/10/2026, noite)
+
+Respostas do dono às perguntas da especificação (`docs/propostas/phoenix-studio-especificacao.md`):
+
+- **Banco-alvo do app gerado:** PhxSql **e** PostgreSQL, com PhxSql como padrão.
+- **`Cascade` no excluir vindo de dicionário legado:** importa trocando por **restringir** e **avisa**
+  cada relação alterada (a regra primordial «nunca se mata o pai que tem filhos» vale para o app
+  gerado nos dois bancos).
+- **Escopo:** só **PS0001–PS0003** entram na conta da versão; PS0004–PS0020 nascem ⏸.

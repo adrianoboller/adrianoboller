@@ -1,0 +1,6 @@
+Escritas 09/10/2026 antes de medir.
+H1 Leptos CSR: bundle de tela tipica <= JS atual gz; CSP exige wasm-unsafe-eval; migracao por ilha montada em <div>.
+H2 Dioxus: mesmo codigo web+desktop; desktop dele substitui Tauri? (suspeita: dioxus-desktop usa wry/webview = mesmo motor do Tauri, nao elimina webview).
+H3 Yew: maduro mas ritmo menor; VDOM; bundle maior que Leptos.
+H4 React TS: bundle base ~60 KB gz; sem wasm-unsafe-eval; adaptador react.rs do UI-IR ja existe; quebra "Rust sempre que possivel".
+H5 JS puro endurecido: custo zero de migracao; CSP mais estrita possivel; nao atende pedido do dono de Rust.
