@@ -240,6 +240,20 @@ impl Servidor {
         // `aquario_se_ligada`, antes de qualquer trabalho.
         if let Some(aquario) = self.telemetria.aquario_se_ligada() {
             aquario.anotar(acesso);
+            // A linha `estourou` do `aquario.log` (A6). Fora do
+            // `Aquario::anotar` porque a falha e noticia de disco, e o
+            // `evento_de_disco` e daqui -- o mesmo destino da falha do
+            // `acessos.log` logo acima. O corte por duracao vem antes de
+            // qualquer trabalho la dentro.
+            if let Err(PhxError::Io(io)) = aquario.log().tarefa_terminou(acesso) {
+                self.evento_de_disco(
+                    crate::saude_do_disco::classificar(&io),
+                    "aquario.log",
+                    "",
+                    "",
+                    &io.to_string(),
+                );
+            }
         }
     }
 

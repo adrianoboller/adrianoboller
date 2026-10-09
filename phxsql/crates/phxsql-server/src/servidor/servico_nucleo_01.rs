@@ -466,6 +466,25 @@ impl Servidor {
         servidor
             .telemetria
             .definir_pintura(servidor.config.telemetria.clone());
+        // O `aquario.log` (pedido 707, A6), ao lado do `acessos.log`: grava
+        // sem ninguem perguntar, entao abre aqui e nao na primeira consulta.
+        // Falhar AVISA e sobe -- o aquario e acessorio, e a consulta devolve o
+        // motivo a quem olhar a tela.
+        let caminho_do_aquario = servidor
+            .config
+            .log_acessos
+            .with_file_name(crate::aquario::log::NOME_DO_ARQUIVO);
+        if let Err(e) = servidor
+            .telemetria
+            .aquario()
+            .log()
+            .abrir(&caminho_do_aquario)
+        {
+            eprintln!(
+                "AVISO: o aquario.log nao abriu ({}): {e}",
+                caminho_do_aquario.display()
+            );
+        }
         // O rodizio do `diretivas.log` -- pedido 228, mesmo motivo do
         // `acessos.log` acima. `Diario::definir_rodizio` toma `&self` (o
         // diario nao guarda descritor entre chamadas), entao isto pode

@@ -171,7 +171,7 @@ const SEM_TEXTO_CIFRADA: &str = "<tabela com .reg cifrado: pedido nao gravado>";
 /// `op`, `database`, `tabela` e `usuario` vem do pedido, e nada no protocolo
 /// obriga que sejam curtos: um `"op"` de dez mil bytes vira uma linha de dez
 /// mil bytes no arquivo de quem so queria ver o que estava chegando.
-const TETO_DO_CAMPO: usize = 120;
+pub(crate) const TETO_DO_CAMPO: usize = 120;
 
 /// Teto do texto de erro na linha do arquivo. Maior porque explicacao boa e
 /// comprida -- a do `sql` sem indice passa de 200 caracteres.
@@ -1018,7 +1018,7 @@ pub(crate) fn com_sufixo(base: &std::path::Path, n: usize) -> PathBuf {
 /// sumir: quem investiga precisa saber que o pedido trazia aquilo, e apagar
 /// em silencio esconderia justamente a tentativa. O corte respeita a fronteira
 /// de caractere, porque o nome da tabela pode ter acento.
-fn de_uma_linha(s: &str, teto: usize) -> String {
+pub(crate) fn de_uma_linha(s: &str, teto: usize) -> String {
     let mut saida = String::with_capacity(s.len());
     for c in s.chars().take(teto) {
         match c {

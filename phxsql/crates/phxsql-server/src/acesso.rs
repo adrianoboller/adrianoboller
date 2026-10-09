@@ -143,6 +143,14 @@ pub struct LogAcessos {
     rodizios: u64,
     /// Rodizios que nao deram certo -- renomear ou reabrir falhou.
     falhas_de_rodizio: u64,
+    /// A ultima escrita falhou, e pode ter deixado meia linha no arquivo.
+    ///
+    /// Disco cheio grava o que cabe e recusa o resto: sem a quebra na frente
+    /// da proxima linha, ela se colaria na metade e as duas virariam lixo
+    /// para o leitor -- a primeira linha depois que o disco volta, que e
+    /// justamente a que conta que ele voltou. Provado contra tmpfs em
+    /// `servidor/testes_do_aquario.rs`.
+    linha_partida: bool,
 }
 
 impl LogAcessos {
@@ -169,6 +177,7 @@ impl LogAcessos {
             bytes_no_arquivo,
             rodizios: 0,
             falhas_de_rodizio: 0,
+            linha_partida: false,
         })
     }
 
@@ -235,6 +244,8 @@ impl LogAcessos {
             let (novo, deu_errado) = crate::rodizio::girar(&self.caminho, self.manter);
             self.arquivo = novo;
             self.bytes_no_arquivo = 0;
+            // Arquivo novo nao tem meia linha para fechar.
+            self.linha_partida = false;
             self.rodizios += 1;
             if deu_errado {
                 self.falhas_de_rodizio += 1;
@@ -246,9 +257,27 @@ impl LogAcessos {
                 self.caminho.display()
             )))
         })?;
-        writeln!(arquivo, "{linha}")?;
-        arquivo.flush()?;
-        self.bytes_no_arquivo += cabem;
+        // Um `write_all` so, e nao o `writeln!`, que escreve em pedacos: o
+        // pedaco que falta e o que o disco cheio corta.
+        let mut tudo = String::with_capacity(linha.len() + 2);
+        if self.linha_partida {
+            tudo.push('\n');
+        }
+        tudo.push_str(&linha);
+        tudo.push('\n');
+        if let Err(e) = arquivo
+            .write_all(tudo.as_bytes())
+            .and_then(|()| arquivo.flush())
+        {
+            self.linha_partida = true;
+            // Quanto entrou de fato e o arquivo que diz, nao a conta.
+            if let Ok(m) = arquivo.metadata() {
+                self.bytes_no_arquivo = m.len();
+            }
+            return Err(e.into());
+        }
+        self.linha_partida = false;
+        self.bytes_no_arquivo += tudo.len() as u64;
         Ok(())
     }
 

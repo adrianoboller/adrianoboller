@@ -28,6 +28,8 @@
 //! | A6 | `aquario/log.rs` | o `aquario.log` pelo [`crate::acesso::LogAcessos::registrar_json`], e o corpo de [`Aquario::consultar_log`] |
 //! | A8 | `aquario/contagem.rs` | em [`Aquario::anotar`]: o acumulador do minuto; o corpo de [`Aquario::contagens`] |
 
+pub mod log;
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use phxsql_core::error::{PhxError, Result};
@@ -305,6 +307,8 @@ pub struct Aquario {
     /// portao vem antes: telemetria desligada, zero aqui -- e as fatias A4 e
     /// A8, que farao trabalho de verdade no mesmo ponto, herdam a prova.
     anotados: AtomicU64,
+    /// O `aquario.log` (A6). Nasce fechado; o servidor o abre no arranque.
+    log: log::LogDoAquario,
 }
 
 impl Aquario {
@@ -321,12 +325,17 @@ impl Aquario {
         self.anotados.load(Ordering::Relaxed)
     }
 
+    /// O `aquario.log`, para o servidor abrir no arranque e gravar pelo
+    /// `anotar` dele (a falha de gravacao vai ao `evento_de_disco`, que e do
+    /// servidor), e para as fatias que gravam `mudou`, `contagem`...
+    pub fn log(&self) -> &log::LogDoAquario {
+        &self.log
+    }
+
     /// `aquario_log`: a linha do tempo, lida de tras para a frente (§4.3).
-    pub fn consultar_log(&self, _pedido: &Json) -> Result<Json> {
-        Err(ainda_nao_existe(
-            "aquario_log",
-            "o aquario.log ainda nao e escrito neste servidor (fatia A6 do pedido 707)",
-        ))
+    /// Fechado, diz que ainda nao ha arquivo -- e nao «nada aconteceu».
+    pub fn consultar_log(&self, pedido: &Json) -> Result<Json> {
+        self.log.consultar(pedido)
     }
 
     /// `aquario_contagens`: as oito series por hora (§11.4).
