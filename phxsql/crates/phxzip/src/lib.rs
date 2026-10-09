@@ -55,6 +55,11 @@
 //!   letra de unidade, NUL, dispositivo do Windows ou ponto/espaco no fim -- e
 //!   nome repetido (sem diferenca de caixa) recusa o arquivo inteiro.
 //!
+//! * A excecao ao «nao abre arquivo» e uma so, atras do recurso `std`:
+//!   [`disco::Destino`], que grava entradas debaixo de uma raiz sem seguir
+//!   link e sem sobrescrever -- usado pelo [`tar::extrair_em`] e feito para o
+//!   PhxZipCmd extrair 7z pelo mesmo caminho.
+//!
 //! O que o motor NAO faz, e o extrator nao pode fazer por ele:
 //!
 //! * **`Entrada::atributos` e informacao, nao ordem.** O 7z pode carregar nos
@@ -75,17 +80,20 @@ extern crate std;
 
 pub mod aes;
 pub mod chave;
+#[cfg(feature = "std")]
+pub mod disco;
 pub mod erro;
 pub mod escritor;
 pub mod leitor;
 pub mod lzma;
 pub mod lzma_compressor;
 pub mod phz;
+pub mod tar;
 
 pub use chave::{compressoes, CICLOS_MAXIMO, CICLOS_PADRAO};
 pub use erro::Erro;
 pub use escritor::{Escritor, Metodo, Opcoes};
-pub use leitor::{conferir_nome, Arquivo, Entrada, Limites};
+pub use leitor::{conferir_nome, Arquivo, Entrada, InfoBloco, Limites};
 pub use phz::{
     desempacotar, desempacotar_com_limites, desempacotar_com_teto, empacotar, empacotar_com_ciclos,
     EXTENSAO,

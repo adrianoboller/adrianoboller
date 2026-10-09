@@ -35,15 +35,44 @@ pub enum Json {
     Objeto(Vec<(String, Json)>),
 }
 
+/// A recusa do analisador com a posicao como NUMERO.
+///
+/// Existe para quem precisa apontar o byte (a web do PhxZip,
+/// `X-PhxZip-Json-Posicao`, `docs/PHXZIP-WEB.md` §3.4): tirar o numero da
+/// frase do erro seria decidir por texto, e quebraria calado no dia em que a
+/// redacao melhorar.
+#[derive(Debug)]
+pub struct FalhaJson {
+    /// Deslocamento em BYTES desde o inicio da entrada -- o mesmo numero que a
+    /// frase do erro diz.
+    pub posicao: usize,
+    pub erro: PhxError,
+}
+
 impl Json {
     pub fn analisar(entrada: &str) -> Result<Json> {
+        Json::analisar_com_posicao(entrada).map_err(|f| f.erro)
+    }
+
+    /// O mesmo analisador do [`Json::analisar`] -- um juiz so de «JSON
+    /// valido» -- devolvendo tambem o byte onde a analise parou.
+    pub fn analisar_com_posicao(entrada: &str) -> std::result::Result<Json, FalhaJson> {
         let bytes = entrada.as_bytes();
-        let mut p = Analisador { bytes, pos: 0 };
+        let mut p = Analisador {
+            bytes,
+            pos: 0,
+            falha: std::cell::Cell::new(0),
+        };
+        let falhar = |p: &Analisador, erro| FalhaJson {
+            posicao: p.falha.get(),
+            erro,
+        };
         p.pular_espaco();
-        let v = p.valor()?;
+        let v = p.valor().map_err(|e| falhar(&p, e))?;
         p.pular_espaco();
         if p.pos != bytes.len() {
-            return Err(p.erro("sobrou conteudo depois do valor JSON"));
+            let e = p.erro("sobrou conteudo depois do valor JSON");
+            return Err(falhar(&p, e));
         }
         Ok(v)
     }
@@ -547,10 +576,16 @@ fn escrever_texto(saida: &mut String, s: &str) {
 struct Analisador<'a> {
     bytes: &'a [u8],
     pos: usize,
+    /// A posicao do ULTIMO erro montado. Guardada no proprio `erro`, e nao
+    /// lida do `pos` depois que o erro sobe: assim o numero e, por construcao,
+    /// o mesmo da frase. Ultimo e nao primeiro porque todo erro montado aqui
+    /// sobe na hora -- nenhum caminho do analisador se recupera de um.
+    falha: std::cell::Cell<usize>,
 }
 
 impl Analisador<'_> {
     fn erro(&self, msg: &str) -> PhxError {
+        self.falha.set(self.pos);
         PhxError::Esquema(format!("JSON invalido na posicao {}: {msg}", self.pos))
     }
 
@@ -907,6 +942,37 @@ mod tests {
         ] {
             assert!(Json::analisar(ruim).is_err(), "deveria recusar: {ruim}");
         }
+    }
+
+    /// A posicao devolvida como numero e a mesma da frase e aponta o byte
+    /// certo -- inclusive depois de texto com acento, onde byte e caractere
+    /// divergem.
+    #[test]
+    fn analisar_com_posicao_aponta_o_byte_da_falha() {
+        for (ruim, esperado) in [
+            ("{", 1usize),
+            ("[1,2", 4),
+            (r#"{"a" 1}"#, 5),
+            (r#"{"a":1,}"#, 7),
+            ("tru", 0),
+            ("{} sobra", 3),
+            ("{\"ação\": x}", 11),
+            ("  [1, @]", 6),
+        ] {
+            let f = Json::analisar_com_posicao(ruim).unwrap_err();
+            assert_eq!(f.posicao, esperado, "{ruim}");
+            let frase = format!("na posicao {}:", f.posicao);
+            assert!(f.erro.to_string().contains(&frase), "{ruim}: {}", f.erro);
+            // O `analisar` continua dizendo exatamente a mesma frase.
+            assert_eq!(
+                Json::analisar(ruim).unwrap_err().to_string(),
+                f.erro.to_string()
+            );
+        }
+        assert_eq!(
+            Json::analisar_com_posicao(r#"{"a":[1,2]}"#).unwrap(),
+            Json::analisar(r#"{"a":[1,2]}"#).unwrap()
+        );
     }
 
     #[test]

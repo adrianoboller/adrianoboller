@@ -77,6 +77,24 @@ pub enum Erro {
     EntradaEPasta(String),
     /// O mesmo nome duas vezes no que se esta gravando.
     NomeRepetido(String),
+    /// `.tar`: a estrutura nao fecha -- cabecalho cortado, numero que nao e
+    /// octal, registro pax malformado, falta o fim. O texto diz onde.
+    Tar(String),
+    /// Entrada que o extrator NAO cria: link simbolico, link fisico,
+    /// dispositivo, FIFO ou tipo desconhecido. Link extraido e seguido depois
+    /// e o zip-slip por outra porta, e o que nao e arquivo nem pasta nao e
+    /// dado.
+    EntradaEspecial {
+        nome: String,
+        /// O que ela e: `"link simbolico"`, `"link fisico"`, `"tipo 3"`...
+        tipo: String,
+    },
+    /// O destino ja tem, no caminho de uma entrada, algo que nao e pasta de
+    /// verdade (um link, um arquivo) ou um arquivo com o mesmo nome. Seguir
+    /// escreveria fora da raiz ou por cima do que estava la.
+    DestinoInseguro(String),
+    /// O sistema de arquivos recusou gravar. O texto e o do sistema, e informa.
+    Disco(String),
 }
 
 impl Erro {
@@ -104,6 +122,10 @@ impl Erro {
             Erro::SemCifra => "SEM_CIFRA",
             Erro::EntradaEPasta(_) => "ENTRADA_E_PASTA",
             Erro::NomeRepetido(_) => "NOME_REPETIDO",
+            Erro::Tar(_) => "TAR_INVALIDO",
+            Erro::EntradaEspecial { .. } => "ENTRADA_ESPECIAL",
+            Erro::DestinoInseguro(_) => "DESTINO_INSEGURO",
+            Erro::Disco(_) => "DISCO",
         }
     }
 }
@@ -159,6 +181,16 @@ impl fmt::Display for Erro {
                 write!(f, "a unica entrada do .phz e uma pasta: {nome}")
             }
             Erro::NomeRepetido(nome) => write!(f, "o nome {nome:?} ja foi acrescentado"),
+            Erro::Tar(onde) => write!(f, "tar invalido: {onde}"),
+            Erro::EntradaEspecial { nome, tipo } => write!(
+                f,
+                "a entrada {nome:?} e {tipo}: o PhxZip so extrai arquivo e pasta"
+            ),
+            Erro::DestinoInseguro(onde) => write!(
+                f,
+                "destino inseguro, nada foi seguido nem sobrescrito: {onde}"
+            ),
+            Erro::Disco(texto) => write!(f, "o disco recusou gravar: {texto}"),
         }
     }
 }

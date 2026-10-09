@@ -10,6 +10,7 @@ members = [
     "crates/phxsql-odbc",
     "crates/phxsql-ffi",
     "crates/phxzip",
+    "crates/phxzip-cmd",
 ]
 
 [workspace.package]

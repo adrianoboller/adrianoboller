@@ -192,15 +192,17 @@ mod testes {
     fn workspace_zero_dependencia_externa() {
         let raiz = raiz_do_workspace();
         let permitidos = nomes_do_workspace(&raiz).expect("workspace legivel");
-        // Nove desde 24/09/2026: o `phxzip` (pedido 450) entrou de proposito,
+        // Dez desde 09/10/2026: o `phxzip-cmd` (pedido 454, fatia Z9) entrou de
+        // proposito, dependendo so do `phxzip` e do `phxsql-core`. Eram nove
+        // desde 24/09/2026, quando o `phxzip` (pedido 450) entrou de proposito,
         // com uma dependencia so, de caminho, no `phxsql-core`. O numero e
         // conferencia de sanidade DIGITADA de proposito: membro novo no
         // workspace tem de ser um ato consciente de quem mexe aqui, e nao
         // algo que o teste absorve calado.
         assert_eq!(
             permitidos.len(),
-            9,
-            "o workspace tem {} membro(s) declarado(s), nao 9 -- se um crate \
+            10,
+            "o workspace tem {} membro(s) declarado(s), nao 10 -- se um crate \
              novo entrou de proposito, o numero aqui e so uma conferencia \
              de sanidade e pode subir junto",
             permitidos.len()

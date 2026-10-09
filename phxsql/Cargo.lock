@@ -67,3 +67,11 @@ version = "0.20.0"
 dependencies = [
  "phxsql-core",
 ]
+
+[[package]]
+name = "phxzip-cmd"
+version = "0.20.0"
+dependencies = [
+ "phxsql-core",
+ "phxzip",
+]

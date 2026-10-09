@@ -137,6 +137,7 @@ pub fn limites_de_leitura() -> Limites {
         derivacoes: 2,
         entradas: 16,
         modelo: 64 << 10,
+        total: phxzip::phz::TETO_PADRAO,
     }
 }
 

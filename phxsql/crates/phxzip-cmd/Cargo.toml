@@ -1,0 +1,22 @@
+[package]
+name = "phxzip-cmd"
+description = "PhxZipCmd -- o PhxZip no terminal: listar, testar, compactar e extrair 7z"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "phxzip_cmd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "phxzipcmd"
+path = "src/main.rs"
+
+# O motor e o `phxzip`: o terminal e uma casca sobre a API publica dele, nunca
+# uma segunda implementacao (pedido 454). O `phxsql-core` vem pela linha de
+# versao (`versao_completa`), a mesma que os outros executaveis imprimem.
+[dependencies]
+phxzip.workspace = true
+phxsql-core.workspace = true

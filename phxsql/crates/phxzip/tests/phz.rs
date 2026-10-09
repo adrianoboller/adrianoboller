@@ -211,6 +211,76 @@ fn lista_e_extrai_a_arvore_cifrada_que_o_7zip_gravou() {
     ));
 }
 
+// ---------------------------------------------------------- blocos (Z3)
+
+/// O 7-Zip grava solido por padrao: as duas entradas moram no MESMO bloco, e
+/// o `compactado` e o do bloco -- o `7z l -slt` diz `Packed Size = 144` na
+/// primeira e vazio na segunda, porque o da segunda nao existe.
+#[test]
+fn solido_de_duas_entradas_e_um_bloco_so() {
+    let a = Arquivo::abrir(
+        fixture!("duas-entradas.phz"),
+        Some(SENHA),
+        Limites::default(),
+    )
+    .unwrap();
+    let e = a.entradas();
+    assert_eq!(e.len(), 2);
+    assert_eq!(e[0].bloco(), Some(0));
+    assert_eq!(e[1].bloco(), Some(0));
+    let b = a.blocos();
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0].entradas, 2);
+    assert_eq!(b[0].compactado, 144);
+    assert_eq!(b[0].tamanho, 129 + 16);
+    assert_eq!(b[0].metodos, ["LZMA2", "7zAES"]);
+    assert!(b[0].cifrado);
+}
+
+/// Pasta e arquivo vazio nao tem fluxo, e portanto nao tem bloco; o resto da
+/// arvore do 7-Zip divide um bloco so.
+#[test]
+fn pasta_e_vazio_nao_tem_bloco() {
+    let a = Arquivo::abrir(fixture!("arvore-clara.7z"), None, Limites::default()).unwrap();
+    for e in a.entradas() {
+        let esperado = if e.pasta || e.tamanho == 0 {
+            None
+        } else {
+            Some(0)
+        };
+        assert_eq!(e.bloco(), esperado, "{}", e.nome);
+    }
+    let b = a.blocos();
+    assert_eq!(b.len(), 1);
+    assert_eq!(b[0].entradas, 3);
+    assert_eq!(b[0].metodos, ["LZMA2"]);
+    assert!(!b[0].cifrado);
+}
+
+/// O escritor da casa NAO e solido (um bloco por arquivo, `escritor.rs`): a
+/// prova do outro lado, para que `bloco()` devolvendo sempre 0 nao passe.
+#[test]
+fn o_escritor_da_casa_grava_um_bloco_por_arquivo() {
+    let mut w = Escritor::novo(Opcoes {
+        metodo: Metodo::Copia,
+        senha: None,
+        ciclos: CICLOS_DE_TESTE,
+        cifrar_cabecalho: false,
+    })
+    .unwrap();
+    w.arquivo("um.txt", b"primeiro", None).unwrap();
+    w.arquivo("dois.txt", b"segundo!!", None).unwrap();
+    let bytes = w.terminar();
+    let a = Arquivo::abrir(&bytes, None, Limites::default()).unwrap();
+    let blocos: Vec<_> = a.entradas().iter().map(|e| e.bloco()).collect();
+    assert_eq!(blocos, [Some(0), Some(1)]);
+    let b = a.blocos();
+    assert_eq!(b.len(), 2);
+    assert_eq!((b[0].entradas, b[0].tamanho, b[0].compactado), (1, 8, 8));
+    assert_eq!((b[1].entradas, b[1].tamanho, b[1].compactado), (1, 9, 9));
+    assert_eq!(b[0].metodos, ["Copy"]);
+}
+
 // ------------------------------------------------------------ zip-slip
 
 /// Troca o nome `XXfora.txt` do fixture por outro de mesmo tamanho e refaz os
@@ -827,4 +897,70 @@ fn o_7zip_le_o_que_o_phxzip_grava() {
             assert!(destino.join("raiz/vazia").is_dir());
         }
     }
+}
+
+// ------------------------------------------- revisao SEC da Z9 (09/10/2026)
+
+/// `cfg.json` e `./cfg.json` (e `.//cfg.json`, `a/b` e `a/./b`) sao o MESMO
+/// arquivo no disco; no 7z passavam como dois nomes e o segundo sobrescrevia
+/// o primeiro calado.
+///
+/// Prova real: com o `conferir_nome` devolvendo o nome sem canonizar, o
+/// `abrir` aceita os pares e o teste cai.
+#[test]
+fn nome_repetido_por_ponto_ou_barra_dupla_no_7z_e_recusado() {
+    for (a, inocente, hostil) in [
+        ("cfg.json", "xxcfg.json", "./cfg.json"),
+        ("cfg.json", "xxxcfg.json", ".//cfg.json"),
+        ("a/b", "zzzzz", "a/./b"),
+        ("a/b", "zzzz", "a//b"),
+    ] {
+        let mut arq = duas_entradas((a, b"admin=false"), (inocente, b"admin=true"));
+        trocar_nome(&mut arq, inocente, hostil);
+        let r = Arquivo::abrir(&arq, None, Limites::default()).map(|_| ());
+        assert!(
+            matches!(&r, Err(Erro::NomeRepetido(_))),
+            "{a:?} e {hostil:?} abriram: {r:?}"
+        );
+    }
+}
+
+/// A SOMA declarada das entradas tem teto proprio (`Limites::total`): cada
+/// entrada cabe no teto dela, e a soma nao. E a bomba de descompressao em
+/// muitas entradas pequenas o bastante para passar uma a uma.
+///
+/// Prova real: sem a conferencia do total no `abrir`, o arquivo abre e o
+/// teste cai.
+#[test]
+fn soma_das_entradas_acima_do_total_e_recusada_no_abrir() {
+    let mut e = Escritor::novo(Opcoes {
+        metodo: Metodo::Copia,
+        senha: None,
+        ciclos: CICLOS_DE_TESTE,
+        cifrar_cabecalho: false,
+    })
+    .unwrap();
+    for i in 0..3 {
+        e.arquivo(&format!("{i}.bin"), &[7u8; 100], None).unwrap();
+    }
+    let arq = e.terminar();
+    let apertado = Limites {
+        total: 250,
+        ..Limites::default()
+    };
+    match Arquivo::abrir(&arq, None, apertado) {
+        Err(Erro::GrandeDemais {
+            oque: "soma das entradas",
+            declarado: 300,
+            teto: 250,
+        }) => {}
+        r => panic!("a soma de 300 passou do teto de 250: {:?}", r.map(|_| ())),
+    }
+    let justo = Limites {
+        total: 300,
+        ..Limites::default()
+    };
+    assert!(Arquivo::abrir(&arq, None, justo).is_ok());
+    assert_eq!(Limites::confiavel().total, u64::MAX);
+    assert_eq!(Limites::default().total, 4 << 30);
 }

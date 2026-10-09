@@ -126,8 +126,8 @@
         "estado": "recusado",
         "motivo": "compactar renumeraria o rowid, que e endereco; a ordem de digitacao e petrea",
         "ausencia": [
-          {"glob": "crates/*/src/**/*.rs", "rx": "fn compactar\\w*\\s*\\(|\"compactar\\w*\"|\"optimize\\w*\"",
-           "porque": "se o comando existir, a celula 'recusado' mente"}
+          {"glob": "crates/phxsql-*/src/**/*.rs", "rx": "fn compactar\\w*\\s*\\(|\"compactar\\w*\"|\"optimize\\w*\"",
+           "porque": "se o comando existir, a celula 'recusado' mente -- so nos crates phxsql-*: o .reg so se compacta pelo phxsql-store, e o compactar do PhxZipCmd (pedido 454) e de arquivo 7z, outra pergunta com o mesmo nome"}
         ]
       },
       "contradiz": {

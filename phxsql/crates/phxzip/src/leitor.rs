@@ -140,8 +140,21 @@ fn estrutura(onde: &str) -> Erro {
 /// `..` em qualquer componente, letra de unidade, NUL -- e trata a barra
 /// invertida como separador, porque e isso que ela e no Windows: `..\x` e
 /// tao perigoso quanto `../x`, e um conferidor que so olhasse `/` deixaria
-/// passar exatamente o caminho que o Windows segue. A barra final de pasta
-/// sai; `.` e componente vazio ficam, porque nao sobem de nivel.
+/// passar exatamente o caminho que o Windows segue.
+///
+/// # A forma CANONICA (revisao SEC da Z9, 09/10/2026)
+///
+/// O nome devolvido e canonico: sem `.`, sem componente vazio e sem a barra
+/// final. Antes `.` e vazio ficavam, «porque nao sobem de nivel» -- e nao
+/// sobem, mas `cfg.json`, `./cfg.json` e `.//cfg.json` passavam como TRES
+/// nomes pela conferencia de repetido, e o disco os grava no MESMO arquivo: o
+/// segundo sobrescrevia o primeiro calado. Como a colisao se mede sobre o que
+/// esta funcao devolve, canonizar aqui fecha o 7z e o tar de uma vez.
+///
+/// Canonizar, e nao recusar: `tar -C pasta -cf x.tar .` grava `./` e `./a` --
+/// recusar `.` recusaria o tar mais comum que existe. O nome que nao sobra
+/// nada depois de canonizar (`.`, `./`) e recusado aqui; quem le tar pula a
+/// pasta-raiz antes ([`e_a_raiz`]).
 ///
 /// # O que o Windows desvia, e por que tambem e recusado (pedido 471)
 ///
@@ -168,16 +181,22 @@ pub fn conferir_nome(bruto: &str) -> Result<String, Erro> {
     if bruto.contains('\0') {
         return Err(perigoso());
     }
-    let mut nome: String = bruto
+    let barras: String = bruto
         .chars()
         .map(|c| if c == '\\' { '/' } else { c })
         .collect();
-    while nome.len() > 1 && nome.ends_with('/') {
-        nome.pop();
-    }
-    if nome.is_empty() || nome.starts_with('/') {
+    // O absoluto e decidido ANTES de canonizar: `/etc` partido vira `etc`.
+    if barras.starts_with('/') {
         return Err(perigoso());
     }
+    let partes: Vec<&str> = barras
+        .split('/')
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    if partes.is_empty() {
+        return Err(perigoso());
+    }
+    let nome = partes.join("/");
     let b = nome.as_bytes();
     if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
         return Err(perigoso());
@@ -189,6 +208,14 @@ pub fn conferir_nome(bruto: &str) -> Result<String, Erro> {
         return Err(perigoso());
     }
     Ok(nome)
+}
+
+/// O nome so de `.`, `/` e `\` -- a pasta-raiz que o `tar -C pasta -cf x.tar .`
+/// grava como `./`. Nao e entrada para extrair: e o proprio destino.
+pub(crate) fn e_a_raiz(bruto: &str) -> bool {
+    !bruto.is_empty()
+        && !bruto.starts_with(['/', '\\'])
+        && bruto.split(['/', '\\']).all(|c| c.is_empty() || c == ".")
 }
 
 /// Um componente que o Windows grava em outro lugar ou com outro nome.
@@ -890,6 +917,12 @@ pub struct Limites {
     /// lp=4). O LZMA2 nao passa de 28 KiB (lc + lp <= 4). O padrao nao
     /// restringe; num microcontrolador se baixa.
     pub modelo: u64,
+    /// A SOMA dos tamanhos declarados de todas as entradas, descompactados.
+    /// Os tetos de entrada e de bloco limitam cada pedaco; sem este, 65.536
+    /// entradas de 256 MiB cabem em todos eles e somam 16 TiB -- a bomba de
+    /// descompressao (revisao SEC da Z9: 156 KB viraram 1 GB com saida 0).
+    /// Conferida no `abrir`, antes de decodificar qualquer bloco.
+    pub total: u64,
 }
 
 /// O PADRAO e o de arquivo que veio de qualquer um -- upload na web, anexo,
@@ -906,6 +939,8 @@ pub struct Limites {
 ///   cabecalho com um sal e o conteudo com outro.
 /// * `entradas: 65.536` e `cabecalho: 8 MiB` -- andam juntos: um cabecalho com
 ///   65.536 entradas de nome medio ocupa uns 6,5 MB.
+/// * `total: 4 GiB` -- a soma do que se extrai de um arquivo de fora. Fonte
+///   confiavel ([`Limites::confiavel`], `--confiavel` no PhxZipCmd) tira.
 impl Default for Limites {
     fn default() -> Limites {
         Limites {
@@ -916,6 +951,7 @@ impl Default for Limites {
             derivacoes: 2,
             entradas: 1 << 16,
             modelo: 8 << 20,
+            total: 4 << 30,
         }
     }
 }
@@ -930,6 +966,7 @@ impl Limites {
             ciclos: chave::CICLOS_MAXIMO,
             derivacoes: 16,
             entradas: 1 << 20,
+            total: u64::MAX,
             ..Limites::default()
         }
     }
@@ -960,6 +997,49 @@ pub struct Entrada {
     pub cifrada: bool,
     pub crc: Option<u32>,
     pub(crate) lugar: Lugar,
+}
+
+impl Entrada {
+    /// O indice do bloco que guarda o conteudo, ou `None` para pasta e arquivo
+    /// vazio (que nao tem fluxo nenhum). E o que a lista precisa para dizer
+    /// «solido»: duas entradas com o mesmo bloco foram comprimidas juntas, e o
+    /// tamanho comprimido de cada uma NAO existe (`docs/PHXZIP-WEB.md` §3.2).
+    pub fn bloco(&self) -> Option<usize> {
+        match self.lugar {
+            Lugar::Vazia => None,
+            Lugar::NoBloco { bloco, .. } => Some(bloco),
+        }
+    }
+}
+
+/// Um bloco como a lista mostra. So o que o cabecalho DECLARA: nada aqui pede
+/// decodificar, entao listar continua custando o cabecalho e nao o conteudo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InfoBloco {
+    /// Bytes do fluxo empacotado -- o comprimido, ja cifrado se houver 7zAES.
+    /// E do BLOCO: dividi-lo entre as entradas seria inventar numero.
+    pub compactado: u64,
+    /// Bytes depois de decodificar o bloco inteiro.
+    pub tamanho: u64,
+    /// Quantas entradas moram no bloco; mais de uma e bloco solido.
+    pub entradas: usize,
+    /// Os metodos do conteudo para o empacotado (`LZMA2 7zAES`): a ordem do
+    /// `Method` do `7z l -slt`. NAO e a da declaracao no cabecalho -- o 7-Zip
+    /// declara o 7zAES primeiro --, e sim o inverso da ordem em que rodam.
+    pub metodos: Vec<&'static str>,
+    pub cifrado: bool,
+}
+
+/// O nome que a lista mostra para um metodo ja aceito. So os quatro chegam
+/// aqui: `posicionar` recusa o resto antes de o arquivo abrir.
+fn nome_do_metodo(id: u64) -> &'static str {
+    match id {
+        ID_COPIA => "Copy",
+        ID_LZMA => "LZMA",
+        ID_LZMA2 => "LZMA2",
+        ID_7ZAES => "7zAES",
+        _ => "?",
+    }
 }
 
 /// Um arquivo 7z aberto sobre uma fatia de bytes.
@@ -1257,6 +1337,16 @@ impl<'a> Arquivo<'a> {
                 return Err(Erro::NomeRepetido(e.nome.clone()));
             }
         }
+        let total = entradas
+            .iter()
+            .fold(0u64, |s, e| s.saturating_add(e.tamanho));
+        if total > self.limites.total {
+            return Err(Erro::GrandeDemais {
+                oque: "soma das entradas",
+                declarado: total,
+                teto: self.limites.total,
+            });
+        }
         self.entradas = entradas;
         Ok(())
     }
@@ -1269,6 +1359,25 @@ impl<'a> Arquivo<'a> {
     /// Se o cabecalho veio cifrado (os nomes estavam escondidos).
     pub fn cabecalho_cifrado(&self) -> bool {
         self.cabecalho_cifrado
+    }
+
+    /// Os blocos, na ordem do arquivo; o indice e o de [`Entrada::bloco`].
+    pub fn blocos(&self) -> Vec<InfoBloco> {
+        self.blocos
+            .iter()
+            .map(|b| InfoBloco {
+                compactado: b.pack_tamanho as u64,
+                tamanho: b.tamanho(),
+                entradas: b.sub.len(),
+                metodos: b
+                    .ordem
+                    .iter()
+                    .rev()
+                    .map(|&i| nome_do_metodo(b.coders[i].id))
+                    .collect(),
+                cifrado: b.cifrado(),
+            })
+            .collect()
     }
 
     fn decodificar_bloco(&mut self, i: usize) -> Result<Decodificado, Erro> {
@@ -1448,7 +1557,21 @@ mod testes {
         assert_eq!(conferir_nome("config.json").unwrap(), "config.json");
         assert_eq!(conferir_nome("a\\b\\c.txt").unwrap(), "a/b/c.txt");
         assert_eq!(conferir_nome("pasta/").unwrap(), "pasta");
-        assert_eq!(conferir_nome("./a/..b/c..d").unwrap(), "./a/..b/c..d");
+        // Canonico: `.` e vazio saem (revisao SEC da Z9). Antes este caso
+        // devolvia `./a/..b/c..d`, e `./x` e `x` passavam como dois nomes.
+        assert_eq!(conferir_nome("./a/..b/c..d").unwrap(), "a/..b/c..d");
+        for (bruto, canonico) in [
+            ("./cfg.json", "cfg.json"),
+            (".//cfg.json", "cfg.json"),
+            ("a/./b", "a/b"),
+            ("a//b", "a/b"),
+            ("a\\.\\b/", "a/b"),
+        ] {
+            assert_eq!(conferir_nome(bruto).unwrap(), canonico, "{bruto:?}");
+        }
+        for so_raiz in [".", "./", ".//.", "\\."] {
+            assert!(conferir_nome(so_raiz).is_err(), "{so_raiz:?} passou");
+        }
         // Parecido com dispositivo, mas nao e: o Windows so compara a base.
         for bom in [
             "console.txt",
