@@ -164,26 +164,50 @@ impl Desfecho {
         } else {
             op
         };
-        let serie = if OPS_DE_LEITURA.contains(&efetiva) {
-            Some(Serie::Select)
-        } else if OPS_DE_INSERCAO.contains(&efetiva) {
-            Some(Serie::Insert)
-        } else if efetiva == "atualizar" {
-            Some(Serie::Update)
-        } else if efetiva == "excluir" {
-            match r.texto_ou("modo", "suave") {
-                "fisico" => Some(Serie::ExcluirFisico),
-                _ => Some(Serie::ExcluirSuave),
-            }
-        } else if OPS_DE_BACKUP.contains(&efetiva) {
-            Some(Serie::Backup)
-        } else {
-            None
-        };
+        let serie = serie_pela_op(efetiva, r.texto_ou("modo", "suave") == "fisico");
         let aviso = ["aviso", "avisos"]
             .iter()
             .any(|c| r.campo(c).is_some_and(nao_vazio));
         Desfecho { serie, aviso }
+    }
+}
+
+/// A serie de uma operacao, pelo NOME -- a decisao que a contagem e a faixa
+/// do aquario dividem. O modo do `excluir` vem de quem o sabe: a resposta,
+/// na contagem; ninguem, na tarefa viva (a faixa e `delete` dos dois jeitos).
+fn serie_pela_op(op: &str, excluir_fisico: bool) -> Option<Serie> {
+    if OPS_DE_LEITURA.contains(&op) {
+        Some(Serie::Select)
+    } else if OPS_DE_INSERCAO.contains(&op) {
+        Some(Serie::Insert)
+    } else if op == "atualizar" {
+        Some(Serie::Update)
+    } else if op == "excluir" {
+        match excluir_fisico {
+            true => Some(Serie::ExcluirFisico),
+            false => Some(Serie::ExcluirSuave),
+        }
+    } else if OPS_DE_BACKUP.contains(&op) {
+        Some(Serie::Backup)
+    } else {
+        None
+    }
+}
+
+/// A FAIXA do aquario (A10) em que a bolha de uma tarefa viva nada:
+/// `select`, `insert`, `update`, `delete` ou `outras`.
+///
+/// Sai da mesma [`serie_pela_op`] da contagem, e nao de uma lista na tela:
+/// a bolha de `varrer` na faixa «consulta» e a barra de `select` no grafico
+/// tem de concordar, e duas listas divergiriam no dia em que uma operacao
+/// nova entrasse numa so (lei «funcao e comando vem do mesmo motor»).
+pub fn faixa_da_op(op: &str) -> &'static str {
+    match serie_pela_op(op, false) {
+        Some(Serie::Select) => "select",
+        Some(Serie::Insert) => "insert",
+        Some(Serie::Update) => "update",
+        Some(Serie::ExcluirSuave) | Some(Serie::ExcluirFisico) => "delete",
+        _ => "outras",
     }
 }
 
@@ -606,6 +630,35 @@ pub fn arquivo_ao_lado_de(log_acessos: &Path) -> PathBuf {
 mod testes {
     use super::*;
     use crate::apoio_teste::DirTemp;
+
+    /// A faixa da bolha e a barra do grafico pela MESMA decisao: tirar o
+    /// `serie_pela_op` de uma das duas e este teste acusa a divergencia.
+    #[test]
+    fn a_faixa_da_bolha_concorda_com_a_serie_da_contagem() {
+        for (op, faixa) in [
+            ("varrer", "select"),
+            ("inserir", "insert"),
+            ("inserir_lote", "insert"),
+            ("atualizar", "update"),
+            ("excluir", "delete"),
+            ("backup", "outras"),
+            ("sql", "outras"),
+            ("criar_tabela", "outras"),
+        ] {
+            assert_eq!(faixa_da_op(op), faixa, "{op}");
+        }
+        let vazia = Json::objeto(vec![]);
+        for op in ["varrer", "inserir", "atualizar", "excluir"] {
+            let serie = Desfecho::da_resposta(op, Some(&vazia)).serie.unwrap();
+            let nome = serie.nome();
+            let esperado = if nome.starts_with("excluir") {
+                "delete"
+            } else {
+                nome
+            };
+            assert_eq!(faixa_da_op(op), esperado, "{op}");
+        }
+    }
 
     /// 2026-10-09 13:00:00 UTC.
     const T0: i64 = 1_791_550_800_000;

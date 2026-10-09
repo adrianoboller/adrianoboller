@@ -82,6 +82,13 @@ pub const ISENTOS: &[(&str, usize, &str)] = &[
     // (`ler_pedido`, sobre o `Canal` em claro). Isencao que ninguem precisa
     // mais e porta aberta para a quinta leitura crua entrar calada.
     (
+        "crates/phxsql-server/src/sistema.rs",
+        1,
+        "le o CANO do lancador do `df` (pedido 758), um `sh` filho do proprio \
+         servidor, e nao um soquete: do outro lado nao ha cliente, so a saida \
+         do `df -k` de um caminho que o servidor mandou",
+    ),
+    (
         "crates/phxsql-odbc/src/lib.rs",
         1,
         "servidor de mentira de teste, dentro de `#[cfg(test)] mod testes`",

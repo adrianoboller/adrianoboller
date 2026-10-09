@@ -635,6 +635,10 @@ pub struct Servidor {
     /// acima pergunta «quanto falta»; esta pergunta «o disco ainda aceita
     /// escrita?» -- e a segunda nao espera relogio nenhum para avisar.
     saude: Arc<crate::saude_do_disco::SaudeDoDisco>,
+    /// A camada de ocorrencias (pedido 495, F2): o fato de cada alarme,
+    /// redigido, no `ocorrencias.log`. Sobre o MESMO correio da saude do
+    /// disco -- um carteiro so, a thread `sonda-disco`.
+    ocorrencias: Arc<crate::ocorrencias::Ocorrencias>,
     /// A chave do HMAC do sal falso do `desafio` (pedido 528): segredo que so
     /// o servidor tem, e nao o token que todo cliente tem. Nunca sai em
     /// resposta, `Debug`, profiler nem `config`.
@@ -2585,6 +2589,7 @@ fontes_do_servidor! {
     "servidor/testes_da_saude_do_disco.rs",
     "servidor/testes_da_sonda_de_rede.rs",
     "servidor/testes_da_varredura_da_fk_fora_da_trava.rs",
+    "servidor/testes_das_ocorrencias.rs",
     "servidor/testes_das_threads.rs",
     "servidor/testes_database_de_duas_origens.rs",
     "servidor/testes_dblink_cifra.rs",
@@ -2834,6 +2839,9 @@ mod testes_do_sal_falso;
 
 #[cfg(test)]
 mod testes_da_saude_do_disco;
+
+#[cfg(test)]
+mod testes_das_ocorrencias;
 
 #[cfg(test)]
 mod testes_do_lote_de_replicacao;

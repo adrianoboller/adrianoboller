@@ -5,9 +5,9 @@
 //!
 //! * [`sinal`] e o unico caminho que cria um alarme. Alarme de tarefa vira um
 //!   bit no `AtomicU32` da [`Atividade`] amarrada a esta thread; alarme de
-//!   servidor vai ao [`sedimento`]. A `Ocorrencia` do 495-F2 entra no MESMO
+//!   servidor vai ao [`sedimento`]. A `Ocorrencia` do 495-F2 nasce no MESMO
 //!   corpo, e em nenhum outro: dois produtores decidiriam duas vezes o que
-//!   e alarme.
+//!   e alarme (`crate::ocorrencias`).
 //! * As marcas ficam onde o fato acontece -- `trava_reentrante()`,
 //!   `trava_de_dados_sem_reparo()`, o prazo dentro do `siga`, o gancho de E/S
 //!   do `anotar` --, uma linha em cada.
@@ -22,8 +22,8 @@
 //!
 //! So o caminho RARO paga: todo ponto de marca esta num erro. O caminho
 //! normal nao chama nada daqui. Com a telemetria desligada nao ha atividade
-//! amarrada (`Telemetria::entrar` devolve `None`), e o [`sinal`] de tarefa
-//! para na leitura de uma `RefCell` de thread, antes de qualquer trabalho.
+//! amarrada (`Telemetria::entrar` devolve `None`), e o BIT de tarefa nao se
+//! poe; a ocorrencia, sim (ver [`sinal`]).
 
 use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 
@@ -34,33 +34,37 @@ use crate::telemetria::Atividade;
 /// `os_codigos_daqui_sao_os_do_erro`, para nao divergir calado.
 const CODIGO_CORROMPIDO: u16 = 1001;
 
-/// O produtor unico: marca o alarme onde ele aconteceu.
+/// O produtor unico: marca o alarme onde ele aconteceu, e entrega a
+/// `Ocorrencia` dele a camada (495, F2).
 ///
-/// `dados` e o detalhe do fato (a operacao, o arquivo). Hoje ninguem o le:
-/// e a `Ocorrencia` do 495-F2 que o leva, e ela nasce AQUI, no mesmo corpo
-/// -- a assinatura ja o recebe para que as marcas na origem nao precisem
-/// mudar quando ela entrar.
-pub fn sinal(alarme: Alarme, dados: &str) {
-    match alarme.escopo() {
-        // O portao: sem atividade amarrada (telemetria desligada, thread de
-        // servico, teste sem conexao) nao ha onde marcar, e nada se faz.
-        Escopo::Tarefa => {
-            if let Some(a) = crate::telemetria::corrente() {
-                produzir(Some(&a), alarme, dados);
-            }
-        }
-        Escopo::Servidor => produzir(None, alarme, dados),
-    }
+/// `dados` e o detalhe do fato (a operacao, o arquivo, o pedido). A camada o
+/// LE e o grava REDIGIDO no `ocorrencias.log` -- nunca cru. Devolve o id da
+/// ocorrencia, ou `None` quando o silencio a calou ou nao ha servidor.
+///
+/// # O bit tem portao; a ocorrencia, nao
+///
+/// Sem atividade amarrada (telemetria desligada, thread de servico) nao ha
+/// onde por o BIT, e ele nao se poe. O FATO continua acontecendo: a
+/// ocorrencia vai a camada do processo. Nao e instrumentacao no laco quente
+/// -- todo ponto que chama isto esta num erro, o caminho raro --, e um
+/// registro de seguranca que some quando a tela do aquario foi desligada
+/// mentiria sobre o servidor.
+pub fn sinal(alarme: Alarme, dados: &str) -> Option<u64> {
+    // Tambem para o alarme de servidor: ele nao vira bit, mas a ocorrencia
+    // ganha quem e de onde quando acontece dentro de uma conexao.
+    let atividade = crate::telemetria::corrente();
+    produzir(atividade.as_deref(), alarme, dados)
 }
 
 /// O mesmo produtor, para quem ja tem a atividade na mao e pode nao ser a
 /// desta thread -- o `siga` e um metodo da propria atividade.
-pub fn sinal_em(atividade: &Atividade, alarme: Alarme, dados: &str) {
-    produzir(Some(atividade), alarme, dados);
+pub fn sinal_em(atividade: &Atividade, alarme: Alarme, dados: &str) -> Option<u64> {
+    produzir(Some(atividade), alarme, dados)
 }
 
-/// O corpo unico dos dois de cima.
-fn produzir(atividade: Option<&Atividade>, alarme: Alarme, _dados: &str) {
+/// O corpo unico dos dois de cima: o bit (ou o sedimento) E a ocorrencia.
+/// Nenhum outro caminho cria ocorrencia (§11.3, «um produtor»).
+fn produzir(atividade: Option<&Atividade>, alarme: Alarme, dados: &str) -> Option<u64> {
     match alarme.escopo() {
         Escopo::Tarefa => {
             if let Some(a) = atividade {
@@ -69,7 +73,11 @@ fn produzir(atividade: Option<&Atividade>, alarme: Alarme, _dados: &str) {
         }
         Escopo::Servidor => sedimentar(alarme),
     }
-    // A `Ocorrencia` do 495-F2 entra aqui (silencio -> fila -> carteiro).
+    // O servidor da TAREFA, quando ha uma; senao o do processo.
+    let camada = atividade
+        .and_then(Atividade::ocorrencias)
+        .or_else(crate::ocorrencias::do_processo)?;
+    camada.receber(alarme, dados, atividade, crate::agora_ms())
 }
 
 /// O desfecho com codigo 1001 que nenhuma trava marcou e dado corrompido.

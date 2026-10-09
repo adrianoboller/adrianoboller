@@ -358,11 +358,17 @@ impl LogDoAquario {
     /// cliente cujo pedido terminou nao tem culpa do disco cheio, e nao pode
     /// receber erro por uma linha que ele nem pediu.
     pub fn gravar(&self, linha: &Linha) -> Result<()> {
+        self.gravar_json(&linha.para_json())
+    }
+
+    /// O mesmo, para qualquer linha JSON: o `ocorrencias.log` (495, F2) e o
+    /// segundo cliente deste escritor, e nao um terceiro escritor ao lado.
+    pub fn gravar_json(&self, j: &Json) -> Result<()> {
         let mut escritor = travar(&self.escritor);
         let Some(log) = escritor.as_mut() else {
             return Ok(());
         };
-        match log.registrar_json(&linha.para_json()) {
+        match log.registrar_json(j) {
             Ok(()) => {
                 self.gravadas.fetch_add(1, Ordering::Relaxed);
                 Ok(())

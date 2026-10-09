@@ -71,6 +71,7 @@ pub const FONTES: &[(&str, &str)] = &[
     ("ui/index.html", include_str!("../ui/index.html")),
     ("ui/claude.js", include_str!("../ui/claude.js")),
     ("ui/telemetria.js", include_str!("../ui/telemetria.js")),
+    ("ui/aquario.js", include_str!("../ui/aquario.js")),
     ("ui/diagrama-er.js", include_str!("../ui/diagrama-er.js")),
     ("ui/multitela.js", include_str!("../ui/multitela.js")),
     (

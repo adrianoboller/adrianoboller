@@ -254,6 +254,20 @@ pub struct Atividade {
     /// Os alarmes da operacao corrente, um bit por `Alarme` de tarefa,
     /// marcados na ORIGEM pelo `aquario::alarme::sinal` (pedido 707, A3).
     pub(crate) alarmes: AtomicU32,
+    /// A camada de ocorrencias do servidor DESTA atividade (495, F2): o
+    /// alarme da tarefa vai ao arquivo do servidor que a serve, e nao ao de
+    /// outro que more no mesmo processo. Vazia fora do `entrar`.
+    ocorrencias: std::sync::Weak<crate::ocorrencias::Ocorrencias>,
+}
+
+/// O que a atividade esta fazendo, para a ocorrencia (495, F2).
+#[derive(Debug, Clone, Default)]
+pub struct Contexto {
+    pub usuario: String,
+    pub op: String,
+    pub database: String,
+    pub tabela: String,
+    pub digital: Option<u64>,
 }
 
 impl Atividade {
@@ -281,6 +295,27 @@ impl Atividade {
             encerradas: AtomicU64::new(0),
             ultimo_ms: AtomicI64::new(agora_ms),
             alarmes: AtomicU32::new(0),
+            ocorrencias: std::sync::Weak::new(),
+        }
+    }
+
+    /// A camada de ocorrencias do servidor desta atividade, se ele vive.
+    pub fn ocorrencias(&self) -> Option<Arc<crate::ocorrencias::Ocorrencias>> {
+        self.ocorrencias.upgrade()
+    }
+
+    /// Quem, o que e onde -- numa leitura so do `dentro`.
+    pub fn contexto(&self) -> Contexto {
+        let c = match self.dentro.lock() {
+            Ok(c) => c,
+            Err(e) => e.into_inner(),
+        };
+        Contexto {
+            usuario: c.usuario.clone(),
+            op: c.op.clone(),
+            database: c.database.clone(),
+            tabela: c.tabela.clone(),
+            digital: c.digital,
         }
     }
 
@@ -326,6 +361,13 @@ impl Atividade {
             }
         }
         self.estado.store(novo.para_u8() as u64, Ordering::Relaxed);
+    }
+
+    /// O nome da TAREFA corrente (`dados:17#42`): a conexao e o serial do
+    /// pedido. Um lugar so para a bolha e para o `voce` do retrato -- dois
+    /// formatos e a tela nunca acharia a si mesma.
+    pub fn tarefa(&self) -> String {
+        format!("{}#{}", self.chave, self.serial.load(Ordering::Relaxed))
     }
 
     /// Comeca um pedido. Devolve o serial dele.
@@ -704,9 +746,8 @@ impl Atividade {
             Some(base),
             agora_ms,
         );
-        let serial = self.serial.load(Ordering::Relaxed);
         let mut pares = vec![
-            ("tarefa", Json::texto_de(format!("{}#{serial}", self.chave))),
+            ("tarefa", Json::texto_de(self.tarefa())),
             ("origem", Json::texto_de(self.origem)),
             ("estado", Json::texto_de(self.estado().nome())),
         ];
@@ -724,6 +765,12 @@ impl Atividade {
                 pares.push((nome, Json::texto_de(valor)));
             }
         }
+        // A faixa em que a bolha nada, pela decisao da contagem (A10): a
+        // tela nao tem lista de operacoes propria.
+        pares.push((
+            "faixa",
+            Json::texto_de(crate::aquario::contagem::faixa_da_op(&c.op)),
+        ));
         let ha = self.ha_ms();
         let trabalhando = self.trabalhando_ha_ms();
         pares.push(("ms", Json::de_u64(ha)));
@@ -1202,6 +1249,9 @@ pub struct Telemetria {
     /// O aquario (pedido 707). Privado de proposito: para ANOTAR, so se chega
     /// a ele pelo [`Telemetria::aquario_se_ligada`], que e o portao.
     aquario: crate::aquario::Aquario,
+    /// A camada de ocorrencias do servidor dono deste registro (495, F2).
+    /// Cada atividade que entra leva uma copia fraca dela.
+    ocorrencias: Mutex<std::sync::Weak<crate::ocorrencias::Ocorrencias>>,
 }
 
 impl Default for Telemetria {
@@ -1231,6 +1281,16 @@ impl Telemetria {
             fios_vivos: AtomicUsize::new(0),
             pintura: Mutex::new(crate::config::Painel::default()),
             aquario: crate::aquario::Aquario::default(),
+            ocorrencias: Mutex::new(std::sync::Weak::new()),
+        }
+    }
+
+    /// O servidor diz qual e a camada de ocorrencias dele. Chamado uma vez,
+    /// no arranque, antes de a porta abrir.
+    pub fn definir_ocorrencias(&self, o: &Arc<crate::ocorrencias::Ocorrencias>) {
+        match self.ocorrencias.lock() {
+            Ok(mut v) => *v = Arc::downgrade(o),
+            Err(e) => *e.into_inner() = Arc::downgrade(o),
         }
     }
 
@@ -1338,13 +1398,12 @@ impl Telemetria {
         if let Some(a) = mapa.get(chave) {
             return Some(Arc::clone(a));
         }
-        let a = Arc::new(Atividade::nova(
-            chave.to_string(),
-            origem,
-            ip.to_string(),
-            ligacao,
-            agora_ms,
-        ));
+        let mut nova =
+            Atividade::nova(chave.to_string(), origem, ip.to_string(), ligacao, agora_ms);
+        if let Ok(o) = self.ocorrencias.lock() {
+            nova.ocorrencias = o.clone();
+        }
+        let a = Arc::new(nova);
         mapa.insert(chave.to_string(), Arc::clone(&a));
         Some(a)
     }
@@ -1852,6 +1911,16 @@ impl Telemetria {
             ("ligada", Json::Bool(self.ligada())),
             ("agora_ms", Json::de_i64(agora_ms)),
             ("completo", Json::Bool(completo)),
+            // A bolha de QUEM PERGUNTA, como o `voce` da telemetria: a tela
+            // do aquario pede o retrato a cada volta, e sem isto o proprio
+            // pedido nadaria no tanque, estourando de dois em dois segundos.
+            (
+                "voce",
+                match corrente() {
+                    Some(a) => Json::texto_de(a.tarefa()),
+                    None => Json::Nulo,
+                },
+            ),
             (
                 "limiares",
                 Json::objeto(vec![

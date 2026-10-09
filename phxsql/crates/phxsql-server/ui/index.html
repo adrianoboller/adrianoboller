@@ -43,6 +43,11 @@
      excluir que volta), azul consulta. */
   --acao-incluir:#6cc98c; --acao-alterar:#ffc43d; --acao-excluir:#ff5f5f;
   --acao-marcar:#ff8fc7;  --acao-consultar:#5fa6e8;
+  /* O aquario (pedido 707). O azul escuro da bolha grande e anormal e a
+     BORDA clara: o preenchimento #1d4ed8 da 3,04:1 sobre o fundo, a borda
+     11,30:1 -- e a borda que a torna visivel. `--mudo` e o rotulo das
+     faixas, o mesmo tom do `--texto-3`, que ja passa no pior fundo. */
+  --aq-azul-escuro:#9cc3ff; --mudo:#848da0;
   --barra:52px; --arvore:268px;
   /* A largura VIVA da coluna da arvore. O painel retratil mexe nela, e nao em
      `--arvore`: assim a largura escolhida no arrasto sobrevive a recolher e
@@ -94,6 +99,9 @@
      e continua sendo o mesmo ocre da familia. */
   --acao-incluir:#2f7a3e; --acao-alterar:#7d5f18; --acao-excluir:#b71414;
   --acao-marcar:#b5257f;  --acao-consultar:#1f5c93;
+  /* No papel o azul escuro do aquario e o proprio azul profundo: 9,41:1
+     sobre o fundo claro (aquario-707.md §6.1). */
+  --aq-azul-escuro:#1f3f7a; --mudo:#6b5e57;
   --sombra-fenix:0 6px 18px rgba(198,60,10,.18);
   --brilho-entrada:#efe7dd; --tinta-botao:#fff6f0;
 }
@@ -2816,7 +2824,12 @@ async function abrirApp() {
     return;
   }
 
-  await montarArvore();
+  // Com uma tela pedida na URL (`?tela=aquario`, a TV de parede), o Painel
+  // NAO abre por baixo: ele pede operacoes de administrar, e a TV entra com
+  // um login que so monitora -- seriam duas recusas 403 no console a cada
+  // entrada, por uma tela que ninguem pediu.
+  const telaPedida = !!(window.PhxTelas && rota.tela && PhxTelas._CATALOGO[rota.tela]);
+  await montarArvore(!telaPedida);
   // O campo "Database" do login abre a arvore ja na primeira tabela
   // desse banco, em vez de deixar o usuario procurar.
   if (est.database) {
@@ -2827,6 +2840,12 @@ async function abrirApp() {
   // As abas PINADAS voltam por ultimo, para nao competirem com o clique que
   // a arvore da no Painel. Quem nunca pinou nada nao ve diferenca nenhuma.
   if (window.PhxTelas) await PhxTelas.restaurar();
+  // `?tela=aquario` (a TV de parede) sem `destacada`: entra pelo login comum
+  // e abre a tela pedida no lugar do Painel. So tela do CATALOGO -- a rota
+  // que nao existe nao abre nada, e o Painel abre como antes.
+  if (telaPedida) {
+    await PhxTelas.abrirRota().catch(e => avisar(String(e && e.message || e), true));
+  }
   $("#app").dataset.pronto = "1";
 }
 
@@ -14240,7 +14259,7 @@ function telaTelemetria() {
   folha(txt("tela.fer_telemetria","Telemetria"),
         txt("tela.st_telemetria_o_que_faz",
             "o que o servidor está fazendo agora — séries, atividades e threads, em gráficos bolha no molde do SQL Check da Idera®"),
-        PhxTelemetria.html());
+        PhxTelemetria.html() + alcaDoAquario());
   const ligar = () => PhxTelemetria.iniciar({
     api,
     aoAvisar: (t, mal) => avisar(t, mal),
@@ -14249,9 +14268,70 @@ function telaTelemetria() {
     periodo: 2000,
   });
   ligar();
+  const alca = ligarAlcaDoAquario();
   // Escondida, a telemetria PARA de pedir -- de 2 em 2 segundos e o pedido
-  // mais caro da tela, e num monitor de quatro regioes seriam quatro.
-  if (window.PhxTelas) PhxTelas.laco(() => PhxTelemetria.parar(), ligar);
+  // mais caro da tela, e num monitor de quatro regioes seriam quatro. O laco
+  // e UM par por aba: o aquario da alca para e volta junto.
+  if (window.PhxTelas) PhxTelas.laco(
+    () => { PhxTelemetria.parar(); alca.parar(); },
+    () => { ligar(); alca.retomar(); });
+}
+
+/* ============================== aquario (pedido 707, A10/A11)
+ *
+ * A tela mora em `ui/aquario.js`; aqui e a cola, como a da telemetria. Abre
+ * por `?tela=aquario` (o CATALOGO do multitela) e pela ALCA no painel da
+ * telemetria, que estica pelo canto e guarda a altura por usuario.
+ *
+ * O aquario pede `aquario_retrato`, `aquario_log` e `aquario_contagens`, que
+ * so exigem `monitorar` -- a TV de parede entra com um login que nao
+ * administra nada. Login e IP nunca aparecem aqui (decisao do dono): quem
+ * administra os ve na telemetria. */
+function telaAquario() {
+  folha(txt("tela.aq_titulo", "Aquário"),
+        txt("tela.aq_subtitulo", "cada tarefa viva é uma bolha: a cor diz a gravidade, a altura diz o peso, e ela estoura ao terminar"),
+        `<div id="aqTela"></div>`);
+  const ctl = PhxAquario.tela($("#aqTela"), { api, periodo: 2000 });
+  if (window.PhxTelas) PhxTelas.laco(() => ctl.parar(), () => ctl.retomar());
+  // Trocar o idioma repinta a tela inteira: os rotulos das faixas e dos
+  // graficos sao pintados uma vez.
+  est.repintar = () => telaAquario();
+}
+
+/* A alca: um <details>, e nao um botao -- abrir e fechar e o que ele ja sabe,
+ * sem id novo para a bateria clicar. Nasce FECHADA: o aquario so pede ao
+ * servidor depois de alguem abri-lo, e fechar volta a zero pedidos. */
+function alcaDoAquario() {
+  return `<details class="aq-alca" id="aqAlca">
+    <summary>${esc(txt("tela.aq_titulo", "Aquário"))}</summary>
+    <div class="aq-alca-caixa" id="aqAlcaCaixa"></div>
+  </details>`;
+}
+
+function ligarAlcaDoAquario() {
+  const det = $("#aqAlca"), caixa = $("#aqAlcaCaixa");
+  const guarda = `phxsql.aquario.altura.${(est.usuario && est.usuario.login) || "-"}`;
+  let ctl = null, medida = null;
+  const alt = +(localStorage.getItem(guarda) || 0);
+  if (alt >= 200) caixa.style.height = `${alt}px`;
+  const abrir = () => {
+    if (ctl) return;
+    ctl = PhxAquario.tela(caixa, { api, compacto: true, periodo: 2000 });
+    // A altura que a pessoa esticou volta na proxima abertura, por usuario.
+    if (window.ResizeObserver && !medida) {
+      medida = new ResizeObserver(() => {
+        const h = Math.round(caixa.getBoundingClientRect().height);
+        if (h >= 200) localStorage.setItem(guarda, String(h));
+      });
+      medida.observe(caixa);
+    }
+  };
+  const fechar = () => { if (ctl) { ctl.soltar(); ctl = null; caixa.textContent = ""; } };
+  det.addEventListener("toggle", () => det.open ? abrir() : fechar());
+  return {
+    parar: () => { if (ctl) ctl.parar(); },
+    retomar: () => { if (ctl) ctl.retomar(); },
+  };
 }
 
 async function verProfiler() {

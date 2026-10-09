@@ -486,16 +486,12 @@ impl Servidor {
     /// espaco: ela faz `fsync` e fala com o rele, e nenhuma das duas coisas
     /// cabe no caminho de uma consulta -- nem debaixo da trava de dados.
     ///
-    /// Sobe com a sonda ligada OU com o e-mail ligado: sem sonda ainda ha
-    /// eventos a entregar (os do gancho), e sem e-mail ainda ha canario a
-    /// escrever (o painel). So nao sobe quando nao ha nada a fazer.
+    /// Sobe SEMPRE desde a F2 do pedido 495: alem da sonda e dos avisos, ela
+    /// e o carteiro das ocorrencias, e o `ocorrencias.log` nao depende de
+    /// e-mail nem de sonda. Sem ela a fila enche ate o teto e o arquivo nunca
+    /// recebe nada -- o registro de seguranca calado justo no servidor que
+    /// desligou o resto.
     pub(super) fn ligar_sonda_de_disco(self: &Arc<Self>) {
-        if !self.saude.ligada()
-            && !self.config.alertas.email.ligado
-            && !self.config.alertas.gancho.ligado
-        {
-            return;
-        }
         let d = &self.config.alertas.disco;
         eprintln!(
             "sonda de disco: {} a cada {} s | silencio {} min por tipo | lento acima de {} ms | {}",
@@ -551,12 +547,36 @@ impl Servidor {
                         Duration::from_secs(60)
                     };
                     fio.fazendo("esperando um evento de saude, ou a hora da proxima sonda");
-                    for evento in servidor.saude.esperar(ate) {
-                        servidor.avisar_saude_do_disco(&fio, evento);
+                    // O carteiro de verdade tira TODA carta: a da saude vira
+                    // aviso, a ocorrencia vira linha no `ocorrencias.log`.
+                    for carta in servidor.saude.correio().retirar(ate, |_| true) {
+                        match carta {
+                            crate::ocorrencias::Carta::Saude(evento) => {
+                                servidor.avisar_saude_do_disco(&fio, evento)
+                            }
+                            crate::ocorrencias::Carta::Ocorrencia(o) => {
+                                fio.fazendo("gravando uma ocorrencia");
+                                servidor.gravar_ocorrencia(&o);
+                            }
+                        }
                     }
                 }
             },
         );
+    }
+
+    /// A ocorrencia no `ocorrencias.log`. A falha de gravar e noticia de
+    /// disco, e vai ao mesmo destino da falha do `aquario.log`.
+    pub(super) fn gravar_ocorrencia(&self, o: &crate::ocorrencias::Ocorrencia) {
+        if let Err(PhxError::Io(io)) = self.ocorrencias.gravar(o) {
+            self.evento_de_disco(
+                crate::saude_do_disco::classificar(&io),
+                crate::ocorrencias::NOME_DO_ARQUIVO,
+                "",
+                "",
+                &io.to_string(),
+            );
+        }
     }
 
     /// O aviso de um evento de saude que passou pelo silencio -- pelo

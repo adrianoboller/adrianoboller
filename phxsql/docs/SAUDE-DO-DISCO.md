@@ -119,6 +119,12 @@ espaço e dos jobs) e, se deixar, **entrega o evento a uma fila** e acorda o
 carteiro por `Condvar`. O carteiro é a própria thread `sonda-disco`, e é a
 **única** que chama `email::enviar` — fora de qualquer trava do servidor.
 
+Desde a fatia F2 do pedido 495 (09/10/2026), a fila e o `Condvar` **não moram
+mais aqui**: saíram para o `Correio` de `ocorrencias.rs`, que carrega cartas de
+duas famílias (`Saude` e `Ocorrencia`). A saúde do disco virou o primeiro
+produtor da camada de ocorrências, e o carteiro continua UM só — o teste
+`um_carteiro_so` conta os `Condvar::new` e reprova o segundo.
+
 Por que fila, e não o envio ali mesmo numa thread nova: quem registra o evento
 pode estar com a **trava global de dados na mão** — o `fecho_recusado` está,
 dentro de `descarregar_sujas_com` —, e a lei da casa (frente 38, «a trava

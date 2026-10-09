@@ -1112,6 +1112,68 @@ fn analisar_pedido(
     }
 }
 
+/// A FORMA do pedido e as tabelas que ele nomeia, para o `ocorrencias.log`
+/// (pedido 495, F2). `None` quando a linha nao e um objeto JSON -- quem
+/// chama decide o que fazer com o texto.
+///
+/// # Mais estrita que o arquivo do Profiler, e pelo mesmo motor
+///
+/// O `perfil.txt` guarda o pedido com os segredos tapados e o SQL
+/// normalizado, mas com os VALORES de um `inserir` em claro: e diagnostico,
+/// ligado e desligado por quem olha. A ocorrencia e registro de seguranca,
+/// grava sem ninguem pedir e viaja com o disco -- inclusive a do pedido que
+/// tocou uma tabela cifrada. Entao, por cima da mesma arvore do
+/// [`limpar_com`] (segredo por nome, senha no SQL, `parametros` irmaos, SQL
+/// normalizado), todo valor vira `?`. Fica a forma: os nomes dos campos, a
+/// operacao, os bancos, as tabelas e o SQL ja normalizado.
+pub(crate) fn forma_do_pedido(
+    linha: &str,
+    database: &str,
+) -> Option<(Json, Vec<(String, String)>)> {
+    let j = match Json::analisar(linha) {
+        Ok(j @ Json::Objeto(_)) => j,
+        _ => return None,
+    };
+    let mut alvos = Vec::new();
+    colher_tabelas(&j, database, &mut alvos);
+    Some((so_a_forma(&limpar_com(&j, true, &mut false)), alvos))
+}
+
+/// Os campos cujo valor de texto e FORMA, e nao dado.
+const CAMPOS_DA_FORMA: [&str; 4] = ["op", "database", "tabela", "tabelas"];
+
+/// Todo valor vira `?`, menos o texto dos [`CAMPOS_DA_FORMA`] e o SQL do
+/// pedido `sql`, que o [`limpar_com`] ja normalizou -- decidido pelo MESMO
+/// [`e_pedido_sql`] e pelo mesmo `e_campo_de_sql`, e nao por uma lista daqui.
+fn so_a_forma(j: &Json) -> Json {
+    match j {
+        Json::Objeto(pares) => {
+            let e_sql = e_pedido_sql(pares);
+            Json::Objeto(
+                pares
+                    .iter()
+                    .map(|(k, v)| {
+                        let chave = k.trim().to_ascii_lowercase();
+                        let fica = (e_sql && crate::segredos::e_campo_de_sql(k))
+                            || CAMPOS_DA_FORMA.contains(&chave.as_str());
+                        let so_texto = v.texto().is_some()
+                            || v.lista()
+                                .is_some_and(|l| l.iter().all(|i| i.texto().is_some()));
+                        if fica && so_texto {
+                            (k.clone(), v.clone())
+                        } else {
+                            (k.clone(), so_a_forma(v))
+                        }
+                    })
+                    .collect(),
+            )
+        }
+        Json::Lista(itens) => Json::Lista(itens.iter().map(so_a_forma).collect()),
+        Json::Nulo => Json::Nulo,
+        _ => Json::Texto("?".into()),
+    }
+}
+
 /// Toda tabela nomeada no pedido, em qualquer profundidade, com o banco que
 /// vale para ela.
 ///

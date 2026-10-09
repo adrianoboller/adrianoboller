@@ -240,23 +240,148 @@ fn memoria_json() -> Json {
 
 /// Espaco de cada caminho pedido, pelo `df`.
 ///
-/// Uma chamada so, com todos os caminhos: o `df` resolve cada um para a
-/// montagem que o contem, que e justamente o trabalho que a `std` nao faz.
+/// O `df` resolve cada caminho para a montagem que o contem, que e
+/// justamente o trabalho que a `std` nao faz. Um caminho por chamada ao
+/// [`Lancador`]: a linha que sai e a desse caminho, e um caminho que o `df`
+/// recusa nao desloca os outros.
 pub fn espaco(caminhos: &[&Path]) -> Vec<EspacoEmDisco> {
-    if caminhos.is_empty() {
-        return Vec::new();
-    }
-    let mut cmd = std::process::Command::new("df");
-    cmd.arg("-k");
-    for c in caminhos {
-        cmd.arg(c);
-    }
-    let Ok(saida) = cmd.output() else {
-        return Vec::new();
-    };
-    let texto = String::from_utf8_lossy(&saida.stdout);
     let mut out = Vec::new();
-    for (i, l) in texto.lines().skip(1).enumerate() {
+    for c in caminhos {
+        if let Some(texto) = df_de(c) {
+            out.extend(ler_o_df(&texto, c));
+        }
+    }
+    out
+}
+
+/// O `df -k` de um caminho, pelo [`Lancador`] quando ele existe.
+fn df_de(caminho: &Path) -> Option<String> {
+    #[cfg(unix)]
+    if let Some(texto) = Lancador::df(caminho) {
+        return Some(texto);
+    }
+    let saida = std::process::Command::new("df")
+        .arg("-k")
+        .arg(caminho)
+        .output()
+        .ok()?;
+    Some(String::from_utf8_lossy(&saida.stdout).into_owned())
+}
+
+/// A linha que encerra a resposta do lancador: um separador de registro
+/// (0x1e) que o `df` nunca imprime.
+#[cfg(unix)]
+const FIM_DO_DF: &str = "\u{1e}fim";
+
+/// **Pedido 758: o `df` nasce de um processo que nunca segurou a trava.**
+///
+/// # O defeito
+///
+/// A `.phxsql.trava` (pedido 635) e `flock`, e o `flock` e da DESCRICAO
+/// aberta, nao do processo. Todo `spawn` copia os descritores do pai para o
+/// filho, que os segura ate o `exec` (ou ate desistir dele: o `Command`
+/// procura o `df` em cada pasta do `PATH`, e cada tentativa que falha e mais
+/// tempo com a copia na mao). Se o servidor morre por `SIGKILL` nesse
+/// instante, o filho fica orfao com a trava presa, e quem abre a pasta em
+/// seguida ouve `InstanciaOcupada` apontando o pid do morto. Medido pelo SO:
+/// o `phxsqld` morto logo depois de gravar deixou a trava presa em 37 de 300
+/// corridas, e o detentor era um processo de nome `vigia-disco` (a thread que
+/// chama o `df`), `ppid` 1.
+///
+/// # O conserto
+///
+/// O servidor cria, ANTES de tomar qualquer trava ([`Lancador::preparar`],
+/// no comeco do `Servidor::novo`), um `sh` que fica vivo esperando caminhos
+/// pela entrada e roda o `df` de cada um. O `df` passa a ser filho DELE, e
+/// ele nunca teve a trava: nenhuma copia dela existe para sobrar. Os tres
+/// maduros chegam ao mesmo comportamento -- o dono morto nao segura a
+/// instancia -- pela trava `fcntl`, que e do processo e nao passa ao filho;
+/// aqui o `fcntl` custaria `unsafe` (a H3 do pedido 635, morta), e o meio
+/// que sobra na `std` e nao deixar a copia nascer.
+///
+/// O caminho vai como DADO (`"$p"` entre aspas, depois de `--`), nunca como
+/// codigo: o `sh` nao avalia nada do que le. Caminho com quebra de linha nao
+/// cabe no protocolo de uma linha e vai pelo `df` direto, como antes.
+#[cfg(unix)]
+pub struct Lancador {
+    entrada: std::process::ChildStdin,
+    saida: std::io::BufReader<std::process::ChildStdout>,
+    _filho: std::process::Child,
+}
+
+#[cfg(unix)]
+static LANCADOR: std::sync::Mutex<Option<Lancador>> = std::sync::Mutex::new(None);
+
+#[cfg(unix)]
+impl Lancador {
+    /// Cria o lancador se ainda nao existe. Chamado antes da primeira trava;
+    /// chamado de novo (o lancador morreu), cria outro -- e ai a janela do
+    /// `spawn` volta a existir, uma vez, em vez de a cada `df`.
+    pub fn preparar() {
+        let mut g = LANCADOR.lock().unwrap_or_else(|e| e.into_inner());
+        if g.is_none() {
+            *g = Self::nascer();
+        }
+    }
+
+    fn nascer() -> Option<Lancador> {
+        use std::process::{Command, Stdio};
+        let roteiro = format!(
+            "while IFS= read -r p; do df -k -- \"$p\" 2>/dev/null; printf '%s\\n' '{FIM_DO_DF}'; done"
+        );
+        let mut filho = Command::new("sh")
+            .args(["-c", &roteiro])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .ok()?;
+        Some(Lancador {
+            entrada: filho.stdin.take()?,
+            saida: std::io::BufReader::new(filho.stdout.take()?),
+            _filho: filho,
+        })
+    }
+
+    /// O `df -k` de `caminho`; `None` quando o lancador nao responde (e
+    /// entao ele e descartado, para o proximo pedido criar outro).
+    fn df(caminho: &Path) -> Option<String> {
+        use std::io::{BufRead, Write};
+        use std::os::unix::ffi::OsStrExt;
+        let bytes = caminho.as_os_str().as_bytes();
+        if bytes.contains(&b'\n') {
+            return None;
+        }
+        Self::preparar();
+        let mut g = LANCADOR.lock().unwrap_or_else(|e| e.into_inner());
+        let l = g.as_mut()?;
+        let mut pedido = bytes.to_vec();
+        pedido.push(b'\n');
+        let mut texto = String::new();
+        let ok = l.entrada.write_all(&pedido).and_then(|_| l.entrada.flush());
+        if ok.is_ok() {
+            loop {
+                let mut linha = String::new();
+                match l.saida.read_line(&mut linha) {
+                    Ok(n) if n > 0 => {
+                        if linha.trim_end_matches('\n') == FIM_DO_DF {
+                            return Some(texto);
+                        }
+                        texto.push_str(&linha);
+                    }
+                    _ => break,
+                }
+            }
+        }
+        *g = None;
+        None
+    }
+}
+
+/// As linhas de um `df -k` de UM caminho.
+fn ler_o_df(texto: &str, caminho: &Path) -> Vec<EspacoEmDisco> {
+    let mut out = Vec::new();
+    for l in texto.lines().skip(1) {
         let c: Vec<&str> = l.split_whitespace().collect();
         // `df` quebra a linha quando o dispositivo e comprido; nesse caso os
         // numeros vem na linha seguinte. Aceitar so a forma completa evita ler
@@ -266,10 +391,7 @@ pub fn espaco(caminhos: &[&Path]) -> Vec<EspacoEmDisco> {
         }
         let n = |i: usize| c[i].parse::<u64>().unwrap_or(0);
         out.push(EspacoEmDisco {
-            caminho: caminhos
-                .get(i)
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|| c[5].to_string()),
+            caminho: caminho.display().to_string(),
             dispositivo: c[0].to_string(),
             montagem: c[5].to_string(),
             total_kb: n(1),
@@ -554,6 +676,38 @@ mod testes {
             livre_kb: 0,
         };
         assert_eq!(e.usado_percentual(), 0.0);
+    }
+
+    /// Pedido 758: o `df` pelo [`Lancador`] diz o mesmo que o `df` direto, o
+    /// caminho que o `df` recusa nao desloca o seguinte nem derruba o
+    /// lancador, e o caminho que nao cabe numa linha sai pelo `df` direto.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn o_df_pelo_lancador_e_o_do_df_direto() {
+        let direto = |c: &Path| {
+            let s = std::process::Command::new("df")
+                .arg("-k")
+                .arg(c)
+                .output()
+                .unwrap();
+            ler_o_df(&String::from_utf8_lossy(&s.stdout), c)
+        };
+        let raiz = Path::new("/");
+        let pelo_lancador = ler_o_df(&Lancador::df(raiz).expect("o lancador nao respondeu"), raiz);
+        let pelo_df = direto(raiz);
+        assert_eq!(pelo_lancador.len(), 1, "{pelo_lancador:?}");
+        assert_eq!(pelo_lancador[0].dispositivo, pelo_df[0].dispositivo);
+        assert_eq!(pelo_lancador[0].montagem, pelo_df[0].montagem);
+        assert_eq!(pelo_lancador[0].total_kb, pelo_df[0].total_kb);
+
+        let ausente = Path::new("/nao/existe/pedido-758");
+        let i = espaco(&[ausente, raiz]);
+        assert_eq!(i.len(), 1, "{i:?}");
+        assert_eq!(i[0].caminho, "/", "o caminho recusado deslocou o seguinte");
+
+        let quebrado = Path::new("/nao/existe/pedido\n758");
+        assert!(Lancador::df(quebrado).is_none());
+        assert_eq!(espaco(&[raiz]).len(), 1, "o lancador nao sobreviveu");
     }
 
     #[test]

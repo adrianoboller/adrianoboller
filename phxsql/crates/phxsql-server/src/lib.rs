@@ -40,6 +40,7 @@ pub mod juncao;
 pub mod ligacoes;
 pub mod mcp;
 pub mod mensagens;
+pub mod ocorrencias;
 pub mod pg;
 pub mod pivot;
 pub mod previsao;

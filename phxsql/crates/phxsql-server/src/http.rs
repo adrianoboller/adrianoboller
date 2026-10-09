@@ -155,6 +155,13 @@ const DIAGRAMA_JS: &str = include_str!("../ui/diagrama-er.js");
 const TELEMETRIA_CSS: &str = include_str!("../ui/telemetria.css");
 const TELEMETRIA_JS: &str = include_str!("../ui/telemetria.js");
 
+/// O aquario (pedido 707): a fisica das bolhas e a tela ligada ao servidor.
+///
+/// Arquivo proprio pela razao da telemetria -- colisao e desenho sao
+/// ALGORITMO --, e o estilo vai DENTRO dele, escopado em `.aq`/`.aqt`,
+/// porque o mesmo arquivo roda sozinho na bancada da A9, sem esta pagina.
+const AQUARIO_JS: &str = include_str!("../ui/aquario.js");
+
 /// A area de trabalho em abas, regioes e janelas -- estilo e comportamento.
 ///
 /// Separada do `index.html` pelo mesmo motivo do diagrama e da telemetria: o
@@ -222,6 +229,7 @@ pub fn montar_pagina() -> String {
          <script>\n{DIAGRAMA_JS}\n</script>\n\
          <style>\n{TELEMETRIA_CSS}\n</style>\n\
          <script>\n{TELEMETRIA_JS}\n</script>\n\
+         <script>\n{AQUARIO_JS}\n</script>\n\
          <style>\n{MULTITELA_CSS}\n</style>\n\
          <script>\n{MULTITELA_JS}\n</script>\n\
          <script>\n{CLAUDE_JS}\n</script>\n\

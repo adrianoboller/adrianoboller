@@ -24,9 +24,20 @@
 //! * **H1, a que ficou** -- a trava do NUCLEO sobre um arquivo da pasta
 //!   (`flock` no Unix, `LockFileEx` no Windows), pela `std` desde 1.89. Um
 //!   `syscall`, atomica, e o nucleo a solta quando o processo morre, inclusive
-//!   por `kill -9`: nao existe trava orfa. Custou subir a versao minima de
-//!   1.75 para 1.89, e o custo foi medido: 19 avisos novos do `clippy` em
-//!   cinco crates, todos mecanicos (`is_multiple_of`, `is_none_or`).
+//!   por `kill -9`. Custou subir a versao minima de 1.75 para 1.89, e o custo
+//!   foi medido: 19 avisos novos do `clippy` em cinco crates, todos mecanicos
+//!   (`is_multiple_of`, `is_none_or`).
+//!
+//!   **O limite, medido no pedido 758:** o `flock` e da DESCRICAO aberta, e
+//!   «o processo morre» so solta quando a ULTIMA copia do descritor fecha. O
+//!   filho que o processo esta criando segura uma copia ate o `exec`; morto o
+//!   pai nesse instante, o orfao segura a trava por esse tempo, e a recusa
+//!   aponta o pid do morto. O pid gravado nunca decide nada (provado com o pid
+//!   do morto reaproveitado por um processo vivo: 200 de 200 aberturas
+//!   passaram). Por isso o `df` do servidor sai de um lancador nascido antes
+//!   da primeira trava (`phxsql_server::sistema::Lancador`). Quem ainda cria
+//!   filho direto, com a trava na mao, e o gancho do operador
+//!   (`alertas.gancho`, so quando ligado e so num evento de disco).
 //! * **H2, morta** -- arquivo de pid por `create_new` com prova de vida. Morta
 //!   por dois motivos que nao se consertam: no Windows nao ha prova de vida
 //!   sem FFI, entao a queda deixaria a trava ETERNA (o criterio de aceite

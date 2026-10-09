@@ -190,13 +190,15 @@ impl Servidor {
         habitual: crate::aquario::base::Habitual,
         desvio: &crate::aquario::base::Desvio,
     ) {
-        if let Some(atividade) = crate::telemetria::corrente() {
-            crate::aquario::alarme::sinal_em(&atividade, desvio.alarme, &acesso.op);
-        }
+        // A linha `mudou` repete o id da ocorrencia (495, F2, §11.3): o
+        // VALOR, nunca a decisao.
+        let ocorrencia = crate::telemetria::corrente().and_then(|atividade| {
+            crate::aquario::alarme::sinal_em(&atividade, desvio.alarme, &acesso.op)
+        });
         let (classe, alarmes) = self.classe_do_fim(acesso, habitual);
         let mut linha = crate::aquario::log::Linha::mudou(
             desvio.alarme,
-            None,
+            ocorrencia,
             acesso.quando_ms.saturating_add(acesso.duracao_ms as i64),
         )
         .com_classe(classe, alarmes);

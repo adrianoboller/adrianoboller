@@ -3290,8 +3290,17 @@ gravável segura a sua; a `Instancia` (e, no servidor, a `Raiz`) **fixa** a de
 cada pasta em que gravou até morrer — é isso que faz o `phxsqld` ocioso,
 entre dois pedidos, continuar recusando a CLI. A CLI e o app embutido soltam
 quando fecham. O núcleo solta a trava quando o processo morre, inclusive por
-`kill -9`: **não existe trava órfã**. A restauração por cima solta a trava da
-pasta antes do `rename` (`soltar_sob`).
+`kill -9` — mas a trava é da **descrição aberta**, e só sai quando a última
+cópia do descritor fecha. Filho que o processo está criando carrega uma cópia
+até o `exec`: morto o pai nesse instante, o órfão segura a trava por esse
+tempo e a recusa aponta o pid do morto (pedido 758; medido, 37 de 300 quedas
+logo depois de gravar, pelo `df` da `vigia-disco`). Por isso o `df` do
+servidor sai de um **lançador nascido antes da primeira trava**; quem ainda cria
+filho direto, com a trava na mão, é o gancho do operador (`alertas.gancho`, só
+ligado e só num evento de disco). O pid gravado é só diagnóstico e nunca decide nada — o pid do
+morto reaproveitado por um processo vivo não impede a abertura (200 de 200).
+A restauração por cima solta a trava da pasta antes do `rename`
+(`soltar_sob`).
 
 **O que ela não é:** trava de registro, ou proteção contra quem não usa este
 motor (um `cp`, um editor). Fica de fora do backup (§10): é estado do processo
@@ -4890,3 +4899,32 @@ JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo mesmo
 A cor vai **gravada**, não recalculada na leitura: a volta de cinco minutos
 (A13) mostra a bolha da cor que a tela mostrou. Linha anterior à A5 vem sem
 os cinco campos; o leitor trata ausência como «sem classe», nunca como verde.
+
+**Desde a F2 do 495**, a linha `mudou` leva `"ocorrencia": <id>` quando o alarme
+virou ocorrência (§27) — o **valor**, nunca a decisão.
+
+## 27. `ocorrencias.log` — o fato de cada alarme, redigido (pedido 495, F2)
+
+JSON Lines ao lado do `acessos.log`, rodízio de 8 MiB × 8, pelo **mesmo**
+escritor do `aquario.log` (`LogDoAquario::gravar_json` → `LogAcessos::registrar_json`).
+Nasce **0600**: leva `usuario` e `ip`, e por isso é de quem administra — papel
+diferente do `aquario.log` (§26), que nunca os leva (`aquario-707.md` §11.3, Hb3).
+Campo vazio não entra.
+
+```json
+{"quando":"2026-10-09 13:05:01,500","quando_ms":1791551101500,"id":1791551101500000,
+ "alarme":"senha_em_claro","gravidade":"vermelho","grupo":"seguranca",
+ "tarefa":"dados:17","usuario":"ana","ip":"10.0.0.1","op":"sql","database":"loja",
+ "digital":"9f3c0a1b2c3d4e5f","dados":{"op":"sql","texto":"CREATE USER c PASSWORD ?"}}
+```
+
+| campo | o que é |
+|---|---|
+| `id` | semeado com o relógio (ms × 1000) e crescente: não se repete entre arranques |
+| `alarme` / `gravidade` / `grupo` | o `enum Alarme` do 707 — o tipo da ocorrência é ele |
+| `tabelas` | `[{"database","tabela"}]`: toda tabela que o pedido nomeia, **pela árvore inteira** (o lado B de `juntar`, a lista do `unir`) |
+| `digital` | a digital do SQL (F1), hexadecimal (u64 não cabe num número JSON) |
+| `dados` | o `dados` do produtor **redigido por análise**: pedido JSON vira a **forma** (segredo por nome, SQL normalizado, todo outro valor `?`); texto vira o SQL normalizado; o que não se analisa vira o tamanho. Corte de 4.096 caracteres só **depois** da redação |
+
+**Silêncio** por (alarme, usuário, IP), 60 s, no máximo 1.024 chaves (acima
+disso, uma coringa por alarme); o calado conta em `caladas` e não vai ao arquivo.

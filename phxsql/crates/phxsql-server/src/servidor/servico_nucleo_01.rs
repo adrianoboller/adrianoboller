@@ -118,6 +118,11 @@ pub(super) fn colunas_em_disco(
 
 impl Servidor {
     pub fn novo(config: Config) -> Result<Arc<Servidor>> {
+        // O lancador do `df` nasce ANTES da primeira trava de instancia, que a
+        // recuperacao abaixo ja toma: filho criado depois herdaria uma copia
+        // dela e, orfao de um `SIGKILL`, a seguraria (pedido 758).
+        #[cfg(unix)]
+        crate::sistema::Lancador::preparar();
         // Antes de tudo, e antes da recuperacao abaixo -- que tambem
         // sincroniza: o `fsync` recusado derruba o processo (pedido 509).
         phxsql_store::sincronia::ao_recusar(fsync_recusado_derruba_o_processo);
@@ -320,6 +325,11 @@ impl Servidor {
         ) {
             saude.entregar(evento);
         }
+        // A camada de ocorrencias (495, F2) sobre o correio da saude: o
+        // carteiro e um so, e a fila tambem.
+        let ocorrencias = Arc::new(crate::ocorrencias::Ocorrencias::nova(Arc::clone(
+            saude.correio(),
+        )));
         let permissoes_http = match config.recursos.conexoes_web_max {
             0 => Semaforo::sem_teto(),
             teto => Semaforo::novo(teto),
@@ -381,6 +391,7 @@ impl Servidor {
             previsor: Mutex::new(crate::previsao::Previsor::default()),
             backup_marcas: crate::previsao::MarcasDoBackup::default(),
             saude,
+            ocorrencias,
             segredo_do_desafio,
             permissoes_de_dados,
             permissoes_http,
@@ -487,6 +498,25 @@ impl Servidor {
                 caminho_do_aquario.display()
             );
         }
+        // O `ocorrencias.log` (pedido 495, F2), ao lado do `acessos.log`, e a
+        // camada amarrada a telemetria (o alarme da TAREFA vai ao servidor
+        // dela) e ao processo (o que nenhuma tarefa carrega). Falhar AVISA e
+        // sobe, como o aquario: a ocorrencia continua contada e entregue, so
+        // nao chega ao disco -- e a falha de abrir fica para a consulta.
+        let caminho_das_ocorrencias = servidor
+            .config
+            .log_acessos
+            .with_file_name(crate::ocorrencias::NOME_DO_ARQUIVO);
+        if let Err(e) = servidor.ocorrencias.abrir(&caminho_das_ocorrencias) {
+            eprintln!(
+                "AVISO: o ocorrencias.log nao abriu ({}): {e}",
+                caminho_das_ocorrencias.display()
+            );
+        }
+        servidor
+            .telemetria
+            .definir_ocorrencias(&servidor.ocorrencias);
+        crate::ocorrencias::instalar(&servidor.ocorrencias);
         // As horas fechadas da contagem do aquario (pedido 707, A8), ao lado
         // do `acessos.log`, fora do rodizio.
         servidor.telemetria.aquario().contagem().definir_arquivo(

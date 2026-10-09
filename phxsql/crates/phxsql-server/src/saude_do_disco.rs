@@ -31,7 +31,10 @@
 //!    fecho da janela esta), e mandar e-mail ali ataria o servidor inteiro ao
 //!    tempo de resposta do rele -- a lei da trava presa atras da rede. A fila
 //!    acorda a thread da saude por `Condvar` na hora, e e ela, fora de toda
-//!    trava, quem fala com o rele. E o que impede um erro por linha numa carga de
+//!    trava, quem fala com o rele. A fila e o `Condvar` moram no
+//!    `crate::ocorrencias::Correio` desde a F2 do pedido 495: esta saude foi
+//!    o primeiro cliente dele, e a ocorrencia e o segundo -- UM carteiro para
+//!    os dois. E o que impede um erro por linha numa carga de
 //!    cem mil linhas de virar cem mil e-mails: um aviso, e depois silencio
 //!    por chave. A sonda voltando a passar zera o silencio dos tipos que ela
 //!    propria consegue provar (so-leitura, sem espaco, conferencia, lento);
@@ -52,11 +55,11 @@
 //! chega sem `raw_os_error`; um erro do nucleo chega com os dois. Olhar so um
 //! dos lados deixaria metade dos casos passar como «generico».
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use phxsql_core::json::Json;
@@ -72,8 +75,10 @@ pub const CANARIO: &str = ".saude-do-disco";
 /// disco ACEITA escrita, e nao quanto ele aguenta.
 const TAMANHO_DO_CANARIO: usize = 64;
 
-/// Quantos eventos a fila do carteiro segura quando ninguem a esvazia.
-const TETO_DA_FILA: usize = 32;
+/// Quantos eventos a fila do carteiro segura quando ninguem a esvazia. E o
+/// teto do [`Correio`]: a fila e dele desde a F2 do pedido 495.
+pub use crate::ocorrencias::TETO_DA_FILA;
+use crate::ocorrencias::{Carta, Correio};
 
 /// A familia de um evento. E a CHAVE do silencio: dois eventos da mesma
 /// familia dentro da janela sao um aviso so.
@@ -280,12 +285,11 @@ pub struct SaudeDoDisco {
     /// que reler um arquivo VELHO (de outra passada, ou de outro processo no
     /// mesmo `base`) nao passe por conferencia.
     passada: AtomicU64,
-    /// Os eventos que passaram pelo silencio e esperam o carteiro. Quem
-    /// entrega pode estar com a trava de dados na mao; quem tira nunca esta.
-    fila: Mutex<VecDeque<Evento>>,
-    /// Acorda o carteiro na hora em que um evento entra -- «imediato» nao
-    /// espera o relogio da sonda.
-    carteiro: Condvar,
+    /// A fila e o carteiro, extraidos para o [`Correio`] (pedido 495, F2).
+    /// Quem entrega pode estar com a trava de dados na mao; quem tira nunca
+    /// esta. Compartilhado com a camada de ocorrencias do servidor: um
+    /// carteiro so, uma thread so.
+    correio: Arc<Correio>,
     /// A reserva da execucao UNICA do gancho do operador: quem a perde e
     /// descartado, e nao enfileirado. Por servidor, e nao global: dois
     /// servidores no mesmo processo (os testes) nao se descartam.
@@ -305,49 +309,40 @@ impl SaudeDoDisco {
             silencio: Mutex::new(HashMap::new()),
             avisos: Mutex::new(Avisos::default()),
             passada: AtomicU64::new(0),
-            fila: Mutex::new(VecDeque::new()),
-            carteiro: Condvar::new(),
+            correio: Arc::new(Correio::novo()),
             gancho_em_voo: AtomicBool::new(false),
         }
+    }
+
+    /// O correio desta saude -- o servidor o empresta a camada de
+    /// ocorrencias, e a thread `sonda-disco` o esvazia inteiro.
+    pub fn correio(&self) -> &Arc<Correio> {
+        &self.correio
     }
 
     /// Poe o evento na fila do carteiro e o acorda. Barato e sem rede: e o
     /// unico trabalho permitido a quem esta dentro de uma secao critica.
     pub fn entregar(&self, evento: Evento) {
-        if let Ok(mut fila) = self.fila.lock() {
-            // Teto: sem carteiro (sonda E e-mail desligados) ninguem tira da
-            // fila, e o silencio por tipo deixa passar um evento por tipo a
-            // cada janela -- cinco tipos, 30 min, e a fila cresceria 240 por
-            // dia para sempre. O mais velho sai; o painel guarda o ultimo.
-            if fila.len() >= TETO_DA_FILA {
-                fila.pop_front();
-            }
-            fila.push_back(evento);
-        }
-        self.carteiro.notify_one();
+        self.correio.entregar(Carta::Saude(evento));
     }
 
-    /// Espera ate `ate` por eventos na fila e devolve todos os que houver --
-    /// vazio quando o prazo venceu sem nada. So o carteiro chama isto, fora
-    /// de qualquer trava do servidor.
+    /// Espera ate `ate` por eventos de saude e devolve todos os que houver --
+    /// vazio quando o prazo venceu sem nada. As ocorrencias ficam na fila,
+    /// para o carteiro de verdade (que tira tudo) as levar.
     pub fn esperar(&self, ate: Duration) -> Vec<Evento> {
-        let Ok(mut fila) = self.fila.lock() else {
-            return Vec::new();
-        };
-        if fila.is_empty() {
-            // Um despertar espurio devolve vazio, e o laco de fora so confere
-            // o relogio da sonda e volta a esperar: nada se perde.
-            match self.carteiro.wait_timeout(fila, ate) {
-                Ok((guarda, _)) => fila = guarda,
-                Err(_) => return Vec::new(),
-            }
-        }
-        fila.drain(..).collect()
+        self.correio
+            .retirar(ate, e_da_saude)
+            .into_iter()
+            .filter_map(|c| match c {
+                Carta::Saude(e) => Some(e),
+                Carta::Ocorrencia(_) => None,
+            })
+            .collect()
     }
 
-    /// Quantos eventos esperam o carteiro. Para o teste e o painel.
+    /// Quantos eventos de saude esperam o carteiro. Para o teste e o painel.
     pub fn na_fila(&self) -> usize {
-        self.fila.lock().map(|f| f.len()).unwrap_or(0)
+        self.correio.contar(e_da_saude)
     }
 
     pub fn ligada(&self) -> bool {
@@ -644,6 +639,10 @@ impl SaudeDoDisco {
             ),
         ])
     }
+}
+
+fn e_da_saude(c: &Carta) -> bool {
+    matches!(c, Carta::Saude(_))
 }
 
 /// Escreve, sincroniza, rele, confere e apaga o canario.

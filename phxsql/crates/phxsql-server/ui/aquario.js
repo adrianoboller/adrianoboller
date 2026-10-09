@@ -1,44 +1,46 @@
-/* Aquario do PhxSql — a fisica das bolhas (pedido 707, fatia A9).
+/* Aquario do PhxSql (pedido 707) — a fisica das bolhas (A9), a tela ligada
+ * ao servidor (A10) e a linha do tempo com os tres graficos (A11).
  *
  * Cada tarefa viva do servidor e uma BOLHA: nasce pequena, cresce com o tempo
  * que leva, colide com as vizinhas sem se sobrepor e ESTOURA quando a tarefa
  * some do retrato. Faixas horizontais por operacao seguram as bolhas no seu
  * canto sem prende-las.
  *
- * ## O modulo nao fala com o servidor
+ * ## Duas camadas
  *
- * Recebe a lista de tarefas por `atualizar(tarefas)`. Ligar isto ao servidor
- * e a fatia A10; aqui o retrato e inventado, e e assim que a fisica pode ser
- * exercitada no navegador sem servidor nenhum.
+ * - `criar(host)` e a FISICA: recebe a lista de tarefas por `atualizar` e nao
+ *   fala com o servidor. E assim que ela se exercita sem servidor nenhum
+ *   (`bancada/aquario/a9-pagina.html`).
+ * - `tela(host, { api })` e a LIGACAO (A10/A11): pede `aquario_retrato`,
+ *   `aquario_log` e `aquario_contagens`, e entrega o retrato a fisica.
  *
- * ## O que a TV mostra (decisao do dono)
+ * ## O que a TV mostra (decisao do dono, 09/10/2026)
  *
- * So OPERACAO, TABELA e COR, com o usuario PSEUDONIMIZADO. Por isso o modulo
- * le da tarefa exatamente cinco campos — id, op, tabela, cor, ms — mais
- * `pseudo`, e NUNCA toca em `login`, `ip` ou `quem`: o que nao e lido nao
- * vaza, nem por engano de uma tela futura. Quem pseudonimiza e o servidor.
+ * So OPERACAO, TABELA e COR. A ligacao copia do retrato exatamente os campos
+ * que desenha — tarefa, op, tabela, cor, faixa, motivo, ms — e NUNCA toca em
+ * `usuario` ou `ip`, nem quando o servidor os manda ao administrador: quem
+ * administra os ve pelo portao da telemetria, na tela dela. O que nao e lido
+ * nao vaza, nem por engano de uma tela futura.
  *
  * ## Quatro cuidados
  *
  * 1. Sem sobreposicao e INVARIANTE, nao tendencia: depois da integracao rodam
  *    varias passagens de relaxamento, e se mesmo assim a area das bolhas nao
  *    cabe na caixa, os raios ENCOLHEM (`escala`) em vez de se sobreporem.
- *    Mentir o tamanho relativo e menos grave que mentir quem esta em cima de
- *    quem; o tamanho relativo continua valendo.
  * 2. Nada e recriado por volta: um <g> por tarefa, achado pelo id; o laco so
  *    muda atributos. Clique no meio de uma volta nao cai no vazio.
  * 3. A cor nao e o unico sinal: forma e traco acompanham (circulo, losango,
- *    octogono, tracejado), como no `telemetria.js`. Contorno, nunca fundo
- *    cheio.
- * 4. O CSS global morde: tudo escopado em `.aq`, e o `text-transform` e
- *    desfeito — «Blumenau» continua «Blumenau».
+ *    octogono, tracejado). Contorno, nunca fundo cheio.
+ * 4. O CSS global morde: tudo escopado em `.aq`/`.aqt`, sem <label> (o
+ *    `label{text-transform:uppercase}` da pagina faria «Blumenau» virar
+ *    «BLUMENAU»), e o `input{width:100%}` desfeito onde nao cabe.
  *
  * ## Texto
  *
- * Rotulo de tela vem pela funcao `t(chave)` que o chamador entrega (a fabrica
- * de idiomas, `aquario.*`). Sem ela, o PADRAO abaixo (portugues) serve so de
- * rede — as chaves estao registradas na lacuna do A9 ate a fabrica entrar.
- * Operacao, tabela e pseudonimo sao DADO: entram como vieram.
+ * Rotulo pela fabrica de idiomas (`tela.aq_*`), por CHAVE: o motivo da cor
+ * chega do servidor como chave (`aquario.motivo.*`, neutra de idioma, a mesma
+ * do `aquario.log`) e a tabela `MOTIVOS` abaixo a troca pela chave da tela —
+ * nunca pela frase. Operacao, tabela e database sao DADO: entram como vieram.
  */
 "use strict";
 
@@ -46,33 +48,95 @@ window.PhxAquario = (function () {
 
   const SVG = "http://www.w3.org/2000/svg";
 
-  /* Chaves da fabrica e o texto de rede. */
-  const TEXTOS = {
-    "aquario.faixa.select": "consulta",
-    "aquario.faixa.insert": "inclusão",
-    "aquario.faixa.update": "alteração",
-    "aquario.faixa.delete": "exclusão",
-    "aquario.faixa.outras": "outras",
-    "aquario.vazio": "nenhuma tarefa em andamento",
-    "aquario.cor.verde": "normal",
-    "aquario.cor.azul_claro": "grande, normal",
-    "aquario.cor.azul_escuro": "grande, acima do habitual",
-    "aquario.cor.amarelo": "aviso",
-    "aquario.cor.vermelho": "alarme",
-    "aquario.cor.rosa": "encerrando",
+  /* A fabrica da pagina, quando ha pagina; o portugues de fabrica, quando o
+   * modulo roda sozinho (a bancada da A9). */
+  function txt(nome, padrao) {
+    return window.txt ? window.txt(nome, padrao) : padrao;
+  }
+  function preencher(bruto, dados) {
+    return String(bruto).replace(/\{(\w+)\}/g,
+      (m, k) => (dados && k in dados) ? String(dados[k]) : m);
+  }
+  const esc = t => String(t == null ? "" : t).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  /* Faixas, de cima para baixo. O servidor diz a faixa de cada tarefa
+   * (`faixa`, pela mesma decisao da contagem); sem ela, `outras`. */
+  const FAIXAS = ["select", "insert", "update", "delete", "outras"];
+  const ROTULO_DA_FAIXA = {
+    select: () => txt("tela.aq_faixa_select", "consulta"),
+    insert: () => txt("tela.aq_faixa_insert", "inclusão"),
+    update: () => txt("tela.aq_faixa_update", "alteração"),
+    delete: () => txt("tela.aq_faixa_delete", "exclusão"),
+    outras: () => txt("tela.aq_faixa_outras", "outras"),
   };
 
-  /* Faixas, de cima para baixo. A operacao desconhecida cai em `outras`. */
-  const FAIXAS = ["select", "insert", "update", "delete", "outras"];
+  const ROTULO_DA_COR = {
+    verde: () => txt("tela.tl_nivel_normal", "normal"),
+    azul_claro: () => txt("tela.aq_cor_azul_claro", "grande, normal"),
+    azul_escuro: () => txt("tela.aq_cor_azul_escuro", "grande, acima do habitual"),
+    amarelo: () => txt("tela.aq_cor_amarelo", "aviso"),
+    vermelho: () => txt("tela.aq_cor_vermelho", "alarme"),
+    rosa: () => txt("tela.aq_cor_rosa", "encerrando"),
+  };
+
+  /* O motivo da cor, pela CHAVE que o servidor manda. Uma linha por chave,
+   * escrita por extenso: o laco da fabrica acha chave usada procurando o
+   * literal, e chave montada de prefixo + nome seria chave morta para ele. */
+  const MOTIVOS = {
+    // o motivo e a cor dizem a mesma coisa aqui: uma chave so, nao duas
+    "aquario.motivo.encerrando": () => txt("tela.aq_cor_rosa", "encerrando"),
+    "aquario.motivo.ociosa": () => txt("tela.aq_m_ociosa", "conexão parada, sem pedido"),
+    "aquario.motivo.esperando_a_trava": () => txt("tela.aq_m_esperando_a_trava", "esperando a trava de dados"),
+    "aquario.motivo.segurando_a_trava": () => txt("tela.aq_m_segurando_a_trava", "segurando a trava de dados com fila atrás"),
+    "aquario.motivo.acima_do_tempo_fixo": () => txt("tela.aq_m_acima_do_tempo_fixo", "acima do tempo de alerta"),
+    "aquario.motivo.grande": () => txt("tela.aq_m_grande", "tarefa grande, dentro do habitual"),
+    "aquario.motivo.no_habitual": () => txt("tela.aq_m_no_habitual", "dentro do habitual"),
+    "aquario.motivo.trava_reentrante": () => txt("tela.aq_m_trava_reentrante", "pediu a trava que já segurava"),
+    "aquario.motivo.trava_envenenada": () => txt("tela.aq_m_trava_envenenada", "trava envenenada por uma falha de outra tarefa"),
+    "aquario.motivo.erro_de_disco": () => txt("tela.aq_m_erro_de_disco", "erro de disco"),
+    "aquario.motivo.dado_corrompido": () => txt("tela.aq_m_dado_corrompido", "dado corrompido"),
+    "aquario.motivo.transacao_acima_do_teto": () => txt("tela.aq_m_transacao_acima_do_teto", "transação acima do teto da réplica"),
+    "aquario.motivo.forca_bruta": () => txt("tela.aq_m_forca_bruta", "tentativas seguidas de login recusado"),
+    "aquario.motivo.senha_em_claro": () => txt("tela.aq_m_senha_em_claro", "senha chegando sem cifra"),
+    "aquario.motivo.prazo_estourado": () => txt("tela.aq_m_prazo_estourado", "cancelada pelo prazo"),
+    "aquario.motivo.fora_do_habitual": () => txt("tela.aq_m_fora_do_habitual", "acima do habitual desta operação"),
+    "aquario.motivo.fora_do_habitual_reincidente": () => txt("tela.aq_m_fora_do_habitual_reincidente", "acima do habitual, de novo"),
+    "aquario.motivo.integridade_recusada": () => txt("tela.aq_m_integridade_recusada", "integridade recusou: o dado está protegido"),
+    "aquario.motivo.fecho_recusado": () => txt("tela.aq_m_fecho_recusado", "fecho da janela de escrita recusado"),
+    "aquario.motivo.fsync_recusado_antes": () => txt("tela.aq_m_fsync_recusado_antes", "o disco recusou gravar num arranque anterior"),
+    "aquario.motivo.marca_nao_resolvida": () => txt("tela.aq_m_marca_nao_resolvida", "marca de recuperação não resolvida"),
+    "aquario.motivo.indice_atrasado": () => txt("tela.aq_m_indice_atrasado", "índice ficou para trás no arranque"),
+    "aquario.motivo.continuidade_rompida": () => txt("tela.aq_m_continuidade_rompida", "a continuidade da réplica rompeu"),
+    "aquario.motivo.origem_inalcancavel": () => txt("tela.aq_m_origem_inalcancavel", "a origem da réplica não responde"),
+    "aquario.motivo.firewall_bloqueou": () => txt("tela.aq_m_firewall_bloqueou", "o firewall bloqueou um endereço"),
+    "aquario.motivo.disco_lento": () => txt("tela.sd_tipo_lento", "disco lento"),
+    "aquario.motivo.esgotamento_previsto": () => txt("tela.aq_m_esgotamento_previsto", "um recurso esgota em menos de um dia"),
+    "aquario.motivo.esgotamento_iminente": () => txt("tela.aq_m_esgotamento_iminente", "um recurso esgota em menos de duas horas"),
+  };
+  /* Chave que esta versao da tela nao conhece (servidor mais novo): sai a
+   * chave crua, que e honesta — inventar uma frase seria pior. */
+  function motivo(chave) {
+    const f = MOTIVOS[chave];
+    return f ? f() : String(chave || "");
+  }
+
+  const EVENTOS = {
+    nasceu: () => txt("tela.aq_ev_nasceu", "nasceu"),
+    mudou: () => txt("tela.aq_ev_mudou", "mudou de cor"),
+    estourou: () => txt("tela.aq_ev_estourou", "terminou"),
+    morta: () => txt("tela.tl_th_encerrada", "encerrada"),
+    sedimento: () => txt("tela.aq_ev_sedimento", "alarme do servidor"),
+  };
 
   /* cor -> { forma, variavel, tracejado } (aquario-707.md §2.3). */
   const CORES = {
-    verde:       { forma: "circulo",  v: "--ok",            fb: "#6cc98c", traco: "",    esp: 1.5 },
-    azul_claro:  { forma: "circulo",  v: "--reg",           fb: "#5fa6e8", traco: "",    esp: 2 },
-    azul_escuro: { forma: "circulo",  v: "--aq-azul-escuro", fb: "#9cc3ff", traco: "",   esp: 3, dupla: true },
-    amarelo:     { forma: "losango",  v: "--ambar",         fb: "#ffc43d", traco: "6 4", esp: 2 },
-    vermelho:    { forma: "octogono", v: "--vermelho",      fb: "#ff5f5f", traco: "2 3", esp: 3 },
-    rosa:        { forma: "circulo",  v: "--acao-marcar",   fb: "#ff8fc7", traco: "10 4", esp: 2 },
+    verde:       { forma: "circulo",  v: "--ok",             fb: "#6cc98c", traco: "",     esp: 1.5 },
+    azul_claro:  { forma: "circulo",  v: "--reg",            fb: "#5fa6e8", traco: "",     esp: 2 },
+    azul_escuro: { forma: "circulo",  v: "--aq-azul-escuro", fb: "#9cc3ff", traco: "",     esp: 3, dupla: true },
+    amarelo:     { forma: "losango",  v: "--ambar",          fb: "#ffc43d", traco: "6 4",  esp: 2 },
+    vermelho:    { forma: "octogono", v: "--vermelho",       fb: "#ff5f5f", traco: "2 3",  esp: 3 },
+    rosa:        { forma: "circulo",  v: "--acao-marcar",    fb: "#ff8fc7", traco: "10 4", esp: 2 },
   };
 
   const M = {
@@ -99,9 +163,11 @@ window.PhxAquario = (function () {
     };
   }
 
-  function faixaDe(op) {
-    const o = String(op || "").toLowerCase();
-    return FAIXAS.indexOf(o) >= 0 ? o : "outras";
+  /* A faixa da tarefa: a que o servidor disse, ou o nome da faixa quando o
+   * retrato e inventado (a bancada da A9 manda `op: "select"`). */
+  function faixaDe(t) {
+    const f = String(t.faixa || t.op || "").toLowerCase();
+    return FAIXAS.indexOf(f) >= 0 ? f : "outras";
   }
 
   /* Raio-alvo: logaritmico, porque o que interessa e a diferenca entre 5 ms e
@@ -210,7 +276,7 @@ window.PhxAquario = (function () {
         const id = String(t.id);
         vistos.add(id);
         let b = e.porId.get(id);
-        const faixa = faixaDe(t.op);
+        const faixa = faixaDe(t);
         if (!b) {
           b = {
             id: id, x: 0, y: 0, vx: 0, vy: 0, r: 0, alvo: 0,
@@ -233,7 +299,7 @@ window.PhxAquario = (function () {
           e.porId.set(id, b);
         }
         // so estes campos do retrato; login e IP nao existem para este modulo
-        b.op = t.op; b.tabela = t.tabela; b.pseudo = t.pseudo;
+        b.op = t.op; b.tabela = t.tabela; b.motivo = t.motivo;
         b.cor = CORES[t.cor] ? t.cor : "verde";
         b.faixa = faixa; b.ms = t.ms || 0;
         b.bruto = raioAlvo(b.ms);
@@ -301,7 +367,8 @@ window.PhxAquario = (function () {
   font-family:"Exo 2",system-ui,sans-serif;color:var(--texto,#e6ecf7)}
 .aq svg{display:block;width:100%;height:100%}
 .aq .aq-faixa{stroke:var(--realce,#152238);stroke-width:1;stroke-dasharray:2 6}
-.aq .aq-faixa-nome{fill:var(--mudo,#8b98b4);font-size:11px;letter-spacing:.04em;text-transform:none}
+.aq .aq-faixa-nome{fill:var(--mudo,#8b98b4);font-size:11px;letter-spacing:.04em;text-transform:none;
+  paint-order:stroke;stroke:var(--fundo,#010418);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
 .aq .aq-b{text-transform:none}
 .aq .aq-b .aq-forma{fill-opacity:.14}
 .aq .aq-b .aq-dupla{fill:none}
@@ -311,6 +378,63 @@ window.PhxAquario = (function () {
 .aq .aq-vazio{position:absolute;inset:0;display:none;align-items:center;justify-content:center;
   color:var(--mudo,#8b98b4)}
 .aq.aq-sem .aq-vazio{display:flex}
+
+/* A TELA (A10/A11). Sem rotulo de formulario nem tabela: o CSS global morde
+   os dois, e a lista do log e a legenda dos graficos sao listas. */
+.aqt{display:flex;flex-direction:column;gap:10px;font-family:"Exo 2",system-ui,sans-serif;
+  color:var(--texto,#e6ecf7);text-transform:none;min-width:0}
+.aqt *{text-transform:none}
+.aqt-estado{font-size:12.5px;color:var(--texto-2,#a8b0c0);min-height:1.4em}
+.aqt-estado.aqt-mal{color:var(--vermelho,#ff5f5f)}
+.aqt-corpo{display:grid;grid-template-columns:minmax(0,2.2fr) minmax(240px,1fr) minmax(250px,1fr);
+  gap:12px;align-items:stretch;min-width:0}
+@media (max-width:1180px){.aqt-corpo{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .aqt-tanque{grid-column:1/-1}}
+@media (max-width:760px){.aqt-corpo{grid-template-columns:minmax(0,1fr)}}
+.aqt-tanque{display:flex;gap:8px;min-width:0;height:clamp(320px,64vh,1400px)}
+.aqt-agua{flex:1;min-width:0;border:1px solid var(--linha,#1e2940);border-radius:8px;overflow:hidden}
+.aqt-fundo{width:150px;flex:none;display:flex;flex-direction:column;gap:6px;overflow:auto;
+  border:1px solid var(--linha,#1e2940);border-radius:8px;padding:8px;background:var(--painel,#0a1122)}
+.aqt-fundo[hidden]{display:none}
+.aqt-cab{font-size:11px;letter-spacing:.06em;color:var(--texto-3,#848da0);margin:0 0 4px;font-weight:600}
+.aqt-pedra{display:flex;gap:6px;align-items:flex-start;font-size:11.5px;line-height:1.3;color:var(--texto,#e6ecf7)}
+.aqt-chip{flex:none;width:14px;height:14px;display:inline-block;vertical-align:-2px}
+.aqt-chip svg{width:14px;height:14px;display:block}
+.aqt-log,.aqt-graf{min-width:0;border:1px solid var(--linha,#1e2940);border-radius:8px;
+  background:var(--painel,#0a1122);padding:10px;display:flex;flex-direction:column;gap:8px}
+.aqt-log{max-height:clamp(320px,64vh,1400px)}
+.aqt-filtros{display:flex;gap:6px}
+.aqt .aqt-busca{flex:1;min-width:0;width:auto;padding:6px 8px;font-size:12.5px}
+.aqt .aqt-periodo{width:auto;flex:none;padding:6px 6px;font-size:12.5px}
+.aqt-lista{list-style:none;margin:0;padding:0;overflow:auto;flex:1;font-size:12px}
+.aqt-lista li{display:grid;grid-template-columns:auto 14px minmax(0,1fr);gap:2px 6px;align-items:start;
+  padding:5px 2px;border-bottom:1px solid var(--linha,#1e2940)}
+.aqt-lista time{color:var(--texto-3,#848da0);font-variant-numeric:tabular-nums}
+.aqt-lista .aqt-o{color:var(--texto,#e6ecf7);overflow-wrap:anywhere}
+.aqt-lista .aqt-o b{font-weight:600}
+.aqt-lista .aqt-mot{grid-column:3;color:var(--texto-2,#a8b0c0)}
+.aqt-nada{color:var(--texto-3,#848da0);font-size:12px;padding:6px 2px}
+.aqt-g{display:flex;flex-direction:column;gap:4px;padding-bottom:8px;border-bottom:1px solid var(--linha,#1e2940)}
+.aqt-g:last-of-type{border-bottom:0}
+.aqt-g h4{margin:0;font-size:12.5px;font-weight:600;color:var(--texto,#e6ecf7)}
+.aqt-g .aqt-sub{font-size:11px;color:var(--texto-3,#848da0)}
+.aqt-g svg{width:100%;height:96px;display:block}
+.aqt-g .aqt-barra{fill-opacity:.22;stroke-width:1.5}
+.aqt-g .aqt-eixo{stroke:var(--linha-forte,#2b3a56);stroke-width:1}
+.aqt-g .aqt-vazio-g{fill:none;stroke:var(--linha-forte,#2b3a56);stroke-dasharray:3 3}
+.aqt-g .aqt-num{fill:var(--texto,#e6ecf7);font-size:10px;text-anchor:middle;font-variant-numeric:tabular-nums}
+.aqt-leg{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:11px}
+.aqt-leg li{display:flex;gap:5px;align-items:center;color:var(--texto-2,#a8b0c0);min-width:0}
+.aqt-leg li span:last-child{margin-left:auto;color:var(--texto,#e6ecf7);font-variant-numeric:tabular-nums}
+.aqt-amostra{flex:none;width:10px;height:10px;border:1.5px solid currentColor;border-radius:2px}
+.aqt-nota{font-size:11px;color:var(--texto-3,#848da0);line-height:1.4;margin:0}
+
+/* A ALCA no painel da telemetria: estica pelo canto (resize nativo), e o
+   tanque ocupa o que sobrar abaixo da linha de estado. */
+.aq-alca{margin:12px 0;border:1px solid var(--linha,#1e2940);border-radius:8px;background:var(--painel,#0a1122)}
+.aq-alca>summary{cursor:pointer;padding:8px 12px;font-size:13px;font-weight:600;color:var(--texto-2,#a8b0c0)}
+.aq-alca-caixa{height:360px;min-height:220px;max-height:92vh;resize:vertical;overflow:hidden;padding:0 10px 10px}
+.aq-alca-caixa .aqt-tanque{height:auto;flex:1;min-height:0}
 `;
 
   function el(nome, attrs) {
@@ -325,20 +449,27 @@ window.PhxAquario = (function () {
     return p.map(q => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ");
   }
 
-  /** `criar(host, { t, auto, colisao, semente })` — devolve o aquario. */
-  function criar(host, opcoes) {
-    const op = opcoes || {};
-    const t = op.t || function (c) { return TEXTOS[c] || c; };
+  function garantirCss() {
     if (!document.getElementById("aq-css")) {
       const s = document.createElement("style");
       s.id = "aq-css"; s.textContent = CSS; document.head.appendChild(s);
     }
+  }
+
+  /** `criar(host, { auto, colisao, semente })` — devolve o aquario. */
+  function criar(host, opcoes) {
+    const op = opcoes || {};
+    garantirCss();
     host.classList.add("aq");
     const svg = el("svg", { role: "img" });
-    const gFaixas = el("g"), gBolhas = el("g");
-    svg.append(gFaixas, gBolhas);
+    svg.setAttribute("aria-label", txt("tela.aq_bolhas_al", "tarefas vivas, uma bolha por tarefa"));
+    // As linhas das faixas EMBAIXO das bolhas; os nomes POR CIMA. Com os
+    // nomes no grupo de baixo, uma bolha parada na faixa os apagava -- e a
+    // faixa e justamente onde elas param.
+    const gFaixas = el("g"), gBolhas = el("g"), gNomes = el("g");
+    svg.append(gFaixas, gBolhas, gNomes);
     const vazio = document.createElement("div");
-    vazio.className = "aq-vazio"; vazio.textContent = t("aquario.vazio");
+    vazio.className = "aq-vazio"; vazio.textContent = txt("tela.aq_vazio", "nenhuma tarefa em andamento");
     host.append(svg, vazio);
 
     const caixa = { w: host.clientWidth || 800, h: host.clientHeight || 400 };
@@ -349,22 +480,23 @@ window.PhxAquario = (function () {
     function medir() {
       caixa.w = host.clientWidth || caixa.w; caixa.h = host.clientHeight || caixa.h;
       svg.setAttribute("viewBox", `0 0 ${caixa.w} ${caixa.h}`);
-      gFaixas.textContent = "";
+      gFaixas.textContent = ""; gNomes.textContent = "";
       FAIXAS.forEach(function (f, i) {
         const y = (i + 0.5) * caixa.h / FAIXAS.length;
         gFaixas.append(el("line", { class: "aq-faixa", x1: 0, x2: caixa.w, y1: y, y2: y }));
         const n = el("text", { class: "aq-faixa-nome", x: 8, y: y - 4 });
-        n.textContent = t("aquario.faixa." + f);   // rotulo se estiliza; e chave
-        gFaixas.append(n);
+        n.textContent = ROTULO_DA_FAIXA[f]();
+        gNomes.append(n);
       });
     }
     medir();
-    if (window.ResizeObserver) new ResizeObserver(medir).observe(host);
+    let observador = null;
+    if (window.ResizeObserver) { observador = new ResizeObserver(medir); observador.observe(host); }
 
     function noDe(b) {
       let n = nos.get(b.id);
       if (n) return n;
-      const g = el("g", { class: "aq-b", "data-id": b.id });
+      const g = el("g", { class: "aq-b", "data-id": b.id, "data-cor": b.cor });
       const tit = el("title");
       const forma = el(CORES[b.cor].forma === "circulo" ? "circle" : "polygon", { class: "aq-forma" });
       const dupla = el("circle", { class: "aq-dupla" });
@@ -379,14 +511,21 @@ window.PhxAquario = (function () {
     function desenhar() {
       const vivas = new Set();
       for (const b of motor.bolhas) {
+        let n = noDe(b);
+        // A forma e um elemento diferente por cor (circulo x poligono): a
+        // bolha que muda de verde para amarelo troca de no, senao o losango
+        // seria desenhado com `r` num <circle> e nada apareceria.
+        if (n.cor !== b.cor && CORES[n.cor].forma !== CORES[b.cor].forma) {
+          n.g.remove(); nos.delete(b.id); n = noDe(b);
+        }
+        n.cor = b.cor;
+        n.g.setAttribute("data-cor", b.cor);
         vivas.add(b.id);
-        const n = noDe(b);
         const c = CORES[b.cor];
         const r = b.estourando ? b.rEstouro * (1 + 0.6 * b.idade / M.estouroMs) : b.r;
         if (r <= 0.3) { n.g.style.display = "none"; continue; }
         n.g.style.display = "";
         n.g.setAttribute("transform", `translate(${b.x.toFixed(1)} ${b.y.toFixed(1)})`);
-        if (n.cor !== b.cor) { n.cor = b.cor; }    // a forma muda por pontos abaixo
         const cor = `var(${c.v},${c.fb})`;
         n.forma.setAttribute("stroke", cor);
         n.forma.setAttribute("fill", cor);
@@ -405,9 +544,15 @@ window.PhxAquario = (function () {
         n.g.classList.toggle("aq-fim", !!b.estourando);
         if (!b.estourando) {
           // rotulo e DADO: texto cru, sem caixa alta imposta
-          n.rot.textContent = r >= M.rotuloMin ? String(b.tabela || b.op || "") : "";
+          // Cabe o que cabe na bolha, e o corte se ANUNCIA com reticencias:
+          // o nome inteiro esta no <title>. Encolher a letra ou mudar a caixa
+          // seria mexer na aparencia do dado; cortar dizendo que cortou, nao.
+          const nome = String(b.tabela || b.op || "");
+          const cabe = Math.floor(2 * r / 5.6);
+          n.rot.textContent = r < M.rotuloMin ? ""
+            : nome.length <= cabe ? nome : nome.slice(0, Math.max(1, cabe - 1)) + "…";
           const tx = String(b.op || "") + " " + String(b.tabela || "") +
-            " (" + t("aquario.cor." + b.cor) + ")" + (b.pseudo ? " " + b.pseudo : "");
+            " (" + ROTULO_DA_COR[b.cor]() + ")" + (b.motivo ? " — " + motivo(b.motivo) : "");
           n.tit.textContent = tx;
           n.g.setAttribute("aria-label", tx);
         }
@@ -420,6 +565,9 @@ window.PhxAquario = (function () {
 
     let ultimo = 0, raf = 0;
     function quadro(agora) {
+      // A tela foi trocada: o laco morre sozinho, sem esperar alguem lembrar
+      // de para-lo.
+      if (!host.isConnected && stats.quadros > 0) { raf = 0; return; }
       const t0 = performance.now();
       const dt = ultimo ? (agora - ultimo) / 1000 : 1 / 60;
       ultimo = agora;
@@ -440,10 +588,376 @@ window.PhxAquario = (function () {
       nosVivos: function () { return nos.size; },
       parar: function () { cancelAnimationFrame(raf); raf = 0; },
       iniciar: function () { if (!raf) { ultimo = 0; raf = requestAnimationFrame(quadro); } },
+      rodando: function () { return raf !== 0; },
+      soltar: function () { api.parar(); if (observador) observador.disconnect(); },
     };
     if (op.auto !== false) api.iniciar();
     return api;
   }
 
-  return { criar: criar, criarMotor: criarMotor, sobreposicoes: sobreposicoes, FAIXAS: FAIXAS, TEXTOS: TEXTOS };
+  /* ------------------------------------------------- a ligacao (A10, A11) */
+
+  /* O desenho miudo da cor, para o log e o fundo: a mesma forma da bolha. */
+  function chip(cor) {
+    const c = CORES[cor] || CORES.verde;
+    const s = el("svg", { viewBox: "-8 -8 16 16", "aria-hidden": "true" });
+    const f = c.forma === "circulo" ? el("circle", { r: 6 }) : el("polygon", { points: pontos(c.forma, 6.5) });
+    const tinta = `var(${c.v},${c.fb})`;
+    f.setAttribute("stroke", tinta); f.setAttribute("fill", tinta);
+    f.setAttribute("fill-opacity", ".18"); f.setAttribute("stroke-width", "1.6");
+    s.append(f);
+    const span = document.createElement("span");
+    span.className = "aqt-chip"; span.append(s);
+    return span;
+  }
+
+  /* As oito series do `aquario_contagens`, na ordem do servidor. A cor de
+   * cada barra e a da ACAO (verde inclui, amarelo altera, rosa marca, vermelho
+   * exclui de vez, azul consulta); erro e aviso, a da gravidade. */
+  const SERIES = [
+    { k: "select", v: "--acao-consultar", fb: "#5fa6e8", rot: () => txt("tela.aq_faixa_select", "consulta") },
+    { k: "insert", v: "--acao-incluir", fb: "#6cc98c", rot: () => txt("tela.aq_faixa_insert", "inclusão") },
+    { k: "update", v: "--acao-alterar", fb: "#ffc43d", rot: () => txt("tela.aq_faixa_update", "alteração") },
+    { k: "excluir_suave", v: "--acao-marcar", fb: "#ff8fc7", rot: () => txt("tela.aq_s_excluir_suave", "exclusão suave") },
+    { k: "excluir_fisico", v: "--acao-excluir", fb: "#ff5f5f", rot: () => txt("tela.aq_s_excluir_fisico", "exclusão de vez") },
+    { k: "backup", v: "--texto-2", fb: "#a8b0c0", rot: () => txt("tela.fer_backup", "Backup") },
+    { k: "erro", v: "--vermelho", fb: "#ff5f5f", rot: () => txt("tela.aq_s_erro", "erros"), propria: true },
+    { k: "aviso", v: "--ambar", fb: "#ffc43d", rot: () => txt("tela.aq_s_aviso", "avisos"), propria: true },
+  ];
+
+  const MIN = 60000, DIA = 86400000;
+
+  /* Meia-noite LOCAL de `ms`, menos `dias`. O motor nao tem fuso (tudo UTC);
+   * o dia e o do navegador, e por isso a soma mora aqui (§11.4, Hc5). */
+  function meiaNoite(ms, dias) {
+    const d = new Date(ms);
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (dias || 0));
+    return d.getTime();
+  }
+
+  /* Soma o periodo [inicio, agora): horas fechadas + minutos da hora corrente
+   * + o minuto parcial. Devolve as somas, quantos minutos foram MEDIDOS e o
+   * instante do ultimo dado. Minuto `null` nao conta: ausente nao e zero. */
+  function somar(r, inicio) {
+    const soma = {}; for (const s of SERIES) soma[s.k] = 0;
+    let medidos = 0, ultimo = 0;
+    const juntar = c => { for (const s of SERIES) soma[s.k] += +((c || {})[s.k] || 0); };
+    for (const h of r.horas || []) {
+      if (h.hora_ms < inicio) continue;
+      juntar(h.c); medidos += +h.minutos_medidos || 0;
+      if ((+h.minutos_medidos || 0) > 0) ultimo = Math.max(ultimo, h.hora_ms + 59 * MIN);
+    }
+    const hc = r.hora_corrente;
+    if (hc && Array.isArray(hc.minutos)) {
+      hc.minutos.forEach((c, i) => {
+        const m = hc.hora_ms + i * MIN;
+        if (c == null || m < inicio) return;
+        juntar(c); medidos += 1; ultimo = Math.max(ultimo, m);
+      });
+    }
+    const mp = r.minuto_parcial;
+    if (mp && mp.c && mp.minuto_ms >= inicio) { juntar(mp.c); ultimo = Math.max(ultimo, mp.minuto_ms); }
+    return { soma, medidos, ultimo, vivo: !!(mp && mp.c) };
+  }
+
+  function hora(ms) {
+    return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" });
+  }
+  function data(ms) {
+    return new Date(ms).toLocaleDateString([], { day: "2-digit", month: "2-digit" });
+  }
+
+  /* Um grafico: seis barras na escala das operacoes, e erro/aviso na escala
+   * PROPRIA, do outro lado do traco (ordem do dono: senao viram filete ao
+   * lado dos SELECT). */
+  function desenharGrafico(caixa, total, inicio, agora) {
+    const svg = caixa.querySelector("svg");
+    const leg = caixa.querySelector(".aqt-leg");
+    const sub = caixa.querySelector(".aqt-sub");
+    const W = 260, H = 96, base = H - 14, alto = base - 12;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.textContent = "";
+    const decorridos = Math.max(1, Math.round((agora - inicio) / MIN));
+    const ops = SERIES.filter(s => !s.propria), prop = SERIES.filter(s => s.propria);
+    const maxA = Math.max(1, ...ops.map(s => total.soma[s.k]));
+    const maxB = Math.max(1, ...prop.map(s => total.soma[s.k]));
+    const larg = 22, passo = 30;
+    svg.append(el("line", { class: "aqt-eixo", x1: 0, x2: W, y1: base + 0.5, y2: base + 0.5 }));
+    const xDiv = 6 * passo + 8;
+    svg.append(el("line", { class: "aqt-eixo", x1: xDiv, x2: xDiv, y1: 4, y2: base }));
+    const nada = total.medidos === 0 && !total.vivo;
+    SERIES.forEach((s, i) => {
+      const x = (s.propria ? xDiv + 10 + (i - 6) * passo : 4 + i * passo);
+      const v = total.soma[s.k];
+      const tinta = `var(${s.v},${s.fb})`;
+      if (nada) {
+        // ausente nao e zero: sem medida, a barra e so o contorno vazio
+        svg.append(el("rect", { class: "aqt-vazio-g", x: x, y: base - alto, width: larg, height: alto }));
+        return;
+      }
+      const h = Math.max(v > 0 ? 2 : 0, alto * v / (s.propria ? maxB : maxA));
+      const r = el("rect", { class: "aqt-barra", x: x, y: base - h, width: larg, height: h,
+        stroke: tinta, fill: tinta, "data-serie": s.k, "data-valor": v });
+      const t = el("title"); t.textContent = s.rot() + ": " + v; r.append(t);
+      svg.append(r);
+      const n = el("text", { class: "aqt-num", x: x + larg / 2, y: Math.max(9, base - h - 3) });
+      n.textContent = String(v);
+      svg.append(n);
+    });
+    leg.textContent = "";
+    for (const s of SERIES) {
+      const li = document.createElement("li");
+      li.setAttribute("data-serie", s.k);
+      const a = document.createElement("span"); a.className = "aqt-amostra";
+      a.style.color = `var(${s.v},${s.fb})`;
+      const r = document.createElement("span"); r.textContent = s.rot();
+      const v = document.createElement("span"); v.textContent = nada ? "—" : String(total.soma[s.k]);
+      li.append(a, r, v); leg.append(li);
+    }
+    const cobre = Math.min(100, Math.round(100 * total.medidos / decorridos));
+    sub.textContent = nada
+      ? txt("tela.aq_g_sem_medida", "sem medida neste período — ausente, não zero")
+      : preencher(txt("tela.aq_g_sub", "medido {p}% do período · último dado {quando}"),
+          { p: cobre, quando: data(total.ultimo) + " " + hora(total.ultimo) });
+  }
+
+  /** `tela(host, { api, compacto, periodo })` — o aquario ligado ao servidor.
+   *
+   *  `compacto` e a ALCA da telemetria: so o tanque, sem log nem graficos.
+   *  Devolve `{ parar, retomar, soltar, pedidos }`: `pedidos` conta as
+   *  chamadas feitas, e e a medida da prova «aba escondida faz 0 pedidos». */
+  function tela(host, cfg) {
+    const c = cfg || {};
+    const api = c.api;
+    const periodo = c.periodo || 2000;
+    garantirCss();
+    host.classList.add("aqt");
+    host.innerHTML = c.compacto
+      ? `<div class="aqt-estado" role="status" aria-live="polite"></div>
+         <div class="aqt-tanque"><div class="aqt-agua"></div><aside class="aqt-fundo" hidden></aside></div>`
+      : `<div class="aqt-estado" role="status" aria-live="polite"></div>
+         <div class="aqt-corpo">
+           <div class="aqt-tanque">
+             <div class="aqt-agua"></div>
+             <aside class="aqt-fundo" hidden></aside>
+           </div>
+           <section class="aqt-log" aria-label="${esc(txt("tela.aq_log_titulo", "Linha do tempo"))}">
+             <h4 class="aqt-cab">${esc(txt("tela.aq_log_titulo", "Linha do tempo"))}</h4>
+             <div class="aqt-filtros">
+               <input class="aqt-busca" type="search" autocomplete="off"
+                      placeholder="${esc(txt("tela.aq_log_busca_dica", "procurar operação, tabela, cor ou motivo…"))}"
+                      aria-label="${esc(txt("tela.aq_log_busca_dica", "procurar operação, tabela, cor ou motivo…"))}">
+               <select class="aqt-periodo" aria-label="${esc(txt("tela.aq_log_periodo_al", "período da linha do tempo"))}">
+                 <option value="300000">${esc(txt("tela.aq_p_5min", "últimos 5 minutos"))}</option>
+                 <option value="3600000" selected>${esc(txt("tela.st_ultima_hora", "última hora"))}</option>
+                 <option value="86400000">${esc(txt("tela.st_24h", "últimas 24 horas"))}</option>
+               </select>
+             </div>
+             <ol class="aqt-lista"></ol>
+           </section>
+           <section class="aqt-graf" aria-label="${esc(txt("tela.aq_graficos_al", "contagens por período"))}">
+             <div class="aqt-g" data-periodo="dia"><h4>${esc(txt("tela.aq_g_dia", "Hoje, ao vivo"))}</h4>
+               <span class="aqt-sub"></span><svg role="img" aria-label="${esc(txt("tela.aq_g_dia", "Hoje, ao vivo"))}"></svg><ul class="aqt-leg"></ul></div>
+             <div class="aqt-g" data-periodo="semana"><h4>${esc(txt("tela.aq_g_semana", "Últimos 7 dias"))}</h4>
+               <span class="aqt-sub"></span><svg role="img" aria-label="${esc(txt("tela.aq_g_semana", "Últimos 7 dias"))}"></svg><ul class="aqt-leg"></ul></div>
+             <div class="aqt-g" data-periodo="mes"><h4>${esc(txt("tela.aq_g_mes", "Últimos 30 dias"))}</h4>
+               <span class="aqt-sub"></span><svg role="img" aria-label="${esc(txt("tela.aq_g_mes", "Últimos 30 dias"))}"></svg><ul class="aqt-leg"></ul></div>
+             <p class="aqt-nota">${esc(txt("tela.aq_g_nota", "Erros e avisos contam o desfecho da instrução, em escala própria; o vermelho e o amarelo das bolhas são a gravidade para o servidor."))}</p>
+           </section>
+         </div>`;
+
+    const $ = s => host.querySelector(s);
+    const estado = $(".aqt-estado");
+    const agua = $(".aqt-agua");
+    const fundo = $(".aqt-fundo");
+    const fisica = criar(agua, { auto: false });
+
+    const ctl = { pedidos: 0, parado: false, vivo: true };
+    let relogio = 0, volta = 0, log = [], emVoo = false;
+
+    async function pedir(op, p) {
+      ctl.pedidos++;
+      return api(op, p || {});
+    }
+
+    function pintarFundo(sedimento) {
+      fundo.textContent = "";
+      if (!sedimento || !sedimento.length) { fundo.hidden = true; return; }
+      fundo.hidden = false;
+      const cab = document.createElement("div");
+      cab.className = "aqt-cab"; cab.textContent = txt("tela.aq_fundo", "Fundo do aquário");
+      fundo.append(cab);
+      for (const p of sedimento) {
+        const d = document.createElement("div");
+        d.className = "aqt-pedra"; d.setAttribute("data-alarme", p.alarme || "");
+        const t = document.createElement("span");
+        t.textContent = motivo(p.motivo) + (p.vezes > 1 ? " ×" + p.vezes : "");
+        d.append(chip(p.cor), t);
+        fundo.append(d);
+      }
+    }
+
+    function pintarRetrato(r) {
+      const voce = r.voce || "";
+      // Os campos que a bolha desenha, e nenhum outro: `usuario` e `ip`, que
+      // o servidor manda ao administrador, ficam no objeto da resposta e
+      // morrem com ele.
+      const tarefas = (r.tarefas || [])
+        .filter(t => t.tarefa !== voce)
+        .map(t => ({ id: t.tarefa, op: t.op, tabela: t.tabela, cor: t.cor,
+                     faixa: t.faixa, motivo: t.motivo, ms: t.ms }));
+      fisica.atualizar(tarefas);
+      pintarFundo(r.sedimento);
+      estado.classList.remove("aqt-mal");
+      estado.textContent = r.ligada === false
+        ? txt("tela.aq_desligada", "a telemetria está desligada: o aquário não recebe tarefas nem conta")
+        : preencher(txt("tela.aq_estado", "{n} tarefas vivas · atualizado às {hora}"),
+            { n: tarefas.length, hora: hora(r.agora_ms || Date.now()) });
+    }
+
+    function pintarLog() {
+      const ol = $(".aqt-lista");
+      if (!ol) return;
+      const q = ($(".aqt-busca").value || "").trim().toLowerCase();
+      ol.textContent = "";
+      let n = 0;
+      for (let i = log.length - 1; i >= 0 && n < 300; i--) {
+        const l = log[i];
+        const ev = EVENTOS[l.evento];
+        if (!ev) continue;   // contagem e retrato alimentam os graficos e a volta
+        const textoEv = ev(), textoMot = l.motivo ? motivo(l.motivo) : "";
+        const textoCor = ROTULO_DA_COR[l.cor] ? ROTULO_DA_COR[l.cor]() : "";
+        const alvo = [l.database, l.tabela].filter(Boolean).join(".");
+        if (q) {
+          const tudo = [textoEv, l.op, alvo, textoCor, textoMot, l.alarme, l.cor]
+            .filter(Boolean).join(" ").toLowerCase();
+          if (tudo.indexOf(q) < 0) continue;
+        }
+        const li = document.createElement("li");
+        li.setAttribute("data-evento", l.evento);
+        const t = document.createElement("time");
+        t.dateTime = new Date(l.quando_ms).toISOString(); t.textContent = hora(l.quando_ms);
+        const o = document.createElement("span"); o.className = "aqt-o";
+        const b = document.createElement("b"); b.textContent = textoEv;
+        o.append(b, document.createTextNode(" " + [l.op, alvo].filter(Boolean).join(" · ") +
+          (l.ms != null ? " · " + l.ms + " ms" : "")));
+        li.append(t, l.cor ? chip(l.cor) : document.createElement("span"), o);
+        if (textoMot || textoCor) {
+          const m = document.createElement("span"); m.className = "aqt-mot";
+          m.textContent = [textoCor, textoMot].filter(Boolean).join(" — ");
+          li.append(m);
+        }
+        ol.append(li); n++;
+      }
+      if (!n) {
+        const li = document.createElement("li"); li.className = "aqt-nada";
+        li.textContent = txt("tela.aq_log_vazio", "nenhum evento neste período");
+        ol.append(li);
+      }
+    }
+
+    async function lerLog() {
+      const sel = $(".aqt-periodo");
+      const janela = +(sel && sel.value) || 3600000;
+      try {
+        const r = await pedir("aquario_log", { desde: Date.now() - janela, max: 1000 });
+        log = r.linhas || [];
+      } catch (e) {
+        log = [];
+        const ol = $(".aqt-lista"); ol.textContent = "";
+        const li = document.createElement("li"); li.className = "aqt-nada";
+        li.textContent = String(e && e.message || e); ol.append(li);
+        return;
+      }
+      pintarLog();
+    }
+
+    async function lerContagens() {
+      const agora = Date.now();
+      const inicios = { dia: meiaNoite(agora, 0), semana: meiaNoite(agora, 6), mes: meiaNoite(agora, 29) };
+      const r = await pedir("aquario_contagens", { desde: inicios.mes });
+      for (const k of Object.keys(inicios)) {
+        const caixa = host.querySelector(`.aqt-g[data-periodo="${k}"]`);
+        if (caixa) desenharGrafico(caixa, somar(r, inicios[k]), inicios[k], agora);
+      }
+    }
+
+    /* Uma volta: retrato sempre; contagens a cada duas (o grafico do dia
+     * anda pelo minuto parcial, que muda a cada pedido); log a cada tres. */
+    async function girar() {
+      relogio = 0;
+      // Um pedido no ar por vez: a volta que o `retomar` agendar enquanto
+      // este espera a resposta morre aqui, e e ESTE que agenda a seguinte --
+      // senao esconder e mostrar a aba no meio de um pedido dobraria o laco.
+      if (!ativo() || emVoo) return;
+      emVoo = true;
+      try {
+        pintarRetrato(await pedir("aquario_retrato"));
+        if (!c.compacto) {
+          if (volta % 2 === 0) await lerContagens();
+          if (volta % 3 === 0) await lerLog();
+        }
+      } catch (e) {
+        estado.classList.add("aqt-mal");
+        estado.textContent = preencher(txt("tela.aq_falhou", "o servidor não respondeu: {erro}"),
+          { erro: String(e && e.message || e) });
+      } finally {
+        emVoo = false;
+      }
+      volta++;
+      if (ativo() && !relogio) relogio = setTimeout(girar, periodo);
+    }
+
+    /* Trabalha so quem esta a vista: tela viva, nao pausada pela multitela e
+     * com a aba do navegador na frente. O portao vem ANTES do pedido. */
+    function ativo() {
+      if (!host.isConnected) { if (ctl.vivo) soltar(); return false; }
+      return ctl.vivo && !ctl.parado && !document.hidden;
+    }
+
+    function retomar() {
+      if (!ctl.vivo) return;
+      ctl.parado = false;
+      if (document.hidden) return;
+      fisica.iniciar();
+      if (!relogio) relogio = setTimeout(girar, 0);
+    }
+    function parar() {
+      ctl.parado = true;
+      clearTimeout(relogio); relogio = 0;
+      fisica.parar();
+    }
+    function aoMudarVisibilidade() {
+      if (document.hidden) { clearTimeout(relogio); relogio = 0; fisica.parar(); }
+      else if (!ctl.parado) retomar();
+    }
+    function soltar() {
+      ctl.vivo = false;
+      clearTimeout(relogio); relogio = 0;
+      fisica.soltar();
+      document.removeEventListener("visibilitychange", aoMudarVisibilidade);
+    }
+    document.addEventListener("visibilitychange", aoMudarVisibilidade);
+
+    if (!c.compacto) {
+      let espera = 0;
+      $(".aqt-busca").addEventListener("input", () => {
+        clearTimeout(espera); espera = setTimeout(pintarLog, 120);
+      });
+      $(".aqt-periodo").addEventListener("change", () => { if (ativo()) lerLog(); });
+    }
+
+    retomar();
+    ctl.parar = parar; ctl.retomar = retomar; ctl.soltar = soltar;
+    ctl.fisica = fisica;
+    return ctl;
+  }
+
+  // A folha entra ja no carregamento: a alca da telemetria e pintada antes
+  // de qualquer aquario existir, e sem o estilo o resumo dela nasceria cru.
+  if (typeof document !== "undefined" && document.head) garantirCss();
+
+  return { criar: criar, criarMotor: criarMotor, sobreposicoes: sobreposicoes, tela: tela,
+           FAIXAS: FAIXAS, MOTIVOS: MOTIVOS, _somar: somar, _meiaNoite: meiaNoite };
 })();

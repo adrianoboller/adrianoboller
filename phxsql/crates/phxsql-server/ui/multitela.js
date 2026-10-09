@@ -128,6 +128,7 @@ window.PhxTelas = (function () {
     query: { rot:"Query", txt:"tela.fer_query", abre: () => abrirConsulta() },
     diagrama: { rot:"Diagrama ER", txt:"tela.fer_diagrama", abre: p => telaDiagramaER(p.db) },
     telemetria: { rot:"Telemetria", txt:"tela.fer_telemetria", abre: () => telaTelemetria() },
+    aquario: { rot:"Aquário", txt:"tela.aq_titulo", abre: () => telaAquario() },
     profiler: { rot:"Profiler", txt:"tela.fer_profiler", abre: () => verProfiler() },
     ia: { rot: "Claude", abre: () => PhxIA.telaConfig() },   // nome de produto
     usuarios: { rot:"Usuários", txt:"tela.usuarios", abre: () => abrirAdmin("usuarios") },
