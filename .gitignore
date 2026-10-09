@@ -27,3 +27,6 @@ backup-partes/
 # Cache do Python que os testes do plugin geram ao rodar. Nao e fonte:
 # some e volta a cada corrida, e entrou por engano no commit 9d1f4b8.
 plugins/**/__pycache__/
+
+# Estado do plugin oh-my-claudecode (ferramenta do trabalho, nunca do produto)
+.omc/
