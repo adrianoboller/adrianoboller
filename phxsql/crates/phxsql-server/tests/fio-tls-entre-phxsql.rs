@@ -30,6 +30,18 @@ use phxsql_server::{Config, Servidor};
 
 const TOKEN: &str = "o token do fio tls deste teste";
 
+/// O silencio que o cliente do teste da amarra tolera numa resposta. NAO e o
+/// criterio do teste -- o criterio e a resposta chegar; isto so impede um
+/// servidor pendurado de travar a suite.
+///
+/// Pedido 757, medido: o `usuario_criar` e o `autenticar` pagam um PBKDF2 de
+/// 210.000 iteracoes cada, em debug, e o servidor fica mudo enquanto calcula.
+/// Com 5 s aqui, sob 8 `yes` em 4 nucleos, 13 de 20 corridas cairam com
+/// `WouldBlock` entre 5,03 e 5,23 s (as verdes, 4,16 a 4,73 s); sob 4 `yes`
+/// com a carga dos vizinhos, 20 de 50. Era o relogio medindo a CPU da
+/// maquina, nao a amarra.
+const SILENCIO_DO_PBKDF2: Duration = Duration::from_secs(60);
+
 /// O par TLS do no, gravado onde o servidor procura o autoassinado
 /// (`tls-dados-*.pem` ao lado do `config.json`), e o pino dele em texto.
 /// Gerado AQUI, e nao pelo servidor, porque cada no precisa do pino do outro
@@ -259,7 +271,7 @@ fn com_amarra_exigida_o_login_pelo_tls_amarra_ao_vinculo_e_entra() {
     let (_s, porta) = subir_so(&d, r#", "cifra_fio": { "exigir_amarra": true }"#);
     const SENHA: &str = "Senha-Do-Teste-572-T6b2";
 
-    let mut admin = Cliente::conectar("127.0.0.1", porta, TOKEN, Duration::from_secs(5)).unwrap();
+    let mut admin = Cliente::conectar("127.0.0.1", porta, TOKEN, SILENCIO_DO_PBKDF2).unwrap();
     admin.cifrar_tls(pino(&certo)).unwrap();
     admin
         .pedir(vec![
@@ -272,7 +284,7 @@ fn com_amarra_exigida_o_login_pelo_tls_amarra_ao_vinculo_e_entra() {
         ])
         .unwrap();
 
-    let mut c = Cliente::conectar("127.0.0.1", porta, TOKEN, Duration::from_secs(5)).unwrap();
+    let mut c = Cliente::conectar("127.0.0.1", porta, TOKEN, SILENCIO_DO_PBKDF2).unwrap();
     c.cifrar_tls(pino(&certo)).unwrap();
     assert!(c.transcricao().is_some(), "o TLS nao deu vinculo ao canal");
     c.autenticar("ana", "", SENHA)
