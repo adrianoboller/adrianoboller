@@ -597,22 +597,18 @@ def suite(arquivo: Path | None) -> dict | None:
             vistos.add((d.get("crate"), d.get("teste")))
         pulados = len(vistos)
     # Pulo que so IMPRIME (sem o registro) nao se conta pela saida guardada: o libtest captura
-    # o eprintln de quem passa. Conta-se o LUGAR no codigo -- texto com «pulado/pulada» em
-    # qualquer caixa dentro de uma string --, para a pagina dizer quantos ainda podem ter
-    # pulado calados (migracao na SP000013).
-    calados = []
-    pulo = re.compile(r'"[^"]*\bpulad[oa]', re.I)
-    for arq in sorted(list(REPO.glob("phxclaw/crates/*/tests/*.rs")) + list(REPO.glob("phxclaw/apps/*/tests/*.rs"))
-                      + list(REPO.glob("phxclaw/crates/*/src/**/tests.rs"))):
-        # O crate de apoio e a casa do modulo e da guarda: os testes dele PLANTAM o texto
-        # que a regra reprova (prova nos dois sentidos), e por isso fica fora da conta.
-        if "phxclaw-test-support" in arq.parts:
-            continue
-        for n, lin in enumerate(arq.read_text(errors="replace").splitlines(), 1):
-            if lin.lstrip().startswith("//") or "pulado::pular" in lin:
-                continue
-            if pulo.search(lin):
-                calados.append(f"{rel(arq)}:{n}")
+    # o eprintln de quem passa. Quem conta o LUGAR no codigo e a guarda do phxclaw-test-support
+    # (`o_repositorio_nao_tem_pulo_calado`), e aqui so se le o veredito dela na mesma saida:
+    # uma segunda contagem por regex divergiu da guarda (7 contra 0, o estado "pulado" do
+    # motor de fluxo declarado) -- a decisao escrita duas vezes, que a lei do motor unico proibe.
+    guarda = "o_repositorio_nao_tem_pulo_calado"
+    if re.search(rf"^test {guarda} \.\.\. ok$", texto, re.M):
+        calados = []
+    elif re.search(rf"^test {guarda} \.\.\. FAILED$", texto, re.M):
+        # A mensagem da guarda lista um achado por linha: `arquivo:linha [regra] trecho`.
+        calados = re.findall(r"^(\S+\.rs:\d+) \[[a-z-]+\]", texto, re.M) or ["(guarda reprovou)"]
+    else:
+        calados = None
     return {"passam": sum(x[0] for x in r), "falham": sum(x[1] for x in r),
             "ignorados": sum(x[2] for x in r), "pulados": pulados, "calados": calados, "crates": len(crates),
             "membros": membros, "inteira": len(crates) >= membros,

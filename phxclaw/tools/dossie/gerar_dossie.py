@@ -620,7 +620,11 @@ guardada da suíte (<code>--suite</code>), pelo teste que o prova — nunca por 
                      else 'Os pulos registrados desta corrida não foram anexados ao arquivo: '
                           + nao_medido("registro de pulos", "rm -f target/tmp/pulados.jsonl; cargo test --workspace --no-fail-fast 2>&1 | tee ARQ; "
                                        f"{{ echo '{N.MARCA_PULADOS}'; cat target/tmp/pulados.jsonl; }} >> ARQ"))
-                  + (f', e há <b>{len(su["calados"])}</b> lugares no código que ainda pulam sem registrar (só imprimem '
+                  + (', e a guarda de pulo calado não rodou nesta saída: '
+                     + nao_medido("guarda de pulo calado", "cargo test -p phxclaw-test-support")
+                     + '; o número de provados não se afirma.</p>'
+                     if su["calados"] is None else
+                     f', e há <b>{len(su["calados"])}</b> lugares no código que ainda pulam sem registrar (só imprimem '
                      f'«pulado»; migração na SP000013), então o número de provados não se afirma.</p>'
                      if su["calados"] else
                      # Zero calados (guarda do phxclaw-test-support em 0) e o bloco anexado: o
@@ -631,7 +635,9 @@ guardada da suíte (<code>--suite</code>), pelo teste que o prova — nunca por 
                            'registro, o número de provados não se afirma.</p>')))
         if su["pulados"] is None:
             fez_menos.append("pulos registrados: NAO MEDIDOS (o arquivo da suite nao traz o bloco do registro)")
-        if su["calados"]:
+        if su["calados"] is None:
+            fez_menos.append("guarda de pulo calado: NAO MEDIDA (o teste dela nao esta na saida da suite)")
+        elif su["calados"]:
             fez_menos.append(f'{len(su["calados"])} lugares pulam sem registro: provados NAO AFIRMADOS (SP000013)')
         if not su["inteira"]:
             fez_menos.append(f'suite PARCIAL: {su["crates"]} de {su["membros"]} membros')
