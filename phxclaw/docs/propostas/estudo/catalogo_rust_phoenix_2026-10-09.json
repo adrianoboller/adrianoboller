@@ -1,0 +1,965 @@
+{
+  "data_consulta": "2026-10-09",
+  "titulo": "Projetos Rust no GitHub para o Phoenix",
+  "total": 68,
+  "natureza": "Pesquisa documental; aplicação no Phoenix e prioridades são recomendações.",
+  "prioridades": {
+    "P0": "Priorizar definição/estudo inicial",
+    "P1": "Avaliar ao implementar o módulo",
+    "P2": "Alternativa posterior, laboratório ou referência histórica"
+  },
+  "areas": [
+    {
+      "nome": "Núcleo, contratos e PostgreSQL",
+      "quantidade": 9
+    },
+    {
+      "nome": "Plugins WebAssembly",
+      "quantidade": 4
+    },
+    {
+      "nome": "Linguagens, parsing e transformação de código",
+      "quantidade": 13
+    },
+    {
+      "nome": "Studio e interfaces",
+      "quantidade": 7
+    },
+    {
+      "nome": "Gráficos, mídia e integração desktop",
+      "quantidade": 8
+    },
+    {
+      "nome": "IA, MCP, busca e contexto",
+      "quantidade": 12
+    },
+    {
+      "nome": "Automação e workflows",
+      "quantidade": 3
+    },
+    {
+      "nome": "Armazenamento, operação e qualidade",
+      "quantidade": 12
+    }
+  ],
+  "projetos": [
+    {
+      "id": "R001",
+      "projeto": "tokio-rs/tokio",
+      "url": "https://github.com/tokio-rs/tokio",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "Runtime assíncrono",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/tokio-rs/tokio/blob/master/README.md"
+      ]
+    },
+    {
+      "id": "R002",
+      "projeto": "tokio-rs/axum",
+      "url": "https://github.com/tokio-rs/axum",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "API HTTP e gateway",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/tokio-rs/axum"
+      ]
+    },
+    {
+      "id": "R003",
+      "projeto": "serde-rs/serde",
+      "url": "https://github.com/serde-rs/serde",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "Contratos e serialização",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/serde-rs/serde"
+      ]
+    },
+    {
+      "id": "R004",
+      "projeto": "serde-rs/json",
+      "url": "https://github.com/serde-rs/json",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "PHX JSON e configuração",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/serde-rs/json"
+      ]
+    },
+    {
+      "id": "R005",
+      "projeto": "uuid-rs/uuid",
+      "url": "https://github.com/uuid-rs/uuid",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "Identidade de objetos e evidências",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/uuid-rs/uuid/blob/main/README.md",
+        "https://docs.rs/uuid/latest/uuid/struct.Uuid.html"
+      ]
+    },
+    {
+      "id": "R006",
+      "projeto": "Stranger6667/jsonschema",
+      "url": "https://github.com/Stranger6667/jsonschema",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "Validação de manifests e contratos",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/Stranger6667/jsonschema"
+      ]
+    },
+    {
+      "id": "R007",
+      "projeto": "petgraph/petgraph",
+      "url": "https://github.com/petgraph/petgraph",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "Grafo de dependências e planejamento",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/petgraph/petgraph/blob/master/README.md",
+        "https://github.com/petgraph/petgraph"
+      ]
+    },
+    {
+      "id": "R008",
+      "projeto": "transact-rs/sqlx",
+      "url": "https://github.com/transact-rs/sqlx",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "PostgreSQL e persistência transacional",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/transact-rs/sqlx"
+      ]
+    },
+    {
+      "id": "R009",
+      "projeto": "apache/datafusion-sqlparser-rs",
+      "url": "https://github.com/apache/datafusion-sqlparser-rs",
+      "area": "Núcleo, contratos e PostgreSQL",
+      "categoria": "Parser SQL e modelo intermediário",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "Apache-2.0",
+      "fontes": [
+        "https://github.com/apache/datafusion-sqlparser-rs"
+      ]
+    },
+    {
+      "id": "R010",
+      "projeto": "bytecodealliance/wasmtime",
+      "url": "https://github.com/bytecodealliance/wasmtime",
+      "area": "Plugins WebAssembly",
+      "categoria": "WASM e plugins",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "Apache-2.0 WITH LLVM-exception",
+      "fontes": [
+        "https://github.com/bytecodealliance/wasmtime",
+        "https://github.com/bytecodealliance/wasmtime/blob/main/LICENSE",
+        "https://docs.wasmtime.dev/api/wasmtime/struct.Config.html"
+      ]
+    },
+    {
+      "id": "R011",
+      "projeto": "bytecodealliance/wit-bindgen",
+      "url": "https://github.com/bytecodealliance/wit-bindgen",
+      "area": "Plugins WebAssembly",
+      "categoria": "WASM e plugins",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
+      "fontes": [
+        "https://github.com/bytecodealliance/wit-bindgen"
+      ]
+    },
+    {
+      "id": "R012",
+      "projeto": "bytecodealliance/wasm-tools",
+      "url": "https://github.com/bytecodealliance/wasm-tools",
+      "area": "Plugins WebAssembly",
+      "categoria": "WASM e plugins",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
+      "fontes": [
+        "https://github.com/bytecodealliance/wasm-tools"
+      ]
+    },
+    {
+      "id": "R013",
+      "projeto": "extism/extism",
+      "url": "https://github.com/extism/extism",
+      "area": "Plugins WebAssembly",
+      "categoria": "WASM e plugins",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "BSD-3-Clause",
+      "fontes": [
+        "https://github.com/extism/extism",
+        "https://extism.org/docs/concepts/manifest/"
+      ]
+    },
+    {
+      "id": "R014",
+      "projeto": "rhaiscript/rhai",
+      "url": "https://github.com/rhaiscript/rhai",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Linguagem facilitadora e scripting",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OR Apache-2.0",
+      "fontes": [
+        "https://github.com/rhaiscript/rhai"
+      ]
+    },
+    {
+      "id": "R015",
+      "projeto": "rune-rs/rune",
+      "url": "https://github.com/rune-rs/rune",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Linguagem facilitadora e scripting",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "MIT OR Apache-2.0",
+      "fontes": [
+        "https://github.com/rune-rs/rune",
+        "https://docs.rs/crate/rune/latest/source/Cargo.toml",
+        "https://docs.rs/rune/latest/rune/"
+      ]
+    },
+    {
+      "id": "R016",
+      "projeto": "boa-dev/boa",
+      "url": "https://github.com/boa-dev/boa",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Linguagem facilitadora e scripting",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "MIT OR Unlicense",
+      "fontes": [
+        "https://github.com/boa-dev/boa"
+      ]
+    },
+    {
+      "id": "R017",
+      "projeto": "denoland/deno",
+      "url": "https://github.com/denoland/deno",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Linguagem facilitadora e scripting",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "MIT no Deno e deno_core; dependências como V8 têm licenças próprias",
+      "fontes": [
+        "https://github.com/denoland/deno",
+        "https://docs.rs/crate/deno_core/latest/source/README.md",
+        "https://docs.rs/crate/deno_core/latest/source/Cargo.toml",
+        "https://github.com/denoland/deno_core/releases"
+      ]
+    },
+    {
+      "id": "R018",
+      "projeto": "DelSkayn/rquickjs",
+      "url": "https://github.com/DelSkayn/rquickjs",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Linguagem facilitadora e scripting",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "MIT nos bindings; verificar também avisos do motor e dependências",
+      "fontes": [
+        "https://github.com/DelSkayn/rquickjs"
+      ]
+    },
+    {
+      "id": "R019",
+      "projeto": "pest-parser/pest",
+      "url": "https://github.com/pest-parser/pest",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT OR Apache-2.0",
+      "fontes": [
+        "https://github.com/pest-parser/pest",
+        "https://docs.rs/crate/pest/latest/source/Cargo.toml"
+      ]
+    },
+    {
+      "id": "R020",
+      "projeto": "zesterer/chumsky",
+      "url": "https://github.com/zesterer/chumsky",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P2",
+      "papel": "Referência",
+      "licenca": "MIT no repositório GitHub consultado",
+      "fontes": [
+        "https://github.com/zesterer/chumsky",
+        "https://github.com/zesterer/chumsky/issues/972"
+      ]
+    },
+    {
+      "id": "R021",
+      "projeto": "rust-analyzer/rowan",
+      "url": "https://github.com/rust-analyzer/rowan",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT OR Apache-2.0",
+      "fontes": [
+        "https://github.com/rust-analyzer/rowan/blob/master/README.md",
+        "https://github.com/rust-analyzer/rowan/blob/master/Cargo.toml",
+        "https://rust-analyzer.github.io/book/contributing/syntax.html",
+        "https://docs.rs/rowan/latest/rowan/"
+      ]
+    },
+    {
+      "id": "R022",
+      "projeto": "oxc-project/oxc",
+      "url": "https://github.com/oxc-project/oxc",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT; repositório também mantém THIRD-PARTY-LICENSE",
+      "fontes": [
+        "https://github.com/oxc-project/oxc"
+      ]
+    },
+    {
+      "id": "R023",
+      "projeto": "swc-project/swc",
+      "url": "https://github.com/swc-project/swc",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "Apache-2.0",
+      "fontes": [
+        "https://github.com/swc-project/swc"
+      ]
+    },
+    {
+      "id": "R024",
+      "projeto": "RustPython/RustPython",
+      "url": "https://github.com/RustPython/RustPython",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P2",
+      "papel": "Avaliação",
+      "licenca": "MIT no código; CC-BY-4.0 no logotipo",
+      "fontes": [
+        "https://github.com/RustPython/RustPython"
+      ]
+    },
+    {
+      "id": "R025",
+      "projeto": "astral-sh/ruff",
+      "url": "https://github.com/astral-sh/ruff",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/astral-sh/ruff"
+      ]
+    },
+    {
+      "id": "R026",
+      "projeto": "immunant/c2rust",
+      "url": "https://github.com/immunant/c2rust",
+      "area": "Linguagens, parsing e transformação de código",
+      "categoria": "Parsers e compiladores",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "BSD-3-Clause; c2rust-ast-printer inclui avisos de código Apache-2.0/MIT",
+      "fontes": [
+        "https://github.com/immunant/c2rust",
+        "https://github.com/immunant/c2rust/blob/master/LICENSE"
+      ]
+    },
+    {
+      "id": "R027",
+      "projeto": "tauri-apps/tauri",
+      "url": "https://github.com/tauri-apps/tauri",
+      "area": "Studio e interfaces",
+      "categoria": "Host desktop e WebView",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT ou MIT/Apache-2.0, conforme o componente; logotipo tem licença distinta.",
+      "fontes": [
+        "https://github.com/tauri-apps/tauri",
+        "https://v2.tauri.app/security/capabilities/"
+      ]
+    },
+    {
+      "id": "R028",
+      "projeto": "tauri-apps/wry",
+      "url": "https://github.com/tauri-apps/wry",
+      "area": "Studio e interfaces",
+      "categoria": "Host desktop e WebView",
+      "prioridade": "P1",
+      "papel": "Referência",
+      "licenca": "MIT ou Apache-2.0.",
+      "fontes": [
+        "https://github.com/tauri-apps/wry"
+      ]
+    },
+    {
+      "id": "R029",
+      "projeto": "emilk/egui",
+      "url": "https://github.com/emilk/egui",
+      "area": "Studio e interfaces",
+      "categoria": "Interfaces e Studio",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT ou Apache-2.0; fontes incorporadas têm licenças próprias.",
+      "fontes": [
+        "https://github.com/emilk/egui"
+      ]
+    },
+    {
+      "id": "R030",
+      "projeto": "iced-rs/iced",
+      "url": "https://github.com/iced-rs/iced",
+      "area": "Studio e interfaces",
+      "categoria": "Interfaces e Studio",
+      "prioridade": "P2",
+      "papel": "Alternativa",
+      "licenca": "MIT.",
+      "fontes": [
+        "https://github.com/iced-rs/iced"
+      ]
+    },
+    {
+      "id": "R031",
+      "projeto": "slint-ui/slint",
+      "url": "https://github.com/slint-ui/slint",
+      "area": "Studio e interfaces",
+      "categoria": "Interfaces e Studio",
+      "prioridade": "P2",
+      "papel": "Referência",
+      "licenca": "Framework: GPLv3, Slint Royalty-free License ou comercial, à escolha; documentação e exemplos: MIT.",
+      "fontes": [
+        "https://github.com/slint-ui/slint",
+        "https://github.com/slint-ui/slint/blob/master/LICENSE.md",
+        "https://github.com/slint-ui/slint/blob/master/FAQ.md"
+      ]
+    },
+    {
+      "id": "R032",
+      "projeto": "lapce/floem",
+      "url": "https://github.com/lapce/floem",
+      "area": "Studio e interfaces",
+      "categoria": "Interfaces e Studio",
+      "prioridade": "P2",
+      "papel": "Referência",
+      "licenca": "MIT.",
+      "fontes": [
+        "https://github.com/lapce/floem"
+      ]
+    },
+    {
+      "id": "R033",
+      "projeto": "DioxusLabs/dioxus",
+      "url": "https://github.com/DioxusLabs/dioxus",
+      "area": "Studio e interfaces",
+      "categoria": "Interfaces e Studio",
+      "prioridade": "P2",
+      "papel": "Alternativa",
+      "licenca": "MIT ou Apache-2.0.",
+      "fontes": [
+        "https://github.com/DioxusLabs/dioxus"
+      ]
+    },
+    {
+      "id": "R034",
+      "projeto": "gfx-rs/wgpu",
+      "url": "https://github.com/gfx-rs/wgpu",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Gráficos, cenas e mídia",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT ou Apache-2.0.",
+      "fontes": [
+        "https://github.com/gfx-rs/wgpu",
+        "https://github.com/gfx-rs/wgpu/blob/trunk/Cargo.toml"
+      ]
+    },
+    {
+      "id": "R035",
+      "projeto": "linebender/vello",
+      "url": "https://github.com/linebender/vello",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Gráficos, cenas e mídia",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT ou Apache-2.0; arquivos de assets podem ter licenças próprias.",
+      "fontes": [
+        "https://github.com/linebender/vello"
+      ]
+    },
+    {
+      "id": "R036",
+      "projeto": "bevyengine/bevy",
+      "url": "https://github.com/bevyengine/bevy",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Gráficos, cenas e mídia",
+      "prioridade": "P1",
+      "papel": "Referência",
+      "licenca": "MIT ou Apache-2.0 no código principal; alguns componentes e assets têm termos adicionais.",
+      "fontes": [
+        "https://github.com/bevyengine/bevy"
+      ]
+    },
+    {
+      "id": "R037",
+      "projeto": "ruffle-rs/ruffle",
+      "url": "https://github.com/ruffle-rs/ruffle",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Gráficos, cenas e mídia",
+      "prioridade": "P0",
+      "papel": "Referência",
+      "licenca": "MIT ou Apache-2.0; dependências listadas em LICENSE.md.",
+      "fontes": [
+        "https://github.com/ruffle-rs/ruffle"
+      ]
+    },
+    {
+      "id": "R038",
+      "projeto": "notify-rs/notify",
+      "url": "https://github.com/notify-rs/notify",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "CLI e desenvolvimento",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "notify: CC0-1.0; notify-types, debouncers e file-id: MIT ou Apache-2.0.",
+      "fontes": [
+        "https://github.com/notify-rs/notify",
+        "https://docs.rs/notify/latest/notify/"
+      ]
+    },
+    {
+      "id": "R039",
+      "projeto": "enigo-rs/enigo",
+      "url": "https://github.com/enigo-rs/enigo",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Automação do computador",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT.",
+      "fontes": [
+        "https://github.com/enigo-rs/enigo",
+        "https://github.com/enigo-rs/enigo/blob/main/Cargo.toml",
+        "https://github.com/enigo-rs/enigo/blob/main/Permissions.md",
+        "https://docs.rs/enigo/latest/enigo/"
+      ]
+    },
+    {
+      "id": "R040",
+      "projeto": "nashaofu/xcap",
+      "url": "https://github.com/nashaofu/xcap",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Automação do computador",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "Apache-2.0.",
+      "fontes": [
+        "https://github.com/nashaofu/xcap"
+      ]
+    },
+    {
+      "id": "R041",
+      "projeto": "pdeljanov/Symphonia",
+      "url": "https://github.com/pdeljanov/Symphonia",
+      "area": "Gráficos, mídia e integração desktop",
+      "categoria": "Gráficos, cenas e mídia",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MPL-2.0.",
+      "fontes": [
+        "https://github.com/pdeljanov/Symphonia"
+      ]
+    },
+    {
+      "id": "R042",
+      "projeto": "jeremychone/rust-genai",
+      "url": "https://github.com/jeremychone/rust-genai",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Provedores de IA e Ollama",
+      "prioridade": "P0",
+      "papel": "Avaliação",
+      "licenca": "MIT / Apache-2.0; ambos os arquivos presentes no repositório",
+      "fontes": [
+        "https://github.com/jeremychone/rust-genai",
+        "https://docs.rs/genai/latest/genai/"
+      ]
+    },
+    {
+      "id": "R043",
+      "projeto": "0xPlaygrounds/rig",
+      "url": "https://github.com/0xPlaygrounds/rig",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Agentes, provedores e memória",
+      "prioridade": "P0",
+      "papel": "Alternativa",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/0xPlaygrounds/rig"
+      ]
+    },
+    {
+      "id": "R044",
+      "projeto": "modelcontextprotocol/rust-sdk",
+      "url": "https://github.com/modelcontextprotocol/rust-sdk",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "MCP e ferramentas",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "Apache-2.0 para contribuições novas/relicenciadas; contribuições antigas sem consentimento permanecem MIT. Documentação, exceto especificações: CC-BY-4.0",
+      "fontes": [
+        "https://github.com/modelcontextprotocol/rust-sdk",
+        "https://github.com/modelcontextprotocol/rust-sdk/blob/main/LICENSE"
+      ]
+    },
+    {
+      "id": "R045",
+      "projeto": "huggingface/candle",
+      "url": "https://github.com/huggingface/candle",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Inferência local e modelos",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT / Apache-2.0; ambos os arquivos presentes no repositório",
+      "fontes": [
+        "https://github.com/huggingface/candle",
+        "https://docs.rs/candle-core/latest/candle_core/"
+      ]
+    },
+    {
+      "id": "R046",
+      "projeto": "tracel-ai/burn",
+      "url": "https://github.com/tracel-ai/burn",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Pesquisa, treinamento e inferência",
+      "prioridade": "P2",
+      "papel": "Avaliação",
+      "licenca": "MIT / Apache-2.0",
+      "fontes": [
+        "https://github.com/tracel-ai/burn"
+      ]
+    },
+    {
+      "id": "R047",
+      "projeto": "EricLBuehler/mistral.rs",
+      "url": "https://github.com/EricLBuehler/mistral.rs",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Servidor de inferência local",
+      "prioridade": "P1",
+      "papel": "Alternativa",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/ericlbuehler/mistral.rs"
+      ]
+    },
+    {
+      "id": "R048",
+      "projeto": "floneum/kalosm",
+      "url": "https://github.com/floneum/kalosm",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Contexto, documentos e modelos multimodais",
+      "prioridade": "P2",
+      "papel": "Avaliação",
+      "licenca": "MIT/Apache-2.0 na crate publicada consultada; conferir os componentes e a revisão adotada",
+      "fontes": [
+        "https://github.com/floneum/kalosm/blob/main/README.md",
+        "https://docs.rs/crate/kalosm/latest/source/Cargo.toml",
+        "https://github.com/floneum/kalosm",
+        "https://docs.rs/kalosm/latest/kalosm/"
+      ]
+    },
+    {
+      "id": "R049",
+      "projeto": "pykeio/ort",
+      "url": "https://github.com/pykeio/ort",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Inferência ONNX",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT / Apache-2.0",
+      "fontes": [
+        "https://github.com/pykeio/ort",
+        "https://docs.rs/ort/latest/ort/"
+      ]
+    },
+    {
+      "id": "R050",
+      "projeto": "robertknight/ocrs",
+      "url": "https://github.com/robertknight/ocrs",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "OCR e percepção de tela",
+      "prioridade": "P2",
+      "papel": "Avaliação",
+      "licenca": "MIT / Apache-2.0",
+      "fontes": [
+        "https://github.com/robertknight/ocrs"
+      ]
+    },
+    {
+      "id": "R051",
+      "projeto": "tazz4843/whisper-rs",
+      "url": "https://github.com/tazz4843/whisper-rs",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Transcrição de áudio; referência histórica no GitHub",
+      "prioridade": "P2",
+      "papel": "Referência",
+      "licenca": "Unlicense no binding; whisper.cpp e modelos possuem suas próprias licenças",
+      "fontes": [
+        "https://github.com/tazz4843/whisper-rs"
+      ]
+    },
+    {
+      "id": "R052",
+      "projeto": "quickwit-oss/tantivy",
+      "url": "https://github.com/quickwit-oss/tantivy",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Busca textual e memória",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/quickwit-oss/tantivy"
+      ]
+    },
+    {
+      "id": "R053",
+      "projeto": "zeroclaw-labs/zeroclaw",
+      "url": "https://github.com/zeroclaw-labs/zeroclaw",
+      "area": "IA, MCP, busca e contexto",
+      "categoria": "Assistente pessoal e arquitetura de agentes",
+      "prioridade": "P1",
+      "papel": "Referência",
+      "licenca": "MIT / Apache-2.0",
+      "fontes": [
+        "https://github.com/zeroclaw-labs/zeroclaw"
+      ]
+    },
+    {
+      "id": "R054",
+      "projeto": "windmill-labs/windmill",
+      "url": "https://github.com/windmill-labs/windmill",
+      "area": "Automação e workflows",
+      "categoria": "Workflows, workers e automação",
+      "prioridade": "P1",
+      "papel": "Referência",
+      "licenca": "Build sem enterprise: AGPL-3.0; há arquivos Apache-2.0. Binários/imagens oficiais Community também contêm código proprietário e termos adicionais",
+      "fontes": [
+        "https://github.com/windmill-labs/windmill"
+      ]
+    },
+    {
+      "id": "R055",
+      "projeto": "z8run/z8run",
+      "url": "https://github.com/z8run/z8run",
+      "area": "Automação e workflows",
+      "categoria": "Editor visual e execução de fluxos",
+      "prioridade": "P2",
+      "papel": "Referência",
+      "licenca": "Apache-2.0 / MIT, conforme README",
+      "fontes": [
+        "https://github.com/z8run/z8run/blob/main/README.md",
+        "https://github.com/z8run/z8run"
+      ]
+    },
+    {
+      "id": "R056",
+      "projeto": "skitsanos/ironflow",
+      "url": "https://github.com/skitsanos/ironflow",
+      "area": "Automação e workflows",
+      "categoria": "Workflows programáveis",
+      "prioridade": "P2",
+      "papel": "Referência",
+      "licenca": "MIT, conforme README",
+      "fontes": [
+        "https://github.com/skitsanos/ironflow"
+      ]
+    },
+    {
+      "id": "R057",
+      "projeto": "apache/datafusion",
+      "url": "https://github.com/apache/datafusion",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Consultas analíticas opcionais",
+      "prioridade": "P2",
+      "papel": "Avaliação",
+      "licenca": "Apache-2.0",
+      "fontes": [
+        "https://github.com/apache/datafusion"
+      ]
+    },
+    {
+      "id": "R058",
+      "projeto": "apache/opendal",
+      "url": "https://github.com/apache/opendal",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Arquivos, artefatos e armazenamento",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "Apache-2.0",
+      "fontes": [
+        "https://github.com/apache/opendal"
+      ]
+    },
+    {
+      "id": "R059",
+      "projeto": "nats-io/nats.rs",
+      "url": "https://github.com/nats-io/nats.rs",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Mensageria e distribuição de eventos",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "Apache-2.0",
+      "fontes": [
+        "https://github.com/nats-io/nats.rs"
+      ]
+    },
+    {
+      "id": "R060",
+      "projeto": "cedar-policy/cedar",
+      "url": "https://github.com/cedar-policy/cedar",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Permissões e políticas",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "Apache-2.0",
+      "fontes": [
+        "https://github.com/cedar-policy/cedar"
+      ]
+    },
+    {
+      "id": "R061",
+      "projeto": "GitoxideLabs/gitoxide",
+      "url": "https://github.com/GitoxideLabs/gitoxide",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Git e versionamento",
+      "prioridade": "P1",
+      "papel": "Avaliação",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/GitoxideLabs/gitoxide"
+      ]
+    },
+    {
+      "id": "R062",
+      "projeto": "tokio-rs/tracing",
+      "url": "https://github.com/tokio-rs/tracing",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Observabilidade e diagnóstico",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/tokio-rs/tracing"
+      ]
+    },
+    {
+      "id": "R063",
+      "projeto": "clap-rs/clap",
+      "url": "https://github.com/clap-rs/clap",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "CLI e administração",
+      "prioridade": "P0",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/clap-rs/clap"
+      ]
+    },
+    {
+      "id": "R064",
+      "projeto": "ratatui/ratatui",
+      "url": "https://github.com/ratatui/ratatui",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "CLI e desenvolvimento",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT.",
+      "fontes": [
+        "https://docs.rs/ratatui/latest/ratatui/",
+        "https://docs.rs/crate/ratatui/latest/source/LICENSE"
+      ]
+    },
+    {
+      "id": "R065",
+      "projeto": "tokio-rs/loom",
+      "url": "https://github.com/tokio-rs/loom",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Verificação de concorrência",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT",
+      "fontes": [
+        "https://github.com/tokio-rs/loom",
+        "https://docs.rs/loom/latest/loom/"
+      ]
+    },
+    {
+      "id": "R066",
+      "projeto": "proptest-rs/proptest",
+      "url": "https://github.com/proptest-rs/proptest",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Testes baseados em propriedades",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/proptest-rs/proptest"
+      ]
+    },
+    {
+      "id": "R067",
+      "projeto": "nextest-rs/nextest",
+      "url": "https://github.com/nextest-rs/nextest",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Execução e gestão de testes",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/nextest-rs/nextest/blob/main/README.md"
+      ]
+    },
+    {
+      "id": "R068",
+      "projeto": "EmbarkStudios/cargo-deny",
+      "url": "https://github.com/EmbarkStudios/cargo-deny",
+      "area": "Armazenamento, operação e qualidade",
+      "categoria": "Dependências e gates de qualidade",
+      "prioridade": "P1",
+      "papel": "Integração proposta",
+      "licenca": "MIT OU Apache-2.0",
+      "fontes": [
+        "https://github.com/EmbarkStudios/cargo-deny"
+      ]
+    }
+  ]
+}
