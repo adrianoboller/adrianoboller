@@ -71,3 +71,4 @@ sozinho.
 
 - `zelador.md` — papel D, que existia só como script e cláusula; agora tem agente.
 - `cognicao.md` — papel K, cognição própria e rede neural local em CPU, criado a partir da pesquisa de novas fontes.
+- `cientista.md` — papel L, cientista de dados e de hipóteses: método científico e estatístico, previsão com erro medido e cubos/tabelas fato em SQLite a partir dos históricos; entrega dossiê de hipóteses aos outros agentes. Fronteira: o J traz a receita de fora, o L testa no dado, o K implementa no produto.
