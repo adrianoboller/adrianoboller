@@ -21,8 +21,10 @@ Consolida e **remede** o que já foi decidido em 24/09 — `pesquisa-495-ia-segu
    da chave e a aprovação do conteúdo do 339(a). Isso é **produto** e sobe (§8, item 2).
 5. **Custo no laço quente:** desligado **0,51 ns** (medido hoje); ligado ~**1,7 µs** por pedido `sql` ≈ **0,5%** de
    um pedido de 322 µs (parte medida hoje, parte citada — §3).
-6. **Linha de base nasce DESLIGADA** (voto 7 × 2: PG e MariaDB desligam, MySQL liga); o **detector de 4 classes
-   nasce ligado para observar** (decisão de 24/09 mantida: não muda resposta, só conta).
+6. ~~Linha de base nasce DESLIGADA (voto 7 × 2)~~ — **morreu na A0** (`aquario-707.md` §11.2): a base nasce
+   **ligada atrás do portão da telemetria**, porque o 707 (08/10, posterior ao voto) pediu «anormal pelo habitual,
+   não por tamanho fixo»; ligada custa 37 ns no protocolo, ≈ 0,5% com digital e detector. O **detector de 4
+   classes nasce ligado para observar** (decisão de 24/09 mantida).
 7. **Previsão compra antecedência para o lento; o rápido é conserto.** Os cinco consertos ativos do catálogo do C
    (498, 509, 510, 511, 512) estão ☑️ — o terreno que o C exigia antes do previsor existe.
 8. **Falta da versão, pelo gerador** (`pagina-dos-pedidos.py`, lido sem gravar): **0,0%** — 642 feitos, 0 abertos,
@@ -54,7 +56,7 @@ Consolida e **remede** o que já foi decidido em 24/09 — `pesquisa-495-ia-segu
 | 2 | **consulta lenta por limiar fixo, desligado de fábrica** | `log_min_duration_statement` = `-1`, «disables»; há amostragem (`log_statement_sample_rate`) ([runtime-config-logging](https://www.postgresql.org/docs/current/runtime-config-logging.html)) | idem ao MySQL | `slow_query_log` «disabled» de fábrica; `long_query_time` = 10 s ([slow-query-log](https://dev.mysql.com/doc/refman/8.4/en/slow-query-log.html)) | não tem | converge: **limiar fixo, desligado** | o limiar fixo não serve a quem tem consulta de 1 ms e de 2 s → linha de base (F4) |
 | 3 | **estatística por digital** (literal vira marcador) | `pg_stat_statements`: `mean/stddev/min/max_exec_time`, `rows`; teto `max` = 5000; exige preload ([pgstatstatements](https://www.postgresql.org/docs/current/pgstatstatements.html)) | `events_statements_summary_by_digest`: `AVG/MIN/MAX_TIMER_WAIT`, `SUM_ROWS_SENT`, `SUM_ERRORS`, **sem quantil** ([KB](https://mariadb.com/kb/en/performance-schema-events_statements_summary_by_digest-table/)); Performance Schema «disabled by default for performance reasons» ([KB](https://mariadb.com/kb/en/performance-schema-overview/)) | mesma tabela **com** `QUANTILE_95/99/999` por histograma ([8.4 §29.12.20.3](https://dev.mysql.com/doc/refman/8.4/en/performance-schema-statement-summary-tables.html)) | `sqlite3_normalized_sql()` só com opção de compilação | **converge** em digital + média/mín/máx + linhas → **aceite** | F4 |
 | 4 | **tabela cheia de digitais** | despeja as menos usadas | linha-coringa `DIGEST = NULL` | linha-coringa; se ela passa de ~50% «the summary is not very representative» (mesma página) | — | coringa 5 × despeja 4 | coringa (C1 morre) |
-| 5 | **estatística ligada de fábrica?** | não (preload) | **não** | sim | — | desligada 7 × 2 | F4 nasce desligada |
+| 5 | **estatística ligada de fábrica?** | não (preload) | **não** | sim | — | desligada 7 × 2 | ~~F4 nasce desligada~~ **ligada atrás do portão: o voto é alcançado pela ordem do dono do 707 (A0, §11.2 do aquário)** |
 | 6 | **lista permitida por conta, com treino** | não tem | MaxScale `dbfwfilter` removido (24/09) | Enterprise Firewall, comercial: «recording, protecting, or detecting mode» por conta ([firewall](https://dev.mysql.com/doc/refman/8.4/en/firewall.html)) | autorizador **por ação**, na preparação — «disallows everything except SELECT» ([set_authorizer](https://www.sqlite.org/c3ref/set_authorizer.html)) | 2 × 8 | morta em 24/09; ⏸ |
 | 7 | **detector heurístico de SQLi no núcleo** | não | não | não | não | 0 × 10 | entra **só por ordem do dono**, e por isso só observa |
 | 8 | **mercado: SQLi por regra** | `libinjection` (BSD-3): «tokenizes the input, folds the token stream, and looks up the result in a table of known-bad token patterns»; «Only the first five folded tokens are examined»; acusa prosa como `total (5); tax included` ([github](https://github.com/libinjection/libinjection)) | | | | — | **diverge**: o motor nunca vê o parâmetro isolado; olha a consulta inteira, todos os símbolos (restrição: o evento sem rabo invisível) |
@@ -95,7 +97,7 @@ remedir 885/741 com a digital calculada **sobre os símbolos, sem `String`** —
 |---|---|---|---|---|
 | **portão** | `if !ligado { return }` antes de tudo (pétrea da instrumentação) | laço quente | 0,51 ns | sempre |
 | **regras** | 4 classes de 24/09 (empilhado — o `comando_empilhado` consertado no 501, um motor só —, constante sob `OR`, UNION de sondagem, comentário que engole aspa), sobre os símbolos que a análise já fez, no sucesso **e** no erro | laço quente | 885 ns (teto) | ligado de fábrica, só observa |
-| **linha de base** | por digital: n, média e M2 de `ln(µs)`, máx, linhas devolvidas (média/M2), erros, primeira/última vez; teto 5.000 + coringa | laço quente, depois da resposta montada | 86 ns + digital | **desligada de fábrica** (7 × 2) |
+| **linha de base** | **a mesma do 707** (A0): chave op+tabela ou digital; Welford de `ln(µs)` de serviço e de `ln(1+linhas)` em duas metades de 30 min; máx, erros, primeira/última vez; teto 5.000 + coringa; sem `OPS_DE_REPLICACAO` | laço quente, no `anotar` | 37 ns + digital | **ligada atrás do portão da telemetria** (A0) |
 | **previsão** | `esgota_em` (disco, `.log`, RSS × `MemAvailable`, descritores); contagem regressiva (tabela, diário); atraso da réplica | thread do vigia, 15 min | 58 ns por série | o vigia **amostra sempre**; `alertas.ligado` decide só o e-mail (C §6) |
 | **camada** | `Ocorrencia` → silêncio → fila → carteiro → `ocorrencias.log` (redigido), op `ocorrencias`, e-mail/SMS | fora de toda trava | — | sempre que houver produtor |
 | **IA** | explicar o evento, sugerir índice/parâmetro, dizer «parece ataque / parece defeito» | **navegador**, com aprovação do corpo (339(a)) | 0 no servidor | pedida por gente |
@@ -104,8 +106,9 @@ remedir 885/741 com a digital calculada **sobre os símbolos, sem `String`** —
 (`profiler::colher_tabelas`), contagens, z, a série da previsão. **Nunca** linha de dado, nunca literal; usuário e
 IP pseudonimizados. A resposta é parecer, **nunca ação** — o «apague X» semeado num nome de tabela não vira nada.
 
-**Sinal «anormal» (F4), escrito:** `n ≥ 30` **e** `z = (ln x − média)/desvio ≥ 4` na duração **ou** nas linhas
-devolvidas → ocorrência `fora_do_habitual`, silenciada por (digital, usuário). Raciocinado, não medido: a taxa de
+**Sinal «anormal» (F4), escrito — revisto pela A0:** `n ≥ 20` **e** `z = (ln x − média)/desvio ≥ 4` **e** serviço
+≥ 250 ms, ou `z ≥ 4` **e** linhas ≥ 1.000 → `Alarme::ForaDoHabitual` (amarelo), silenciado por (chave, usuário).
+O `n ≥ 30` morreu (aquecimento 0,018–0,020% com 20 e com 30); sem o piso, 40/9.317 alarmes nos 24 logs contra 1. Raciocinado, não medido: a taxa de
 falso alarme com z ≥ 4 sobre `ln` depende do tráfego real (lacuna L2). Digital **nova** de usuário que só tinha
 digitais conhecidas há 7 dias **não** vira ocorrência sozinha: 94,3% de digital nova no console (24/09, §4.3).
 
@@ -154,9 +157,9 @@ Ordem: a camada antes dos produtores; o 496 abre pela F5 porque não depende da 
 | fatia | o quê | aceite | RED → GREEN (defeito reposto derruba) | nível |
 |---|---|---|---|---|
 | **F1** | `phxsql_sql::sinais(&[Simbolo])` (4 classes) e `digital(&[Simbolo]) -> u64` **sem `String`** | 5 ataques do repositório acusados; 0 de 36 no dado escapado; ≤ 1 no corpo legítimo extraído do código (catraca) | classe devolvendo 0 derruba a detecção; implementação por recorte derruba o escapado (30/36); digital que trunca derruba o teste do rabo | médio |
-| **F2** | camada: `Ocorrencia`, extrai a fila/carteiro da `saude_do_disco.rs` (ela vira o 1º produtor), `ocorrencias.log` redigido por rodízio | os testes da saúde do disco seguem verdes **sem mudar**; `CREATE USER … PASSWORD '<sentinela>'` marcado não deixa a sentinela no arquivo; tabela no lado B de `juntar` aparece em `tabelas` | segundo carteiro reposto → teste «um carteiro só» (contagem de `Condvar`) falha; recorte no lugar da digital → sentinela aparece | **forte** |
+| **F2** | camada: `Ocorrencia` (o tipo é o `enum Alarme` do 707, A0 §11.3), extrai a fila/carteiro da `saude_do_disco.rs` (ela vira o 1º produtor), `ocorrencias.log` redigido por rodízio | os testes da saúde do disco seguem verdes **sem mudar**; `CREATE USER … PASSWORD '<sentinela>'` marcado não deixa a sentinela no arquivo; tabela no lado B de `juntar` aparece em `tabelas` | segundo carteiro reposto → teste «um carteiro só» (contagem de `Condvar`) falha; recorte no lugar da digital → sentinela aparece | **forte** |
 | **F3** | gancho em `executar_e_contar_escrita_local` (`servico_permissao_01.rs:101`) e nos 3 campos de expressão; a análise devolve os símbolos | tautologia do arsenal gera 1 ocorrência **com 2 linhas devolvidas**; resposta ao cliente byte a byte igual com e sem o detector | relexar no gancho → medidor de custo passa de 2× o parse e falha; detector só no `is_err()` (o erro do 215) → a tautologia, que dá certo, some | médio |
-| **F4** | `BaseDeConsultas`: por digital, Welford sobre `ln(µs)` e linhas; teto 5.000 + coringa; ocorrência `fora_do_habitual`; **é ela que pinta o 707** | 30 execuções de 1 ms e a 31ª de 200 ms → 1 ocorrência; 30 de 1 ms e a 31ª de 1,3 ms → nenhuma; 5.001ª digital vai à coringa e a base das outras não muda | desvio sobre µs em vez de `ln` → o caso 1,3 ms alarma; despejo no lugar da coringa → inundação apaga a base; portão depois do `Instant::now` → bancada «desligado custa > 1 ns» falha | **forte** (trava no laço quente) |
+| **F4** (≡ **A4** do 707) | `BaseDeConsultas` única (A0): chave op+tabela ou digital, Welford sobre `ln(µs)` de serviço e linhas, duas metades de 30 min; teto 5.000 + coringa; `Alarme::ForaDoHabitual`; **é ela que pinta o 707** | 20 execuções de ~1 ms (com variação) e a 21ª de 400 ms → 1 ocorrência; 20 de 1 ms **exatos** e a 21ª de 10 s → 1 (o chão do desvio; o `z` do Apêndice A devolve 0 e derruba este caso); a 21ª de 200 ms → nenhuma (piso); a 21ª de 1,3 ms → nenhuma; `replicar_aguardar` de 1 s nunca; 5.001ª chave vai à coringa e a base das outras não muda | desvio sobre µs em vez de `ln` → o caso 1,3 ms alarma; despejo no lugar da coringa → inundação apaga a base; portão depois do `Instant::now` → bancada «desligado custa > 1 ns» falha | **forte** (trava no laço quente) |
 | **F5** | `esgota_em(amostras, piso) -> Option<Previsao>` (C §6) + mesma função para RSS e descritores; vigia amostra sempre | série linear acerta ± 2%; constante/crescente → `None`; R² < 0,6 → `None`; rajada: nunca otimista | sinal invertido; sem portão de R²; só a janela curta — cada um derruba o seu teste; contra o SO (`unshare -m`, tmpfs 64 MiB, 8 MiB/s): aviso **antes** do `ENOSPC` com ≥ 50% de antecedência, produtor desligado → nenhum aviso → vermelho; sem `CAP_SYS_ADMIN` diz **«não provado»** | médio |
 | **F6** | contagem regressiva: tabela (C7), diário (C3), idade do backup (C6), janela do backup (C5); aviso 80%/30 dias, crítico 95%/3 dias | tabela a 81% → aviso; a 79% → nada | limiar no `>` trocado por `>=`, e o teste de fronteira cai | leve |
 | **F7** | atraso da réplica por tabela + tendência | réplica parada com mestre gravando → 3 amostras crescendo → ocorrência | réplica em dia → nenhuma ocorrência (o teste do comportamento velho) | médio — **C revisa** |
@@ -247,6 +250,24 @@ fn main() {
     for k in ks { let (a, m, z) = mediana(res[k].clone()); println!("{k:48} min {a:8.2} ns  med {m:8.2} ns  max {z:8.2} ns"); }
 }
 ```
+
+## 11. A0 — unificação com o 707 (09/10/2026)
+
+A decisão inteira, com hipóteses, números e scripts, mora em **um lugar só**: `aquario-707.md` §11 e
+Apêndice B. Aqui, o que mudou neste desenho:
+
+| hipótese daqui | destino | número |
+|---|---|---|
+| Welford **cumulativo** | morre → duas metades de 30 min | raciocinado (o cumulativo não esquece) |
+| n ≥ 30 | morre → n ≥ 20 | aquecimento 0,018% (30) × 0,020% (20), 4.000 chaves |
+| sem exclusão | morre → sem `OPS_DE_REPLICACAO` | 54 × 40 alarmes em 24 logs; 14 `replicar_aguardar` |
+| sem piso | morre → serviço ≥ 250 ms | 40/9.317 × 1/9.317 |
+| desligada (7 × 2) | morre → ligada atrás do portão | o 707 alcança o voto; ligada ≈ 0,5% |
+| `Ocorrencia` com tipo próprio | morre → o tipo é `Alarme` | lei «função e comando vêm do mesmo motor» |
+| um `ocorrencias.log` para tudo | fica, **com papel**: o fato e a segurança; a linha do tempo e a contagem vão ao `aquario.log` | separar por papel 5 × 4; retenção sob ataque |
+| Welford sobre `ln(µs)` | **fica** e vira a base do 707 | 37 ns × 119 ns do histograma; 0,004% × 0,612% em cauda larga |
+
+A premissa «µs, não ms» foi **medida**: no log ODBC, 170/184 linhas têm `ms = 0`, 152 delas `sql`.
 
 ## Decisões do dono, 09/10/2026
 

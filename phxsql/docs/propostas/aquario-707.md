@@ -14,6 +14,10 @@ número abaixo diz se foi medido aqui ou raciocinado.
 
 ## 0. Veredito em cinco linhas
 
+> **Revisto pela A0 (§11, 09/10/2026):** a base é a do 495/496 unificada (Welford sobre `ln(µs)`,
+> z ≥ 4, n ≥ 20, piso 250 ms, ligada atrás do portão); `Alarme` é o tipo da `Ocorrencia`; a contagem
+> dos gráficos fecha por hora em `aquario-horas.jsonl`. O item 3 abaixo é a hipótese Ha1, que morreu.
+
 1. **80% dos dados já existem**: tarefa (`Atividade`), espera e posse da trava, prazo, encerrar
    cooperativo, duração e erro de toda resposta no **único sumidouro** (`anotar`). Faltam três peças
    de servidor: **o p95 por operação+tabela**, **os sinais vermelhos marcados na origem** e **o log
@@ -98,6 +102,10 @@ raio, pela razão que o `telemetria.js:309` já escreve: raio proporcional exage
 
 ### 2.2 «Anormal»: p95 da própria operação+tabela
 
+> **Hipótese Ha1 — morreu na A0 (§11.1)** por custo (3,2×), memória (13,6×) e falso alarme em cauda
+> larga (150×). Ficam desta seção: a chave op+tabela, o tempo de serviço, a janela de 30–60 min, as
+> exclusões e o piso de 250 ms. Morrem: o histograma, o `2 × p95` como corte e o «a mais fria sai».
+
 Decisão, com o número de cada parte:
 
 | Parâmetro | Valor | Por quê |
@@ -161,7 +169,8 @@ azul escuro para a grande. Média anormal → amarelo pelo mesmo motivo.
 `telemetria.rs:1744`), **só no caminho raro**; o caminho normal não paga nada. Os sinais que não
 são de tarefa nenhuma (disco, réplica, firewall) vão para o **sedimento** do servidor (§3.5), com o
 mesmo `Sinal`. Um enum só para os dois — uma decisão, um lugar. Nome `Sinal` colide com o
-`sinais.rs` (SIGTERM, pedido 687): chamar `Alarme`.
+`sinais.rs` (SIGTERM, pedido 687): chamar `Alarme`. **A0 (§11.3): o `Alarme` é também o tipo da
+`Ocorrencia` do 495-F2 — um enum, um produtor, dois arquivos com papéis diferentes.**
 
 | Grupo | Sinal | Origem que já emite (arquivo:linha) | O que falta |
 |---|---|---|---|
@@ -288,6 +297,9 @@ hoje para sozinho sem alvo (`telemetria.js:891`) — o aquário herda os dois.
 
 ### 3.1 Custo ZERO no servidor com o aquário fechado — e o alcance dessa frase
 
+> **A0 (§11.2):** a linha «histograma p95» abaixo vira a base Welford — **37 ns** medidos, ligada
+> atrás do mesmo portão.
+
 | Peça | Com o aquário fechado | Com a telemetria desligada |
 |---|---|---|
 | pedido `telemetria`/vista do aquário | **zero** (ninguém pergunta) | zero |
@@ -307,6 +319,9 @@ mede o preço do resto.
 ## 4. O log de tudo
 
 ### 4.1 Onde mora — três hipóteses
+
+> **A0 (§11.3–11.4):** o mesmo escritor serve também o `ocorrencias.log` do 495; o `aquario.log`
+> ganha a linha `contagem` por minuto, e a hora fecha em `aquario-horas.jsonl`, fora do rodízio.
 
 | Hipótese | Resultado |
 |---|---|
@@ -461,7 +476,7 @@ Medido aqui (fórmula WCAG 2.x). Gráfico pede ≥ 3:1 contra o fundo; rótulo d
 | Fatia | O que entra | Prova (RED onde há guarda: falha com o defeito reposto) |
 |---|---|---|
 | **F0** bancada | script que repete um `acessos.log` e conta alarmes por regra (o que este documento fez à mão, virando arquivo da `bancada/`) | números da §2.2 regerados por comando |
-| **F1** servidor: classificar | `Alarme` (bits na origem), histograma no `anotar`, `classificar()` único, `vista: "aquario"` com `amostras: 0`, `bloqueada_por` | RED: (1) vítima da fila **não** vira anormal — repor «comparar `ha_ms`» faz falhar; (2) n < 20 não dá anormal; (3) `replicar_aguardar` nunca é anormal; (4) reentrante ≠ corrompido; (5) **telemetria desligada: zero atualizações de histograma** (contador), no molde do `testes_profiler_desligado`. **Bancada A/B** do custo, critério ≤ 1% |
+| **F1** servidor: classificar | `Alarme` (bits na origem), base no `anotar` (**Welford, §11**), `classificar()` único, `vista: "aquario"` com `amostras: 0`, `bloqueada_por` | RED: (1) vítima da fila **não** vira anormal — repor «comparar `ha_ms`» faz falhar; (2) n < 20 não dá anormal; (3) `replicar_aguardar` nunca é anormal; (4) reentrante ≠ corrompido; (5) **telemetria desligada: zero atualizações de histograma** (contador), no molde do `testes_profiler_desligado`. **Bancada A/B** do custo, critério ≤ 1% |
 | **F2** servidor: log | escritor generalizado, `aquario.log` com rodízio, campo `tarefa` no `Acesso`, `aquario_log` lendo de trás para a frente, `retrato` de 30 s | RED: nascer/mudar/estourar gravam **sem nenhum cliente perguntando**; linha forjada com `\n` no `op` não vira duas; disco cheio conta a falha e chama `evento_de_disco` (tmpfs pequeno, **contra o SO**) |
 | **F3** servidor: matar | direito `monitorar`; recusa de tarefa de sistema no servidor; `encerrar_sessao` grava o alvo; ficha do «o que se perde» | RED: `monitorar` vê e **não** mata; admin continua matando (**comportamento velho**); `servico` recusado mesmo para admin; alvo na trilha. Queda de conexão **pelo soquete**, não unitário |
 | **F4** tela | física (grade, faixas, estouro, pedra, cardume), formas, alça, rota, pausa por visibilidade, textos pela fábrica | navegador **nos dois temas**; **vídeo curto** com carga real (consulta longa segurando a trava + fila + uma recusa de disco simulada); RED: aba escondida faz **0 pedidos em 10 s** (repor o relógio sem `visibilitychange` faz falhar); contraste dos cinco pares nos dois temas contra o `PISO_CONTRASTE`; catraca de textos não sobe; chave morta |
@@ -498,7 +513,298 @@ fala com o servidor, `telemetria.js:11-15`), em paralelo a F2/F3.
 
 ## 10. O que sobe ao dono
 
+> **A0 (§11.6):** continua **nada**; três decisões ficaram visíveis para veto.
+
 **Nada.** Comportamento de banco decidido pelas réguas (dois níveis de matar, ver ≠ matar, proteger
 tarefa de sistema, mostrar quem bloqueia, ociosa-em-transação); método de monitor decidido pela lei
 da casa e pela medição. Ficam **visíveis para veto**, sem pergunta: integridade = amarelo (§2.4) e o
 alcance do «custo zero» (§3.1).
+
+---
+
+## 11. A0 — uma base, um alarme, uma contagem com o 495/496 (09/10/2026, papel J)
+
+Lei aplicada: **função e comando vêm do mesmo motor.** Esta seção **revoga**, onde contradiz, o §2.2,
+o nome do §2.4, o §3.1 e o §4.1 deste documento, e o §0 item 6, o §2 linha 5, o §4 e a F4 do
+`ia-495-496-desenho.md`. Árvore lida: `5569ee93`. Fan-out dispensado e registrado: esta instância
+não tem ferramenta de subagente; motor e bancada pelo J direto. Scripts no Apêndice B.
+
+### 11.1 (a) A linha de base — hipóteses escritas antes de medir
+
+| # | hipótese | veredito, com o número |
+|---|---|---|
+| Ha1 | a do aquário: histograma 4/oitava, `2 × p95`, n ≥ 20, piso 250 ms | **morre.** Custo **118,7 ns** contra **37,0 ns** (3,2×; faixas 97,6–128,5 × 28,9–39,1, não se cruzam); **652 B** contra **48 B** por chave (13,6×); falso alarme em lognormal σ = 1: **0,612%** contra **0,004%** (150×). No log real empata com a vencedora (1/9.317) |
+| Ha2 | a da IA: Welford **cumulativo** sobre `ln(µs)`, z ≥ 4, n ≥ 30, sem exclusão, sem piso, **desligada** | **morre em pedaços.** Sem a exclusão: **54** alarmes contra 40 nos 24 logs, 14 deles o `replicar_aguardar`; sem piso: **40/9.317** — ruído de 1 ms de resolução (29 `commit`) — contra **1**; n ≥ 30 não compra nada: aquecimento **0,018–0,020%** com 20 e com 30 (4.000 chaves × 60); cumulativo não esquece o habitual de ontem (raciocinado); desligada: §11.2 |
+| Ha3 | duas bases, uma por consumidor | **morre pela lei**: duas respostas para «isto é anormal?» pintariam a bolha de uma cor e mandariam o e-mail por outra |
+| **Ha4** | **Welford sobre `ln(µs)` em duas metades de 30 min, n ≥ 20, z ≥ 4 e serviço ≥ 250 ms, sem o que espera por desenho** | **entra.** **1/9.317** (o `inserir` de 2.005 ms contra habitual de 5 ms — o mesmo único alarme da Ha1); 37,0 ns |
+
+E uma premissa que os dois documentos supunham, **medida**: a grandeza tem de ser **µs**. No log da
+sonda ODBC, **170 de 184** linhas (92%) têm `ms = 0`, e **152** delas são `sql` — em ms a base do
+`sql` é cega. O `Acesso` ganha `us` (aditivo; o `de_json` tolera ausente, `acesso.rs:96-98`), da
+mesma medida que já vai ao `duracao_ms`: nenhum `Instant` novo.
+
+**A base única:**
+
+| parâmetro | valor | de onde |
+|---|---|---|
+| chave | `op` + `database.tabela`; para `op = sql`, a **digital** (FNV-1a 64 sobre os símbolos, F1 do 495, sem `String`) | aquário §2.2 + IA §2 linha 3 (converge 9 × 0) |
+| grandeza | tempo de **serviço** (duração − espera na trava), µs; e **linhas devolvidas** | aquário (a vítima da fila não vira anormal) + IA |
+| estatística | Welford sobre `ln(µs)` e `ln(1 + linhas)` | Ha4 |
+| janela | duas metades de 30 min, unidas na leitura pela fórmula de Chan (O(1)) | aquário (5 min absorve a tempestade); *raciocinado, não medido* — os logs têm minutos |
+| n mínimo | **20**; abaixo vale o limiar fixo de hoje (`alto_uso_ms`/`stress_ms`) | medido (Ha2) |
+| anormal | **z ≥ 4 e serviço ≥ 250 ms**, com o desvio sob um **chão de 0,1 em `ln`** (≈ 10%; *raciocinado*) — sem ele a série constante dá desvio 0, e o `z` do Apêndice A da IA devolve 0: 20 × 1 ms exatos e um de 10 s **não alarmaria**; nas linhas, **z ≥ 4 e linhas ≥ 1.000** (o «≥ 1.000» do C10/C11; *raciocinado*: o log não guarda linhas) | Ha4 |
+| exclusões | `OPS_DE_REPLICACAO` (`servidor.rs:389`) e as tarefas do sistema | aquário; a IA não tinha |
+| teto | **5.000 chaves + linha-coringa** | IA C1 (5 × 4). O «1.024, a mais fria sai» do §2.2 **morre**: despejo é o do PG, que perdeu o voto, e quem inunda chaves apagaria o habitual dos outros |
+| memória | 2 grandezas × 2 metades × 24 B + máx, erros, primeira/última ≈ **128 B/chave**, ≈ **640 KiB** no teto | raciocinado |
+| onde mora | o `anotar` (único sumidouro) | aquário |
+| o que mostra | `z`, `n` e o **p95 habitual estimado** = `exp(média + 1,645 · desvio)` | a tela fala a língua que o dono aceitou («p95 da própria operação e tabela»), e o corte é o z |
+
+O 707 diz «critérios de grande, anormal e warning **decididos pelo pesquisador**»: trocar `2 × p95`
+por `z ≥ 4` sobre `ln` é decisão do J, não sobe.
+
+### 11.2 Quem nasce ligado
+
+- **A base nasce LIGADA, atrás do portão `telemetria.ligada()`**, que já nasce ligado
+  (`Telemetria::default()` = `nova(true)`, `telemetria.rs:984`; `servico_nucleo_01.rs:457`).
+  `telemetria_desligar` a zera: **0,51 ns** (IA, Apêndice A).
+- **Morre** a «desligada 7 × 2» da IA. Não é a régua errando: é a régua **alcançada por ordem do
+  dono posterior** — 707, 08/10: «anormal pelo p95 da própria operação e tabela (**não por tamanho
+  fixo**)». Desligada, o padrão de fábrica seria justamente o tamanho fixo que o dono recusou.
+- **Preço ligado:** protocolo **37 ns** (medido hoje, carga 5,1) ≈ 0,011% de um pedido de 322 µs
+  (citado de 24/09); `sql` + digital ≈ 741 ns (citado, teto) ≈ 0,23%; somado ao detector de 4
+  classes, que já nasce ligado (885 ns, citado), ≈ **0,5%** — abaixo do critério **≤ 1%** que os
+  dois documentos já tinham. Decide a bancada A/B da A4.
+- **Pétrea:** o portão vem antes do hash, da digital e da trava. RED: telemetria desligada → zero
+  atualizações (contador), no molde do `testes_profiler_desligado`.
+- O e-mail do `fora_do_habitual` continua atrás de `alertas.ligado` (o padrão da IA para o vigia:
+  amostra sempre, o interruptor decide só o e-mail).
+
+### 11.3 (b) `Alarme` = o tipo da `Ocorrencia`
+
+| # | hipótese | veredito |
+|---|---|---|
+| Hb1 | um log só para tudo | **morre.** (1) Retenção: o rodízio de 64 MiB cobre ≈ 8 h de carga ruim (§4.3, raciocinado) — a ocorrência de força bruta seria apagada pelo volume do próprio ataque. (2) Leitor: o aquário é lido pelo `monitorar` e pela TV, com usuário pseudonimizado e **sem IP** (decisão do dono 09/10); a ocorrência de segurança leva IP ao administrador. Um log só obriga um filtro na leitura, e o filtro esquecido vaza o IP. (3) Maduros: MySQL separa por papel (seis logs, [server-logs](https://dev.mysql.com/doc/refman/8.4/en/server-logs.html)), MariaDB põe a auditoria em arquivo próprio (`server_audit`), o PG usa um log com severidade → separar **5 × 4** |
+| Hb2 | dois enums, um por documento | **morre pela lei** |
+| **Hb3** | **um enum, um produtor, dois arquivos com papéis diferentes** | **entra** |
+
+- **`enum Alarme`, um só** (nome do aquário: `Sinal` colide com `sinais.rs`). É o `tipo` da
+  `Ocorrencia` da F2. Cada variante responde `gravidade()` (vermelho/amarelo), `grupo()` (LOCK,
+  DISCO, DADO, RÉPLICA, SEGURANÇA, PRAZO e as famílias da IA: ataque, defeito, previsão) e
+  `escopo()` (tarefa → bit no `AtomicU32` da `Atividade`, ≤ 32 variantes; servidor → sedimento).
+  A chave da fábrica `aquario.motivo.<variante>` é o mesmo texto do e-mail.
+- **Um produtor:** `telemetria::sinal(Alarme::X, dados)` marca o bit (quando é de tarefa) **e**
+  entrega a `Ocorrencia` à camada (silêncio → fila → carteiro). Nenhum outro caminho cria ocorrência.
+- **`ocorrencias.log`** guarda o **fato** (o alarme e por quê), redigido, para o `administrar`.
+  **`aquario.log`** guarda a **linha do tempo** das tarefas e a contagem; a linha `mudou` leva a
+  chave do `Alarme` e `"ocorrencia": <id>` — repete o valor, nunca a decisão.
+- Os dois (e o `acessos.log`) pelo **mesmo escritor** (`registrar_json` do `LogAcessos`
+  generalizado, §4.1). O «grande e anormal» (azul escuro) é **classe**, não alarme: o
+  `fora_do_habitual` é `Alarme` amarelo, e a `classificar()` única o pinta de azul escuro quando a
+  tarefa é grande.
+
+### 11.4 (c) A contagem dos três gráficos
+
+| # | hipótese | veredito |
+|---|---|---|
+| Hc1 | unidade = **linha** (PG `tup_inserted`… «Number of rows», [monitoring-stats](https://www.postgresql.org/docs/current/monitoring-stats.html)) | **morre 5 × 4**: MySQL e MariaDB contam **instrução** (`Com_xxx`, «number of times each xxx statement has been executed», [status](https://dev.mysql.com/doc/refman/8.4/en/server-status-variables.html)); e a ordem do dono põe na mesma régua backup, erro e aviso, que não têm linha |
+| Hc2 | barra = **tentativas** (`Com_stmt_xxx`: «correspond to the number of requests issued») | **morre por razão nossa**: o backup que falhou subiria a barra de backup — mentira sobre a cópia (C6 do 496). A página não diz isso do `Com_xxx` geral, só do `Com_stmt_xxx` |
+| Hc3 | erro/aviso = vermelho/amarelo do aquário | **morre.** Erro de sintaxe e login recusado sumiriam do gráfico «erros»; e os três maduros definem pelo **desfecho da instrução** — PG `ERROR` «caused the current command to abort», `WARNING` «warnings of likely problems» ([severidade](https://www.postgresql.org/docs/current/runtime-config-logging.html)); MySQL `ERRORS` = SQLSTATE fora de `00`/`01`, `WARNINGS` = «the number of warnings, from the statement diagnostics area» ([events_statements_current](https://dev.mysql.com/doc/refman/8.4/en/performance-schema-events-statements-current-table.html)); MariaDB, a mesma P_S → **converge 9 × 0, aceite** |
+| Hc4 | **dia** fora do rodízio (`aquario-dias.jsonl`, plano) | **morre.** O motor não tem fuso (`datahora.rs:164`: «em lugar nenhum deste motor existe fuso»; tudo UTC). Dia UTC põe **3 das 24 h** do dia de Brasília (UTC−3) no dia errado: 12,5% |
+| **Hc5** | **hora** fora do rodízio; a tela soma no fuso do navegador | **entra** |
+
+**O motor da contagem — um acumulador, três retenções:**
+
+- **Um acumulador** no `Telemetria`: oito `AtomicU64` do minuto corrente, somados pelo `anotar`
+  (um ponto), atrás do mesmo portão. A categoria **decide-a a op que executou** e devolve-a com a
+  resposta (`categoria` no `Acesso`, em memória) — o modo do `excluir` mora na resposta, e o
+  `anotar` adivinhando pelo nome da op seria a segunda decisão.
+- **Minuto, no `aquario.log`:** `{"evento":"contagem","minuto_ms":…,"c":{"select":…,"insert":…,
+  "update":…,"excluir_suave":…,"excluir_fisico":…,"backup":…,"erro":…,"aviso":…}}`, escrita pelo
+  amostrador de 1 s na virada, **sempre que a telemetria está ligada, inclusive com zeros**. É isso
+  que separa **0** (ligado, nada aconteceu) de **ausente** (`null`: servidor fora ou telemetria
+  desligada). ≈ 150 B × 1.440 ≈ 216 KB/dia (raciocinado).
+- **Hora, em `aquario-horas.jsonl`**, fora do rodízio, só acrescenta: uma linha por hora UTC
+  fechada, com as oito somas e `minutos_medidos` (0–60). ≈ 4 KB/dia, ≈ 1,5 MB/ano (raciocinado). A
+  hora fecha da **memória**; no arranque no meio da hora, refaz-se das linhas de minuto, e minuto
+  comido pelo rodízio fica fora de `minutos_medidos` — o gráfico desenha parcial, nunca inventa.
+- **Dia, semana e mês: a tela soma as horas**, no fuso do navegador. O gráfico A (ao vivo) = horas
+  fechadas de hoje + minutos da hora corrente + o minuto parcial, que vem na mesma chamada
+  `telemetria` com `vista: "aquario"`.
+- «Motor único: nada de segundo contador» (dono, item 8): a hora é o **fecho** do minuto, não outro
+  contador.
+
+**As oito séries — conta-se um por pedido que passou pelo `anotar`** (o derivado do
+`executar_derivado` não conta de novo; lote de 5.000 = 1; `UPDATE` por faixa = 1):
+
+| série | conta |
+|---|---|
+| `select` | `ok`, op que devolve linhas — a lista sai de **uma** constante do código (hoje `OPS_QUE_DEVOLVEM_LINHAS`, local em `servico_consulta_01.rs:404`; sobe ao módulo e recebe as que faltam, como `ler`, `juntar`, `unir`, `pivotar`, com teste contra o despacho) —, ou `sql` cuja instrução **analisada** é `SELECT` |
+| `insert` | `ok`, `inserir` ou `sql` `INSERT` |
+| `update` | `ok`, `atualizar` ou `sql` `UPDATE` |
+| `excluir_suave` | `ok`, `excluir` cuja **resposta** diz `"modo":"suave"`; `sql` `DELETE` (o derivado é suave, `servico_sql_01.rs:446/541`) |
+| `excluir_fisico` | `ok`, `excluir` cuja resposta diz `"modo":"fisico"` — o desfecho, não a bandeira do pedido |
+| `backup` | `ok`, backup terminado (op `backup` e job) |
+| **`erro`** | **`ok: false`, qualquer op e qualquer código** — inclusive login recusado, sintaxe e integridade. **Não** conta na barra da categoria |
+| **`aviso`** | **`ok: true` com `aviso` ou `avisos` não vazio no nível de cima da resposta.** Conta **também** na barra da categoria |
+
+Transação: conta na hora do pedido, mesmo que um `ROLLBACK` depois desfaça (a instrução executada,
+como o `Com_xxx`). Linhas devolvidas/gravadas por período: ⏸. A legenda diz, pela fábrica, que
+erro/aviso é o desfecho da instrução e vermelho/amarelo é a gravidade para o servidor.
+
+**RED da A8:** `excluir` físico contado como suave → cai; backup que falhou → barra de backup
+parada e `erro` +1; servidor derrubado 2 min → 2 minutos `null` e `minutos_medidos` = 58, nunca
+zero; telemetria desligada → acumulador parado; hora UTC 01:00 cai no dia anterior na tela de
+Brasília.
+
+### 11.5 O que muda nas fatias (o `plano-0.21.md` foi atualizado)
+
+- **A1** regera esta seção pelo Apêndice B (Ha1 × Ha4: 1/9.317 cada; sem piso 39 × 40; sem
+  exclusão 15 × 54), não mais «59/15/1».
+- **A2** nasce com o `enum Alarme` e o `registrar_json`: A3, A4, A6 e a F2 os usam, e quem os
+  escrevesse primeiro viraria dono por acidente.
+- **A4 ≡ F4 do 495**: uma fatia, um arquivo, Welford.
+- **A8**: `aquario-horas.jsonl`, não `-dias`.
+
+### 11.6 Sobe ao dono?
+
+**Nada** — nem produto nem choque com pétrea. Ficam visíveis para veto: (1) a base **ligada**
+contra o voto 7 × 2, pela força do 707; (2) erro/aviso do gráfico ≠ vermelho/amarelo, com a
+legenda; (3) o «p95» que o dono leu vira **estimado e mostrado**, e o corte é `z ≥ 4`.
+
+### 11.7 Lacunas
+
+- **µs não existe em log nenhum**: a comparação Ha1 × Ha4 em tráfego real foi em ms, com `0 → 0,5`.
+  Decide a A1, com o campo `us`.
+- **Moda rara** (1% das execuções 15× mais lentas): as duas estatísticas acusam **1,03%** — nenhuma
+  separa; o piso de 250 ms é o que protege quando a moda rara é rápida.
+- Janela de 30 min, piso de 1.000 linhas e os volumes dos arquivos: raciocinados.
+- 322 µs, 741 ns e 885 ns: de 24/09, não remedidos. A bancada de hoje rodou sob carga 5,1.
+- 24 logs de bancada, nenhum de produção.
+
+## Apêndice B — os medidores da A0 (refazer: `python3 regras.py`, `python3 nmin.py`, `rustc -O --edition 2021 bench.rs && ./bench`)
+
+Vão para `bancada/aquario/` pela A1 (script que resolveu não morre com a sessão).
+
+`regras.py` — as regras sobre os `acessos.log` e os sintéticos:
+
+```python
+import json, math, glob, random, sys, collections
+REPL={'posicao','replicar','retrato_da_replica','aplicar','cluster_pulso','replicar_aguardar'}  # OPS_DE_REPLICACAO, servidor.rs:389
+def balde(x):  # 4 por oitava, x em unidade >=1
+    if x<1: return 0
+    return int(math.floor(4*math.log2(x)))+1
+def p95_hist(h):
+    n=sum(h.values()); alvo=math.ceil(0.95*n); a=0
+    for b in sorted(h):
+        a+=h[b]
+        if a>=alvo: return 2**(b/4) if b>0 else 1  # topo do balde
+class Hist:
+    def __init__(s): s.h=collections.Counter(); s.n=0
+    def anormal(s,x,piso):
+        if s.n<20: return False
+        return x>=max(2*p95_hist(s.h),piso)
+    def somar(s,x): s.h[balde(x)]+=1; s.n+=1
+class Welf:  # a da IA: n>=30, z>=4 sobre ln, sem piso
+    NM=30
+    def __init__(s): s.n=0; s.m=0.0; s.m2=0.0
+    def anormal(s,x,_):
+        if s.n<s.NM: return False
+        sd=math.sqrt(s.m2/(s.n-1)) if s.n>1 else 0
+        if sd==0: return False
+        return (math.log(x)-s.m)/sd>=4
+    def somar(s,x):
+        v=math.log(x); s.n+=1; d=v-s.m; s.m+=d/s.n; s.m2+=d*(v-s.m)
+class WelfPiso(Welf):  # a unificada (A0): n>=20, z>=4 sobre ln, piso
+    NM=20
+    def anormal(s,x,piso): return x>=piso and Welf.anormal(s,x,piso)
+def rodar(eventos, Cls, piso, excluir):
+    base={}; al=0; av=0; quais=[]
+    for op,tab,x in eventos:
+        if excluir and op in REPL: continue
+        k=(op,tab); b=base.setdefault(k,Cls()); av+=1
+        if b.anormal(x,piso): al+=1; quais.append((op,x))
+        b.somar(x)
+    return al,av,quais
+def logreal(f, minimo):
+    for l in open(f):
+        d=json.loads(l); yield d['op'],d.get('tabela',''),max(d.get('ms',0),minimo)
+if __name__=='__main__':
+    fs=['/tmp/phx-207-quorum-real/no1/acessos.log','/tmp/phx-odbc-sonda/acessos.log']+sorted(glob.glob('/tmp/phx-custo-tx-4992-*/acessos.log'))
+    for nome,Cls,piso,exc,minimo in [('A hist 2xp95 piso250 excl',Hist,250,1,1),('A sem excl',Hist,250,0,1),('A sem piso excl',Hist,0,1,1),
+                                    ('B welford ln z4 sem excl',Welf,0,0,0.5),('B welford excl',Welf,0,1,0.5),
+                                    ('C unificada n20 z4 piso250 excl',WelfPiso,250,1,0.5),('C sem piso',WelfPiso,0,1,0.5)]:
+        tot=[0,0]; q=collections.Counter()
+        for f in fs:
+            a,v,qq=rodar(list(logreal(f,minimo)),Cls,piso,exc); tot[0]+=a; tot[1]+=v; q.update(o for o,_ in qq)
+        print(f'{nome:28} alarmes {tot[0]:4} de {tot[1]:5} ({100*tot[0]/max(tot[1],1):.2f}%)  {q.most_common(4)}')
+    # casos sinteticos do F4 da IA (em us)
+    for Cls,piso in [(Hist,250_000),(Hist,0),(Welf,0)]:
+        r=[]
+        for ult in (200_000,1_300):
+            b=Cls(); 
+            for i in range(30): b.somar(1000*(1+0.05*((i%5)-2)))
+            r.append(b.anormal(ult,piso))
+        print(Cls.__name__,'piso',piso,'-> 200ms alarma?',r[0],' 1,3ms alarma?',r[1])
+    # sintetico: bimodal (90% 0,4 ms acerto de cache, 10% 6 ms falta) e lognormal sigma 1, 200k cada
+    random.seed(7)
+    for nome,gen in [('lognormal s=1',lambda: math.exp(random.gauss(math.log(800),1.0))),
+                     ('lognormal s=0,3',lambda: math.exp(random.gauss(math.log(800),0.3))),
+                     ('bimodal 90/10 400us/6ms',lambda: random.gauss(400,40) if random.random()<.9 else random.gauss(6000,600)),
+                     ('bimodal 99/1 400us/6ms',lambda: random.gauss(400,40) if random.random()<.99 else random.gauss(6000,600))]:
+        ev=[('x','t',max(gen(),1)) for _ in range(200_000)]
+        for cn,Cls in (('hist 2xp95',Hist),('welford z4',Welf)):
+            a,v,_=rodar(ev,Cls,0,0); print(f'  {nome:24} {cn:11} falso alarme {100*a/v:.3f}%')
+```
+
+`nmin.py` — o aquecimento com n ≥ 20 e n ≥ 30:
+
+```python
+import math,random
+from regras import Welf, Hist
+random.seed(11)
+for nmin in (20,30):
+  for sig in (0.3,1.0):
+    al=0;av=0
+    for k in range(4000):   # 4000 chaves, 60 amostras cada (aquecimento)
+        b=Welf(); 
+        for i in range(60):
+            x=math.exp(random.gauss(math.log(800),sig))
+            if b.n>=nmin:
+                sd=math.sqrt(b.m2/(b.n-1)); av+=1
+                if sd>0 and (math.log(x)-b.m)/sd>=4: al+=1
+            b.somar(x)
+    print(f'welford z4 n>={nmin} sigma={sig}: falso alarme no aquecimento {100*al/av:.3f}% ({al}/{av})')
+```
+
+`bench.rs` — o custo das duas estatísticas (mediana de 9 voltas × 2 M):
+
+```rust
+use std::collections::HashMap; use std::hint::black_box; use std::sync::Mutex; use std::time::Instant;
+#[derive(Default,Clone,Copy)] struct W{n:u32,m:f64,m2:f64}
+impl W{fn somar(&mut self,x:f64){let v=x.ln();self.n+=1;let d=v-self.m;self.m+=d/self.n as f64;self.m2+=d*(v-self.m);}
+ fn z(&self,x:f64)->f64{if self.n<30{return 0.0}let s=(self.m2/(self.n-1) as f64).sqrt();if s==0.0{0.0}else{(x.ln()-self.m)/s}}}
+#[derive(Default,Clone,Copy)] struct Wb{a:W,b:W} // duas metades
+impl Wb{fn z(&self,x:f64)->f64{ // Chan: une as duas metades
+ let (a,b)=(self.a,self.b); let n=a.n+b.n; if n<30{return 0.0}
+ let d=b.m-a.m; let m=a.m+d*b.n as f64/n as f64; let m2=a.m2+b.m2+d*d*a.n as f64*b.n as f64/n as f64;
+ let s=(m2/(n-1) as f64).sqrt(); if s==0.0{0.0}else{(x.ln()-m)/s}}}
+#[derive(Clone,Copy)] struct H{c:[[u32;81];2],n:u32}
+impl Default for H{fn default()->Self{H{c:[[0;81];2],n:0}}}
+fn balde(us:u64)->usize{ if us<1000{return 0} let ms=us/1000; let l=63-ms.leading_zeros() as usize; let f=((ms<<2)>>l) as usize & 3; (1+4*l+f).min(80)}
+impl H{fn somar(&mut self,x:u64){self.c[0][balde(x)]+=1;self.n+=1}
+ fn p95(&self)->usize{ if self.n<20{return 0} let alvo=(self.n as u64*95).div_ceil(100) as u32; let mut a=0; for i in 0..81{a+=self.c[0][i]+self.c[1][i]; if a>=alvo{return i}} 80}}
+fn med(mut v:Vec<f64>)->(f64,f64,f64){v.sort_by(|a,b|a.partial_cmp(b).unwrap());(v[0],v[v.len()/2],v[v.len()-1])}
+fn main(){ const N:usize=2_000_000; let ks:Vec<u64>=(0..5000u64).map(|i|i.wrapping_mul(0x9E3779B97F4A7C15)).collect();
+ let mut r:Vec<(&str,Vec<f64>)>=vec![("welford 1 metade",vec![]),("welford 2 metades (Chan)",vec![]),("histograma 81x2 + p95 por varredura",vec![])];
+ for _ in 0..9{
+  let t:Mutex<HashMap<u64,W>>=Mutex::new(HashMap::with_capacity(5000)); let i0=Instant::now(); let mut z=0.0;
+  for i in 0..N{let x=((i%97)*30+400) as f64; let mut g=t.lock().unwrap(); let b=g.entry(ks[i%5000]).or_default(); z+=b.z(x); b.somar(x);} black_box(z); r[0].1.push(i0.elapsed().as_nanos() as f64/N as f64);
+  let t:Mutex<HashMap<u64,Wb>>=Mutex::new(HashMap::with_capacity(5000)); let i0=Instant::now(); let mut z=0.0;
+  for i in 0..N{let x=((i%97)*30+400) as f64; let mut g=t.lock().unwrap(); let b=g.entry(ks[i%5000]).or_default(); z+=b.z(x); b.a.somar(x);} black_box(z); r[1].1.push(i0.elapsed().as_nanos() as f64/N as f64);
+  let t:Mutex<HashMap<u64,H>>=Mutex::new(HashMap::with_capacity(5000)); let i0=Instant::now(); let mut z=0usize;
+  for i in 0..N{let x=((i%97)*30_000+400) as u64; let mut g=t.lock().unwrap(); let b=g.entry(ks[i%5000]).or_default(); z+=(balde(x)>=b.p95()+4) as usize; b.somar(x);} black_box(z); r[2].1.push(i0.elapsed().as_nanos() as f64/N as f64);
+ }
+ for (k,v) in r{let (a,m,z)=med(v);println!("{k:40} min {a:7.2} med {m:7.2} max {z:7.2} ns");}
+ println!("bytes por chave: W {} Wb {} H {}",std::mem::size_of::<W>(),std::mem::size_of::<Wb>(),std::mem::size_of::<H>());
+}
+```

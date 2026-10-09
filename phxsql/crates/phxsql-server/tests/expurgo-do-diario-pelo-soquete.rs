@@ -250,7 +250,14 @@ fn diario_no_disco(base: &Path) -> (Vec<String>, u64) {
     for e in std::fs::read_dir(&pasta).unwrap().flatten() {
         let n = e.file_name().to_string_lossy().to_string();
         if n == "vendas.log" || (n.starts_with("vendas#") && n.ends_with(".log")) {
-            bytes += e.metadata().unwrap().len();
+            // O expurgo apaga volume enquanto esta varredura anda: o que
+            // sumiu entre o `read_dir` e o `metadata` ja nao e diario.
+            let m = match e.metadata() {
+                Ok(m) => m,
+                Err(x) if x.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(x) => panic!("{n}: {x}"),
+            };
+            bytes += m.len();
             nomes.push(n);
         }
     }

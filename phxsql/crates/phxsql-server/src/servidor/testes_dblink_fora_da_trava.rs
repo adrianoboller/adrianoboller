@@ -9,16 +9,24 @@
 use super::*;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Mutex};
 
 /// Quanto cada resposta do par leva para chegar inteira. Cada byte chega
 /// bem abaixo do prazo por leitura da ligacao (1 s), que e o caso do
 /// defeito: o prazo por leitura nunca vence.
 const GOTEJO: Duration = Duration::from_millis(1_200);
 
-/// O limite do que o `inserir` vizinho pode esperar. Com a trava na mao do
-/// DbLink ele espera o gotejo inteiro; sem ela, o tempo de um `inserir`.
-const LIMIAR: Duration = Duration::from_millis(600);
+/// Quanto o par segura o ULTIMO byte de cada resposta esperando o aval do
+/// teste. Nao e o criterio: e a rede de seguranca para o defeito nao travar a
+/// suite -- quem decide e se o aval chegou ANTES do par desistir de esperar.
+const SEGURA: Duration = Duration::from_secs(4);
+
+/// O aval do teste ao par: cada `()` solta a resposta que esta segurando o
+/// ultimo byte. O criterio e a ORDEM (o `inserir` vizinho termina com a
+/// resposta ainda presa), nao um prazo de relogio -- sob carga o `inserir`
+/// demora o que demorar e o veredito nao muda (pedido 751, metodo do 703).
+type Aval = Arc<Mutex<mpsc::Receiver<()>>>;
 
 pub(super) fn quadro(seq: u8, carga: &[u8]) -> Vec<u8> {
     let mut q = (carga.len() as u32).to_le_bytes()[..3].to_vec();
@@ -114,7 +122,12 @@ pub(super) fn saudar(s: &mut TcpStream) -> bool {
 /// Uma conexao do par: saudacao e OK na hora, e cada resposta a uma
 /// instrucao GOTEJADA ao longo do `GOTEJO`. A instrucao vai pelo canal no
 /// instante em que chega -- e o sinal de que o DbLink esta no fio.
-fn atender(mut s: TcpStream, avisar: mpsc::Sender<String>) {
+fn atender(
+    mut s: TcpStream,
+    avisar: mpsc::Sender<String>,
+    aval: Option<Aval>,
+    desistiu: Arc<AtomicBool>,
+) {
     if !saudar(&mut s) {
         return;
     }
@@ -130,8 +143,19 @@ fn atender(mut s: TcpStream, avisar: mpsc::Sender<String>) {
             bytes.extend(quadro(i as u8 + 1, carga));
         }
         let passo = GOTEJO / bytes.len() as u32;
-        for b in bytes {
+        let n = bytes.len();
+        for (i, b) in bytes.into_iter().enumerate() {
             std::thread::sleep(passo);
+            if i + 1 == n {
+                if let Some(aval) = &aval {
+                    // Sem o aval em SEGURA, o vizinho nao andou enquanto o
+                    // par estava no fio: a trava estava presa.
+                    let veio = aval.lock().unwrap().recv_timeout(SEGURA).is_ok();
+                    if !veio {
+                        desistiu.store(true, Ordering::SeqCst);
+                    }
+                }
+            }
             if s.write_all(&[b]).is_err() {
                 return;
             }
@@ -140,6 +164,23 @@ fn atender(mut s: TcpStream, avisar: mpsc::Sender<String>) {
 }
 
 fn par_que_goteja() -> (u16, mpsc::Receiver<String>) {
+    let (porta, avisos, _, _) = par_que_goteja_preso(false);
+    (porta, avisos)
+}
+
+/// O par, com a opcao de segurar o ultimo byte de cada resposta ate o aval.
+fn par_que_goteja_preso(
+    com_aval: bool,
+) -> (
+    u16,
+    mpsc::Receiver<String>,
+    mpsc::Sender<()>,
+    Arc<AtomicBool>,
+) {
+    let (dar_aval, recebe) = mpsc::channel();
+    let aval: Option<Aval> = com_aval.then(|| Arc::new(Mutex::new(recebe)));
+    let desistiu = Arc::new(AtomicBool::new(false));
+    let desistiu2 = Arc::clone(&desistiu);
     let ouvinte = TcpListener::bind("127.0.0.1:0").unwrap();
     let porta = ouvinte.local_addr().unwrap().port();
     let (avisar, avisos) = mpsc::channel();
@@ -147,10 +188,11 @@ fn par_que_goteja() -> (u16, mpsc::Receiver<String>) {
         for s in ouvinte.incoming() {
             let Ok(s) = s else { return };
             let avisar = avisar.clone();
-            std::thread::spawn(move || atender(s, avisar));
+            let (aval, desistiu) = (aval.clone(), Arc::clone(&desistiu2));
+            std::thread::spawn(move || atender(s, avisar, aval, desistiu));
         }
     });
-    (porta, avisos)
+    (porta, avisos, dar_aval, desistiu)
 }
 
 pub(super) fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
@@ -179,25 +221,34 @@ pub(super) fn pede(s: &Arc<Servidor>, corpo: &str) -> Result<Json> {
     r
 }
 
-/// Espera o par receber uma instrucao que comece por `inicio` e mede
-/// quanto um `inserir` em OUTRA tabela espera nesse instante.
-fn espera_do_vizinho(
+/// Espera o par receber uma instrucao que comece por `inicio`, faz um
+/// `inserir` em OUTRA tabela enquanto a resposta dele esta presa e devolve
+/// se o `inserir` terminou com o par ainda segurando -- o que so acontece se
+/// o DbLink esta no fio SEM a trava de dados. Depois solta a resposta.
+fn vizinho_andou(
     s: &Arc<Servidor>,
     avisos: &mpsc::Receiver<String>,
+    dar_aval: &mpsc::Sender<()>,
+    desistiu: &AtomicBool,
     inicio: &str,
     id: u64,
-) -> Duration {
+) -> bool {
     let sql = avisos
-        .recv_timeout(Duration::from_secs(10))
+        .recv_timeout(Duration::from_secs(30))
         .expect("o par nao recebeu instrucao nenhuma");
     assert!(sql.starts_with(inicio), "esperava {inicio:?}, veio {sql:?}");
-    let relogio = Instant::now();
     pede(
         s,
         &format!(r#""op":"inserir","database":"loja","tabela":"outra","linha":{{"id":{id}}}"#),
     )
     .unwrap();
-    relogio.elapsed()
+    // Lido ANTES do aval: o aval solta o par, e so o que ja aconteceu conta.
+    let andou = !desistiu.swap(false, Ordering::SeqCst);
+    if andou {
+        // Aval atrasado deixaria sobra no canal e soltaria a proxima ida cedo.
+        let _ = dar_aval.send(());
+    }
+    andou
 }
 
 /// **545: enquanto o par goteja, o resto do banco anda.** As idas ao fio
@@ -208,13 +259,15 @@ fn espera_do_vizinho(
 /// # Prova real
 ///
 /// Com a trava tomada antes do fio (o codigo de antes), o `inserir` em
-/// `loja.outra` espera o gotejo inteiro nas tres medidas -- ~1,2 s cada,
-/// acima do `LIMIAR`. Com o conserto, espera so o proprio trabalho.
+/// `loja.outra` so termina depois que o par solta a resposta -- e o par so
+/// solta no `SEGURA`, porque o aval vem depois do `inserir`. Com o conserto,
+/// o `inserir` termina com a resposta ainda presa. Pela ordem, nao pelo
+/// relogio: o 751 era este teste caindo sob carga com 600 ms absolutos.
 #[test]
 fn o_par_que_goteja_nao_prende_o_banco() {
     let dir = DirTemp::novo("545-dblink-trava");
     let s = servidor(&dir);
-    let (porta, avisos) = par_que_goteja();
+    let (porta, avisos, aval, desistiu) = par_que_goteja_preso(true);
     pede(&s, r#""op":"criar_database","database":"loja""#).unwrap();
     pede(
         &s,
@@ -227,7 +280,7 @@ fn o_par_que_goteja_nao_prende_o_banco() {
         &s,
         &format!(
             r#""op":"dblink_salvar","nome":"erp","motor":"mysql","host":"127.0.0.1",
-                   "porta":{porta},"usuario":"u","database":"erp","timeout_s":1,
+                   "porta":{porta},"usuario":"u","database":"erp","timeout_s":10,
                    "somente_leitura":false,"cifra":false"#
         ),
     )
@@ -241,7 +294,8 @@ fn o_par_que_goteja_nao_prende_o_banco() {
                    "local_database":"loja","sentido":"dois","dono":"aqui"}]"#,
         )
     });
-    let no_ligar = espera_do_vizinho(&s, &avisos, "SELECT * FROM `clientes` LIMIT 0", 1);
+    let vizinho = |inicio: &str, id: u64| vizinho_andou(&s, &avisos, &aval, &desistiu, inicio, id);
+    let no_ligar = vizinho("SELECT * FROM `clientes` LIMIT 0", 1);
     let r = ligar.join().unwrap().unwrap();
     assert!(
         r.escrever().contains("\"tabela_criada\":true"),
@@ -261,9 +315,9 @@ fn o_par_que_goteja_nao_prende_o_banco() {
     // Desde o 584 a rodada vai ao fio duas vezes antes do empurrao: as
     // colunas (`LIMIT 0`) e a leitura com o binario em hexadecimal. As
     // duas tem de andar sem a trava, e as duas se medem.
-    let no_select = espera_do_vizinho(&s, &avisos, "SELECT * FROM `clientes` LIMIT 0", 2);
-    let na_leitura = espera_do_vizinho(&s, &avisos, "SELECT `id`,`nome` FROM `clientes`", 4);
-    let no_empurrao = espera_do_vizinho(&s, &avisos, "INSERT", 3);
+    let no_select = vizinho("SELECT * FROM `clientes` LIMIT 0", 2);
+    let na_leitura = vizinho("SELECT `id`,`nome` FROM `clientes`", 4);
+    let no_empurrao = vizinho("INSERT", 3);
     let r = sincronizar.join().unwrap().unwrap().escrever();
 
     // A rodada continua certa: puxou a remota e empurrou a local.
@@ -278,12 +332,12 @@ fn o_par_que_goteja_nao_prende_o_banco() {
         ("empurrao do dblink_sincronizar", no_empurrao),
     ]
     .iter()
-    .filter(|(_, esperou)| *esperou >= LIMIAR)
-    .map(|(onde, esperou)| format!("{onde}: {esperou:?}"))
+    .filter(|(_, andou)| !*andou)
+    .map(|(onde, _)| (*onde).to_string())
     .collect();
     assert!(
         presas.is_empty(),
-        "um inserir em outra tabela esperou o par gotejar (limiar {LIMIAR:?}) -- o \
+        "um inserir em outra tabela so terminou depois que o par soltou a resposta -- o \
              DbLink estava no fio com a trava de dados na mao: {presas:?}"
     );
 }
