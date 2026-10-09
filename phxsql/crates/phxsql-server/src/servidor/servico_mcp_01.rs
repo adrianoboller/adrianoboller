@@ -86,16 +86,22 @@ impl crate::mcp::Executor for ExecutorLocal {
         let linha = pedido.escrever();
         let (op, autenticado, resultado) =
             self.servidor.despachar(&linha, &mut sessao, &self.origem);
-        let duracao = inicio.elapsed().as_millis() as u64;
+        let decorrido = inicio.elapsed();
+        let duracao = decorrido.as_millis() as u64;
         self.servidor.anotar(&Acesso {
             quando_ms,
             ip: self.origem.clone(),
             porta_origem: 0,
+            desfecho: self
+                .servidor
+                .desfecho_para_contar(&op, resultado.as_ref().ok()),
             op,
             usuario: sessao.login().to_string(),
             autenticado,
             ok: resultado.is_ok(),
             duracao_ms: duracao,
+            us: decorrido.as_micros().max(1) as u64,
+            espera_us: crate::aquario::base::tomar_espera(),
             erro: resultado.as_ref().err().map(|e| e.to_string()),
             ..objeto_do_pedido(&linha, &resultado)
         });

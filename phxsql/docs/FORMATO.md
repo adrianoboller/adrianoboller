@@ -4815,3 +4815,54 @@ faixa invertida são recusados antes de tocar o disco.
   `ajustar_sequencia` com o campo `sequencia` no lugar de `tabela`. A lista
   do banco sai no `sequencias`, em `nomeadas`.
 - **Não tem cache.** Ver acima.
+
+## 25. `aquario-horas.jsonl` — a contagem do aquário por hora (pedido 707, A8)
+
+**JSON Lines, uma linha por hora UTC fechada**, ao lado do `acessos.log`, com o
+nome fixo `aquario-horas.jsonl`. É log, como o `diretivas.log`: sem cabeçalho,
+CRC nem versão; linha ilegível é pulada na leitura. **Fora do rodízio** — só
+acrescenta, ≈ 4 KB/dia (raciocinado) —, e escrito pelo **mesmo escritor** do
+`acessos.log` (`LogAcessos::registrar_json`, rodízio desligado), aberto uma vez
+por hora.
+
+```json
+{"hora":"2026-10-09 13:00:00,000","hora_ms":1791550800000,"minutos_medidos":58,
+ "c":{"select":120,"insert":40,"update":7,"excluir_suave":2,"excluir_fisico":1,
+      "backup":0,"erro":3,"aviso":1}}
+```
+
+| campo | o que é |
+|---|---|
+| `hora` / `hora_ms` | o início da hora, **UTC**: o motor não tem fuso, e a tela soma as horas no fuso do navegador |
+| `minutos_medidos` | 0–60: os minutos em que a telemetria estava ligada e o servidor no ar. Os que faltam são **ausência**, não zero |
+| `c` | as oito séries; série ausente numa linha lida vale zero |
+
+**A unidade é o pedido**, não a linha. **As barras contam só o que terminou
+`ok`**; `erro` é todo `ok:false`; `aviso` é `ok:true` com `aviso`/`avisos` não
+vazio no nível de cima da resposta, e conta também na barra da categoria. O
+excluir conta pelo `modo` que a **resposta** devolve.
+
+**Quem escreve:** a virada do amostrador de 1 s, quando o minuto novo já está
+noutra hora. A hora que o disco recusa espera em memória (até 168) e entra na
+virada seguinte; a recusa vai à saúde do disco. No arranque, a hora que o
+processo anterior não fechou se refaz das linhas `contagem` por minuto do
+`aquario.log` (fatia A6) — uma vez só: hora já presente aqui não se grava de novo.
+
+**A linha por minuto no `aquario.log`.** A virada grava, pelo escritor do
+`aquario.log` (o mesmo `LogAcessos::registrar_json`, com o rodízio de 8 MiB × 8
+dele), uma linha `contagem` por minuto fechado. O `quando_ms` é o instante da
+**virada**, não o começo do minuto — o leitor anda de trás para a frente e para
+no primeiro `quando_ms` anterior ao `desde`, e uma linha datada no passado no
+meio das outras cortaria a leitura cedo. O minuto vai inteiro em `dados`, no
+formato que a retomada lê de volta:
+
+```json
+{"quando":"2026-10-09 13:05:00,412","quando_ms":1791551100412,"evento":"contagem",
+ "dados":{"evento":"contagem","minuto_ms":1791551040000,
+          "c":{"select":3,"insert":0,"update":0,"excluir_suave":0,"excluir_fisico":0,
+               "backup":0,"erro":1,"aviso":0}}}
+```
+
+No arranque, o servidor lê do `aquario.log` (e do rodízio) as linhas
+`contagem` das **duas** últimas horas — a corrente e a anterior, que pode ter
+caído sem fechar — e refaz a hora a partir delas.

@@ -2160,6 +2160,7 @@ fn trava_envenenada(nome: &str) -> PhxError {
 /// e o motivo de ela nao ter virado `unreachable!`: um panico aqui seria o
 /// defeito que o pedido existe para fechar.
 fn trava_de_dados_sem_reparo(panicos: u64, reparos: u64) -> PhxError {
+    crate::telemetria::sinal(crate::aquario::Alarme::TravaEnvenenada, "trava_de_dados");
     PhxError::Corrompido(format!(
         "uma operacao anterior entrou em panico e deixou a trava suja: a trava \
          de dados viu {panicos} panico(s) e {reparos} reparo(s) terminado(s), e \
@@ -2190,6 +2191,7 @@ thread_local! {
 /// na thread pendurada. Um erro nomeado custa um pedido; o abraco custava o
 /// servidor.
 fn trava_reentrante() -> PhxError {
+    crate::telemetria::sinal(crate::aquario::Alarme::TravaReentrante, "trava_de_dados");
     PhxError::Corrompido(
         "esta operacao pediu a trava de dados que a propria thread ja tem:          quem chama uma funcao a partir de dentro da trava usa a variante que          recebe a instancia por parametro (`_com`)"
             .into(),
@@ -2592,6 +2594,7 @@ fontes_do_servidor! {
     "servidor/testes_do_sal_falso.rs",
     "servidor/testes_do_terceiro_na_tabela_que_nasce.rs",
     "servidor/testes_do_valor_citado_com_teto.rs",
+    "servidor/testes_dos_alarmes.rs",
     "servidor/testes_dos_numeros_de_origem.rs",
     "servidor/testes_encerrar_sessao_644.rs",
     "servidor/testes_escala_decimal.rs",
@@ -2833,6 +2836,9 @@ mod testes_da_recusa_por_unicidade;
 
 #[cfg(test)]
 mod testes_dos_numeros_de_origem;
+
+#[cfg(test)]
+mod testes_dos_alarmes;
 
 #[cfg(test)]
 mod testes_do_pular_manual;

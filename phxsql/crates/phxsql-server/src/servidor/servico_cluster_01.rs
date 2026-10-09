@@ -590,6 +590,7 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            ..Acesso::default()
         });
         Ok(Json::objeto(vec![
             ("papel", Json::texto_de("master")),

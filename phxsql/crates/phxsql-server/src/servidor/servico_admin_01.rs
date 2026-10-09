@@ -1094,6 +1094,7 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            ..Acesso::default()
         });
         Ok(Json::objeto(vec![
             ("id", Json::texto_de(&id)),

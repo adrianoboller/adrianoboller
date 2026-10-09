@@ -23,12 +23,19 @@
 //! [`super::Aquario::anotar`], porque a falha de gravacao vai para o
 //! `evento_de_disco`, que e do servidor -- o aquario nao o alcanca.
 //!
+//! # O que grava, e quem
+//!
+//! `estourou` sai do `anotar` do servidor; `mudou` sai do mesmo `anotar`,
+//! quando a base da A4 acha o pedido fora do habitual e o produtor da A3 o
+//! marca; `contagem` sai da virada do minuto da A8, no amostrador -- e a
+//! mesma A8 a le de volta no arranque, pelo [`LogDoAquario::contagens_desde`].
+//! Um escritor so para os tres.
+//!
 //! # O que AINDA NAO grava
 //!
 //! `nasceu` pede o id da tarefa no `Acesso` (§4.1) e o amostrador a olhar as
-//! vivas; `mudou` e da A3 (o produtor unico do alarme), `retrato` e
-//! `sedimento` da A5, `contagem` da A8. Os construtores e os nomes estao aqui
-//! para que cada fatia grave pela mesma porta.
+//! vivas; `retrato` e `sedimento` sao da A5. Os nomes estao aqui para que
+//! cada fatia grave pela mesma porta.
 
 use std::fmt;
 use std::fs::File;
@@ -178,6 +185,20 @@ impl Linha {
         let mut l = Linha::nova(Evento::Mudou, quando_ms);
         l.alarme = Some(alarme);
         l.ocorrencia = ocorrencia;
+        l
+    }
+
+    /// A contagem de um minuto fechado (A8). `fechou_ms` e o instante da
+    /// virada, e nao o comeco do minuto: o arquivo e lido de tras para a
+    /// frente parando no primeiro `quando_ms` anterior ao `desde`, e uma
+    /// linha datada no passado no meio das outras cortaria a leitura cedo.
+    ///
+    /// `minuto` vai inteiro em `dados`, no formato do
+    /// [`super::contagem::linha_do_minuto`]: o que a retomada le de volta e
+    /// exatamente o que a virada produziu, sem uma segunda traducao.
+    pub fn contagem(fechou_ms: i64, minuto: Json) -> Linha {
+        let mut l = Linha::nova(Evento::Contagem, fechou_ms);
+        l.dados = Some(minuto);
         l
     }
 
@@ -347,6 +368,33 @@ impl LogDoAquario {
         self.gravar(&Linha::estourou(a))
     }
 
+    /// As contagens por minuto gravadas a partir de `desde_ms`, em ordem
+    /// cronologica -- o `dados` de cada linha `contagem`, que e o que o
+    /// [`super::contagem::Contagem::retomar`] le. Fechado, nenhuma.
+    ///
+    /// Sem o teto `max` da consulta: num servidor ocupado, as linhas
+    /// `estourou` de duas horas passariam do teto e cortariam justamente os
+    /// minutos mais velhos da hora que o arranque precisa refazer.
+    pub fn contagens_desde(&self, desde_ms: i64) -> Result<Vec<Json>> {
+        let Some(caminho) = self.caminho() else {
+            return Ok(Vec::new());
+        };
+        let mut minutos = Vec::new();
+        percorrer(&caminho, |j, q| {
+            if q < desde_ms {
+                return false;
+            }
+            if j.texto_ou("evento", "") == Evento::Contagem.nome() {
+                if let Some(d) = j.campo("dados") {
+                    minutos.push(d.clone());
+                }
+            }
+            true
+        })?;
+        minutos.reverse();
+        Ok(minutos)
+    }
+
     /// `aquario_log`: as linhas entre `desde` e `ate` (ms desde a epoca), as
     /// `max` mais recentes, em ordem cronologica.
     ///
@@ -394,47 +442,20 @@ impl LogDoAquario {
 
         let mut linhas: Vec<Json> = Vec::new();
         let mut truncado = false;
-        let mut arquivos_lidos = 0u64;
-        'arquivos: for n in 0..=ARQUIVOS_ANTIGOS {
-            let alvo = if n == 0 {
-                caminho.clone()
-            } else {
-                crate::rodizio::com_sufixo(&caminho, n)
-            };
-            let Ok(arquivo) = File::open(&alvo) else {
-                // O rodizio ainda nao chegou a este numero: os seguintes
-                // tambem nao existem.
-                break;
-            };
-            arquivos_lidos += 1;
-            let mut parar = false;
-            de_tras_para_frente(arquivo, |texto| {
-                let Ok(j) = Json::analisar(texto) else {
-                    // Linha cortada pelo disco cheio ou pela queda: pula.
-                    return true;
-                };
-                let Some(q) = j.campo("quando_ms").and_then(Json::inteiro) else {
-                    return true;
-                };
-                if desde.is_some_and(|d| q < d) {
-                    parar = true;
-                    return false;
-                }
-                if ate.is_some_and(|a| q > a) {
-                    return true;
-                }
-                if linhas.len() == max {
-                    truncado = true;
-                    parar = true;
-                    return false;
-                }
-                linhas.push(j);
-                true
-            })?;
-            if parar {
-                break 'arquivos;
+        let arquivos_lidos = percorrer(&caminho, |j, q| {
+            if desde.is_some_and(|d| q < d) {
+                return false;
             }
-        }
+            if ate.is_some_and(|a| q > a) {
+                return true;
+            }
+            if linhas.len() == max {
+                truncado = true;
+                return false;
+            }
+            linhas.push(j);
+            true
+        })?;
         linhas.reverse();
 
         let mut pares = vec![
@@ -449,6 +470,46 @@ impl LogDoAquario {
         }
         Ok(Json::objeto(pares))
     }
+}
+
+/// Percorre o `aquario.log` e o rodizio dele da linha MAIS NOVA para a mais
+/// velha, entregando cada linha legivel com o `quando_ms` dela, ate `cada`
+/// devolver `false`. Devolve quantos arquivos abriu.
+///
+/// Um percurso so para a consulta e para a retomada da contagem: os dois
+/// leem o mesmo arquivo, e dois lacos sobre o rodizio divergiriam no dia em
+/// que um aprendesse a pular um tipo de lixo que o outro nao pula.
+fn percorrer(caminho: &Path, mut cada: impl FnMut(Json, i64) -> bool) -> Result<u64> {
+    let mut arquivos_lidos = 0u64;
+    for n in 0..=ARQUIVOS_ANTIGOS {
+        let alvo = if n == 0 {
+            caminho.to_path_buf()
+        } else {
+            crate::rodizio::com_sufixo(caminho, n)
+        };
+        let Ok(arquivo) = File::open(&alvo) else {
+            // O rodizio ainda nao chegou a este numero: os seguintes
+            // tambem nao existem.
+            break;
+        };
+        arquivos_lidos += 1;
+        let mut parar = false;
+        de_tras_para_frente(arquivo, |texto| {
+            let Ok(j) = Json::analisar(texto) else {
+                // Linha cortada pelo disco cheio ou pela queda: pula.
+                return true;
+            };
+            let Some(q) = j.campo("quando_ms").and_then(Json::inteiro) else {
+                return true;
+            };
+            parar = !cada(j, q);
+            !parar
+        })?;
+        if parar {
+            break;
+        }
+    }
+    Ok(arquivos_lidos)
 }
 
 /// Um inteiro opcional do pedido. Presente com outro tipo e ERRO, e nao

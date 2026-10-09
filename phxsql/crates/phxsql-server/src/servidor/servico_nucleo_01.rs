@@ -485,6 +485,14 @@ impl Servidor {
                 caminho_do_aquario.display()
             );
         }
+        // As horas fechadas da contagem do aquario (pedido 707, A8), ao lado
+        // do `acessos.log`, fora do rodizio.
+        servidor.telemetria.aquario().contagem().definir_arquivo(
+            crate::aquario::contagem::arquivo_ao_lado_de(&servidor.config.log_acessos),
+        );
+        // E so agora, com os dois arquivos definidos, a hora corrente se
+        // refaz do que o processo anterior deixou no `aquario.log`.
+        servidor.retomar_a_contagem(crate::agora_ms());
         // O rodizio do `diretivas.log` -- pedido 228, mesmo motivo do
         // `acessos.log` acima. `Diario::definir_rodizio` toma `&self` (o
         // diario nao guarda descritor entre chamadas), entao isto pode

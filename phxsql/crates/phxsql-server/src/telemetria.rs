@@ -52,12 +52,16 @@
 //! chegando talvez minutos depois. Marca que sobrevive ao alvo e armadilha.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use phxsql_core::error::{PhxError, Result};
 use phxsql_core::json::Json;
+
+/// O produtor unico dos alarmes (pedido 707, A3) mora no aquario; o nome
+/// publico e este, porque e a telemetria que tem a atividade da vez.
+pub use crate::aquario::alarme::{sinal, sinal_em};
 
 /// Quantas amostras ficam em memoria.
 ///
@@ -244,6 +248,9 @@ pub struct Atividade {
     encerradas: AtomicU64,
     /// Quando esta atividade foi vista pela ultima vez.
     ultimo_ms: AtomicI64,
+    /// Os alarmes da operacao corrente, um bit por `Alarme` de tarefa,
+    /// marcados na ORIGEM pelo `aquario::alarme::sinal` (pedido 707, A3).
+    pub(crate) alarmes: AtomicU32,
 }
 
 impl Atividade {
@@ -270,6 +277,7 @@ impl Atividade {
             pedido_desde: Mutex::new(None),
             encerradas: AtomicU64::new(0),
             ultimo_ms: AtomicI64::new(agora_ms),
+            alarmes: AtomicU32::new(0),
         }
     }
 
@@ -329,6 +337,7 @@ impl Atividade {
         let serial = self.serial.fetch_add(1, Ordering::SeqCst) + 1;
         self.ultimo_ms.store(agora_ms, Ordering::Relaxed);
         self.passos.store(0, Ordering::Relaxed);
+        self.alarmes.store(0, Ordering::Relaxed);
         self.cancelavel.store(false, Ordering::Relaxed);
         self.com_trava.store(false, Ordering::Relaxed);
         self.tem_ponto
@@ -423,6 +432,11 @@ impl Atividade {
         let ate = self.prazo_ate_ms.load(Ordering::Relaxed);
         if ate != 0 && crate::agora_ms() >= ate {
             self.prazo_ate_ms.store(0, Ordering::Relaxed);
+            sinal_em(
+                self,
+                crate::aquario::Alarme::PrazoEstourado,
+                "statement_timeout",
+            );
             return Err(PhxError::Cancelado(format!(
                 "a operacao passou do STATEMENT TIMEOUT da transacao apos {} \
                  unidade(s) de trabalho; o que ja estava gravado continua \
@@ -1200,6 +1214,9 @@ impl Telemetria {
             return;
         }
         self.espera_us.fetch_add(micros, Ordering::Relaxed);
+        // A espera do PEDIDO, para a base do aquario medir servico e nao
+        // fila. Aqui, e nao no `travar_dados`, para herdar este portao.
+        crate::aquario::base::somar_espera(micros);
     }
 
     pub fn contar_trava(&self, micros: u64) {

@@ -12,27 +12,38 @@
 //! * as duas consultas, `aquario_log` e `aquario_contagens`, que o servidor
 //!   ja despacha atras do direito `monitorar`.
 //!
-//! # O que AINDA NAO existe, e diz que nao existe
+//! # O que ainda nao existe diz que nao existe
 //!
-//! As consultas devolvem erro nomeando a fatia que falta, em vez de uma lista
-//! vazia: lista vazia diria «nada aconteceu» num servidor onde ninguem esta
-//! escrevendo o log -- a mentira que a lei «configuracao que nao e lida
-//! mente» ja pagou uma vez.
+//! O `aquario_log` com o arquivo fechado (nao abriu no arranque) devolve
+//! erro com o motivo, em vez de uma lista vazia: lista vazia diria «nada
+//! aconteceu» num servidor onde ninguem esta escrevendo o log -- a mentira
+//! que a lei «configuracao que nao e lida mente» ja pagou uma vez.
+//!
+//! # Como as fatias se ligam
+//!
+//! Todas pelo `anotar` do servidor e pelo amostrador, nunca uma chamando a
+//! outra por dentro: a contagem (A8) fecha o minuto e o servidor grava a
+//! linha `contagem` pelo escritor do log (A6), que a A8 le de volta no
+//! arranque; a base (A4) devolve o desvio, e o servidor o entrega ao
+//! produtor unico (A3) e grava a linha `mudou` (A6).
 //!
 //! # Onde cada fatia entra, cada uma no proprio arquivo
 //!
 //! | fatia | arquivo | o gancho aqui |
 //! |---|---|---|
 //! | A3 | `aquario/alarme.rs` | `telemetria::sinal(Alarme, dados)`: o bit [`Alarme::bit`] na tarefa corrente, e o sedimento para [`Escopo::Servidor`] |
-//! | A4 | `aquario/base.rs` | em [`Aquario::anotar`]: a base Welford sobre `ln(µs)` |
+//! | A4 | `aquario/base.rs` | em [`Aquario::anotar`]: a base Welford sobre `ln(µs)`; o desvio volta ao servidor |
 //! | A6 | `aquario/log.rs` | o `aquario.log` pelo [`crate::acesso::LogAcessos::registrar_json`], e o corpo de [`Aquario::consultar_log`] |
-//! | A8 | `aquario/contagem.rs` | em [`Aquario::anotar`]: o acumulador do minuto; o corpo de [`Aquario::contagens`] |
+//! | A8 | `aquario/contagem.rs` | em [`Aquario::anotar`]: o acumulador do minuto; o corpo de [`Aquario::contagens`] (feito) |
 
+pub mod alarme;
+pub mod base;
+pub mod contagem;
 pub mod log;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use phxsql_core::error::{PhxError, Result};
+use phxsql_core::error::Result;
 use phxsql_core::json::Json;
 
 use crate::acesso::Acesso;
@@ -309,16 +320,29 @@ pub struct Aquario {
     anotados: AtomicU64,
     /// O `aquario.log` (A6). Nasce fechado; o servidor o abre no arranque.
     log: log::LogDoAquario,
+    /// A linha de base (A4).
+    base: base::BaseDeConsultas,
+    /// O acumulador da contagem (A8, `contagem.rs`).
+    contagem: contagem::Contagem,
 }
 
 impl Aquario {
     /// O ponto unico onde o fim de todo pedido chega ao aquario. Chamado pelo
     /// `anotar` do servidor, o unico sumidouro por onde toda resposta passa.
-    pub fn anotar(&self, _acesso: &Acesso) {
+    ///
+    /// Devolve o `fora_do_habitual` que a base achou, quando achou.
+    pub fn anotar(&self, acesso: &Acesso) -> Option<base::Desvio> {
         self.anotados.fetch_add(1, Ordering::Relaxed);
-        // A4 entra aqui: a base do `_acesso` (Welford sobre ln(µs), sem as
-        // OPS_DE_REPLICACAO). A8 entra aqui: o acumulador do minuto, pela
-        // categoria que a op devolveu.
+        self.contagem.somar(acesso);
+        // O desvio volta ao `anotar` do servidor, que o entrega ao produtor
+        // unico da A3 e grava a linha `mudou` (A6): o bit e da tarefa e a
+        // falha de disco e do servidor, e nenhum dos dois mora aqui.
+        self.base.anotar(acesso)
+    }
+
+    /// A base, para ler (tela e testes).
+    pub fn base(&self) -> &base::BaseDeConsultas {
+        &self.base
     }
 
     pub fn anotados(&self) -> u64 {
@@ -339,21 +363,14 @@ impl Aquario {
     }
 
     /// `aquario_contagens`: as oito series por hora (§11.4).
-    pub fn contagens(&self, _pedido: &Json) -> Result<Json> {
-        Err(ainda_nao_existe(
-            "aquario_contagens",
-            "a contagem por minuto e por hora ainda nao existe neste servidor \
-             (fatia A8 do pedido 707)",
-        ))
+    pub fn contagens(&self, pedido: &Json) -> Result<Json> {
+        self.contagem.consultar(pedido)
     }
-}
 
-/// O erro de quem pergunta por uma parte do aquario que ainda nao entrou.
-///
-/// `NAO_ENCONTRADO`, e nao uma resposta vazia: quem recebe sabe que nao ha o
-/// que ler, em vez de concluir que nada aconteceu.
-fn ainda_nao_existe(op: &str, porque: &str) -> PhxError {
-    PhxError::NaoEncontrado(format!("{op}: {porque}"))
+    /// O acumulador, para a virada do amostrador e o arranque.
+    pub fn contagem(&self) -> &contagem::Contagem {
+        &self.contagem
+    }
 }
 
 #[cfg(test)]
@@ -411,10 +428,8 @@ mod testes {
     #[test]
     fn as_consultas_que_faltam_dizem_que_faltam() {
         let aq = Aquario::default();
-        for r in [aq.consultar_log(&Json::Nulo), aq.contagens(&Json::Nulo)] {
-            let e = r.unwrap_err();
-            assert_eq!(e.nome(), "NAO_ENCONTRADO");
-            assert!(e.to_string().contains("ainda nao"), "{e}");
-        }
+        let e = aq.consultar_log(&Json::Nulo).unwrap_err();
+        assert_eq!(e.nome(), "NAO_ENCONTRADO");
+        assert!(e.to_string().contains("ainda nao"), "{e}");
     }
 }

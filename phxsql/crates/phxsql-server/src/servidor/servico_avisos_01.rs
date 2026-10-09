@@ -224,8 +224,10 @@ impl Servidor {
         // quarenta operacoes, a que alguem esquecesse seria o furo. O portao
         // e uma comparacao de inteiro e vem ANTES de qualquer trabalho: o
         // caminho de sucesso, e o de todo outro erro, nao paga nada.
+        crate::aquario::alarme::conferir_o_1001(acesso.codigo);
         if acesso.codigo == CODIGO_DE_ES {
             let texto = acesso.erro.as_deref().unwrap_or("");
+            crate::telemetria::sinal(crate::aquario::Alarme::ErroDeDisco, &acesso.op);
             self.evento_de_disco(
                 crate::saude_do_disco::tipo_do_texto(texto),
                 &acesso.op,
@@ -239,21 +241,15 @@ impl Servidor {
         // TODO pedido. Uma chamada so; o portao da telemetria esta dentro do
         // `aquario_se_ligada`, antes de qualquer trabalho.
         if let Some(aquario) = self.telemetria.aquario_se_ligada() {
-            aquario.anotar(acesso);
+            if let Some(desvio) = aquario.anotar(acesso) {
+                self.sinalizar_desvio(aquario, acesso, &desvio);
+            }
             // A linha `estourou` do `aquario.log` (A6). Fora do
             // `Aquario::anotar` porque a falha e noticia de disco, e o
             // `evento_de_disco` e daqui -- o mesmo destino da falha do
             // `acessos.log` logo acima. O corte por duracao vem antes de
             // qualquer trabalho la dentro.
-            if let Err(PhxError::Io(io)) = aquario.log().tarefa_terminou(acesso) {
-                self.evento_de_disco(
-                    crate::saude_do_disco::classificar(&io),
-                    "aquario.log",
-                    "",
-                    "",
-                    &io.to_string(),
-                );
-            }
+            self.no_aquario_log(aquario.log().tarefa_terminou(acesso));
         }
     }
 
@@ -637,6 +633,11 @@ impl Servidor {
                     // mesmo relogio: uma aba fechada para de pedir, e um
                     // minuto depois a bolha dela sai.
                     servidor.telemetria.podar(agora, 60_000);
+                    // A contagem do aquario vira o minuto no mesmo relogio, e
+                    // so com a telemetria ligada: minuto desligado fica
+                    // ausente (`null`), nunca zero. A linha do minuto vai ao
+                    // `aquario.log` la dentro.
+                    servidor.virar_a_contagem(agora);
                     fio.fazendo("amostra tirada");
                 } else {
                     fio.fazendo("telemetria desligada: nao amostra");

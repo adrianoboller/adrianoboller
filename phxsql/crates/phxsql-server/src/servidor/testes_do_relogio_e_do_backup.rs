@@ -194,10 +194,17 @@ fn backup_agendado_que_falha_avisa_pelo_carteiro() {
     let dir = DirTemp::novo("backup-510");
     std::fs::write(dir.join("arquivo-comum"), b"nao sou pasta").unwrap();
     let destino = dir.join("arquivo-comum").join("backups");
-    let (_s, caixa) = backup_para(&dir, destino.clone());
+    let (s, caixa) = backup_para(&dir, destino.clone());
     let bruto = caixa
         .recv_timeout(Duration::from_secs(10))
         .expect("o backup agendado FALHOU e ninguem foi avisado em 10 s");
+    // O irmao do pedido 707 (A8): a falha chega ao `anotar` -- a serie `erro`
+    // do aquario sobe e a barra de backup nao. A anotacao morava depois do
+    // `?` e o backup que falhava nao era anotado.
+    let c = s.telemetria.aquario().contagem().parcial();
+    let serie = |x: crate::aquario::contagem::Serie| c[x as usize];
+    assert_eq!(serie(crate::aquario::contagem::Serie::Erro), 1, "{c:?}");
+    assert_eq!(serie(crate::aquario::contagem::Serie::Backup), 0, "{c:?}");
     let (cabecalho, texto) = corpo(&bruto);
     assert!(
         cabecalho.contains("backup agendado FALHOU"),

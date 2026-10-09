@@ -198,6 +198,36 @@ impl Servidor {
         if let Some(l) = lapide {
             let _ = std::fs::remove_file(l);
         }
+        // O log de acessos guarda tambem o que o servidor faz sozinho: senao,
+        // a unica prova de que o backup rodou seria o arquivo existir. E nos
+        // DOIS desfechos -- a anotacao morava dentro do `rodar_backup_agendado`,
+        // depois do `?`, e o backup que falhava nao chegava ao `anotar`: nem ao
+        // `acessos.log`, nem a serie `erro` do aquario (pedido 707, A8).
+        let resposta = Json::Nulo;
+        self.anotar(&Acesso {
+            quando_ms: agora,
+            ip: "(local)".into(),
+            porta_origem: 0,
+            op: "backup_agendado".into(),
+            usuario: self.config.backup.admin.clone(),
+            autenticado: true,
+            ok: resultado.is_ok(),
+            duracao_ms: (crate::agora_ms() - agora).max(0) as u64,
+            erro: resultado.as_ref().err().map(|e| e.to_string()),
+            database: String::new(),
+            tabela: String::new(),
+            // Codigo ZERO de proposito, mesmo na falha: o codigo de E/S faria o
+            // `anotar` disparar o gancho da saude do disco, e o destino do
+            // backup nao e o disco onde o banco grava -- o aviso desta falha e
+            // o do pedido 510, logo abaixo, e um segundo e-mail com o texto
+            // do disco seria o defeito que o teste do 510 ja recusa.
+            codigo: 0,
+            desfecho: self.desfecho_para_contar(
+                "backup_agendado",
+                resultado.as_ref().ok().map(|_| &resposta),
+            ),
+            ..Acesso::default()
+        });
         match resultado {
             Ok(onde) => {
                 eprintln!("backup agendado: {onde}");
@@ -543,23 +573,6 @@ impl Servidor {
             quando,
         )?;
         let onde = feito.onde().display().to_string();
-
-        // O log de acessos guarda tambem o que o servidor faz sozinho: senao,
-        // a unica prova de que o backup rodou seria o arquivo existir.
-        self.anotar(&Acesso {
-            quando_ms: quando,
-            ip: "(local)".into(),
-            porta_origem: 0,
-            op: "backup_agendado".into(),
-            usuario: b.admin.clone(),
-            autenticado: true,
-            ok: true,
-            duracao_ms: 0,
-            erro: None,
-            database: String::new(),
-            tabela: String::new(),
-            codigo: 0,
-        });
 
         let apagados = self.limpar_backups_velhos();
         Ok(format!(

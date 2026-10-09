@@ -48,6 +48,23 @@ pub struct Acesso {
     pub tabela: String,
     /// Codigo do erro, para agrupar por causa em vez de por texto.
     pub codigo: u16,
+    /// A duracao em µs, do MESMO `Instant` que da o `duracao_ms`.
+    ///
+    /// Existe porque o ms e cego para o que importa a linha de base do
+    /// aquario (pedido 707, §11.1): no log da sonda ODBC, 170 de 184 linhas
+    /// tinham `ms = 0`. Zero aqui quer dizer «nao medido» -- recusa de porta,
+    /// job, linha antiga --, e a base nao soma o que nao foi medido.
+    pub us: u64,
+    /// Quanto dos `us` foi espera na fila da trava de dados. O servico e a
+    /// diferenca: a vitima da fila nao vira anormal por ter esperado.
+    pub espera_us: u64,
+    /// O que o pedido entrega a contagem do aquario (pedido 707, A8): a barra
+    /// da categoria e o aviso, decididos por quem tem a RESPOSTA na mao.
+    ///
+    /// So em memoria -- nao vai ao `acessos.log`, nem volta dele: e o
+    /// recado de quem executou para o `anotar`, e a contagem tem arquivo
+    /// proprio.
+    pub desfecho: crate::aquario::contagem::Desfecho,
 }
 
 impl Acesso {
@@ -75,6 +92,12 @@ impl Acesso {
         if !self.tabela.is_empty() {
             pares.push(("tabela", Json::texto_de(&self.tabela)));
         }
+        if self.us > 0 {
+            pares.push(("us", Json::de_u64(self.us)));
+        }
+        if self.espera_us > 0 {
+            pares.push(("espera_us", Json::de_u64(self.espera_us)));
+        }
         if let Some(e) = &self.erro {
             pares.push(("erro", Json::texto_de(e)));
             pares.push(("codigo", Json::de_u64(self.codigo as u64)));
@@ -98,6 +121,9 @@ impl Acesso {
             database: j.texto_ou("database", "").to_string(),
             tabela: j.texto_ou("tabela", "").to_string(),
             codigo: j.inteiro_ou("codigo", 0).clamp(0, 65_535) as u16,
+            us: j.inteiro_ou("us", 0).max(0) as u64,
+            espera_us: j.inteiro_ou("espera_us", 0).max(0) as u64,
+            desfecho: Default::default(),
         })
     }
 }

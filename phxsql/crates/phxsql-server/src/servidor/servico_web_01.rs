@@ -475,6 +475,7 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            ..Acesso::default()
         });
         let corpo = Json::objeto(vec![
             ("ok", Json::Bool(false)),
@@ -512,6 +513,7 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            ..Acesso::default()
         });
     }
 
@@ -627,6 +629,7 @@ impl Servidor {
                 database: String::new(),
                 tabela: String::new(),
                 codigo: 0,
+                ..Acesso::default()
             });
             // Escoa antes de fechar, senao o RST engole a recusa -- ver
             // `http::escoar`. Sem isto, quem esta na lista negra recebe
@@ -650,6 +653,7 @@ impl Servidor {
                 database: String::new(),
                 tabela: String::new(),
                 codigo: 0,
+                ..Acesso::default()
             });
             let _ = http::erro_json(fluxo, 403, &self.msg("erro.ip_nao_autorizado", &[]));
             http::escoar(fluxo);
@@ -695,6 +699,7 @@ impl Servidor {
                 database: String::new(),
                 tabela: String::new(),
                 codigo: e.codigo(),
+                ..Acesso::default()
             });
             // A MESMA politica da porta 5000, pelo mesmo interruptor: pedida,
             // nao imposta (pedido 203).
@@ -763,6 +768,7 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            ..Acesso::default()
         });
         // Escoa antes de fechar pelo mesmo motivo da recusa por lista negra:
         // sem isto o RST engole a resposta, e quem foi recusado ve
@@ -972,6 +978,7 @@ impl Servidor {
                 database: String::new(),
                 tabela: String::new(),
                 codigo: PhxError::Autorizacao(String::new()).codigo(),
+                ..Acesso::default()
             });
             let _ = http::responder_json(
                 fluxo,
@@ -1099,7 +1106,8 @@ impl Servidor {
                 (o, r)
             }
         };
-        let ms = inicio.elapsed().as_millis() as u64;
+        let decorrido = inicio.elapsed();
+        let ms = decorrido.as_millis() as u64;
         self.telemetria.contar_pedido(
             OPS_ESCRITA.contains(&op_atendida.as_str()),
             resultado.is_ok(),
@@ -1157,6 +1165,8 @@ impl Servidor {
             quando_ms: agora,
             ip: ip.to_string(),
             porta_origem: porta,
+            // Antes do `op`, que move o nome para dentro do registro.
+            desfecho: self.desfecho_para_contar(&op_atendida, resultado.as_ref().ok()),
             op: op_atendida,
             usuario: sessao.login().to_string(),
             autenticado: sessao.usuario.is_some(),
@@ -1166,6 +1176,8 @@ impl Servidor {
             database: alvo.database,
             tabela: alvo.tabela,
             codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
+            us: decorrido.as_micros().max(1) as u64,
+            espera_us: crate::aquario::base::tomar_espera(),
         });
         let _ = http::responder_json(fluxo, codigo_http, &Json::objeto(campos));
     }
@@ -1589,7 +1601,8 @@ impl Servidor {
                 }
             };
         let remota = ja_remota.is_some() || !servidor_remoto.is_empty();
-        let ms = inicio.elapsed().as_millis() as u64;
+        let decorrido = inicio.elapsed();
+        let ms = decorrido.as_millis() as u64;
         if let Some(a) = &atividade {
             a.terminou_pedido(sessao.login());
         }
@@ -1636,7 +1649,10 @@ impl Servidor {
             autenticado,
             ok: resultado.is_ok(),
             duracao_ms: ms,
+            us: decorrido.as_micros().max(1) as u64,
+            espera_us: crate::aquario::base::tomar_espera(),
             erro: resultado.as_ref().err().map(|e| e.to_string()),
+            desfecho: self.desfecho_para_contar(&op, resultado.as_ref().ok()),
             // O objeto sai do proprio pedido: e o unico ponto que ve os dois
             // -- a operacao e sobre o que ela foi.
             ..objeto_do_pedido(&pedido.corpo, &resultado)

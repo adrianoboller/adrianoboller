@@ -486,6 +486,7 @@ impl Servidor {
                                 database: String::new(),
                                 tabela: String::new(),
                                 codigo: 0,
+                                ..Acesso::default()
                             });
                         }
                         continue;
@@ -612,6 +613,7 @@ impl Servidor {
                 database: String::new(),
                 tabela: String::new(),
                 codigo: 0,
+                ..Acesso::default()
             });
             let _ = writeln!(
                 saida,
@@ -644,6 +646,7 @@ impl Servidor {
                 database: String::new(),
                 tabela: String::new(),
                 codigo: 0,
+                ..Acesso::default()
             });
             let _ = writeln!(
                 saida,
@@ -787,6 +790,7 @@ impl Servidor {
                             database: String::new(),
                             tabela: String::new(),
                             codigo: e.codigo(),
+                            ..Acesso::default()
                         });
                         // PEDIDA, NAO IMPOSTA. Mandar uma linha grande demais
                         // e engano de cliente com a mesma cara de ataque, e
@@ -815,6 +819,7 @@ impl Servidor {
                             database: String::new(),
                             tabela: String::new(),
                             codigo: 0,
+                            ..Acesso::default()
                         });
                     }
                     return;
@@ -918,7 +923,10 @@ impl Servidor {
             };
 
             let (op, autenticado, resultado) = self.despachar(&linha, &mut sessao, &ip);
-            let duracao = inicio.elapsed().as_millis() as u64;
+            // Um relogio so para o ms e o µs: dois `elapsed` dariam dois numeros
+            // do mesmo pedido que nao concordam.
+            let decorrido = inicio.elapsed();
+            let duracao = decorrido.as_millis() as u64;
             if let Some(serial) = marca {
                 if let Ok(mut p) = self.profiler.lock() {
                     p.terminou(
@@ -963,7 +971,10 @@ impl Servidor {
                 autenticado,
                 ok: resultado.is_ok(),
                 duracao_ms: duracao,
+                us: decorrido.as_micros().max(1) as u64,
+                espera_us: crate::aquario::base::tomar_espera(),
                 erro: resultado.as_ref().err().map(|e| e.to_string()),
+                desfecho: self.desfecho_para_contar(&op, resultado.as_ref().ok()),
                 // O objeto do pedido, para o log poder somar por tabela.
                 ..objeto_do_pedido(&linha, &resultado)
             });
@@ -1097,7 +1108,8 @@ impl Servidor {
         let inicio = Instant::now();
         let quando_ms = crate::agora_ms();
         let feito = self.aperto(pedido);
-        let duracao = inicio.elapsed().as_millis() as u64;
+        let decorrido = inicio.elapsed();
+        let duracao = decorrido.as_millis() as u64;
 
         let resposta = match &feito {
             Ok((_, m2)) => Json::objeto(vec![
@@ -1124,6 +1136,9 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            us: decorrido.as_micros().max(1) as u64,
+            espera_us: crate::aquario::base::tomar_espera(),
+            desfecho: Default::default(),
         });
         // A resposta 2 vai EM CLARO -- ela e o aperto, nao o conteudo dele.
         if writeln!(saida, "{}", resposta.escrever()).is_err() {
@@ -1202,6 +1217,7 @@ impl Servidor {
             database: String::new(),
             tabela: String::new(),
             codigo: 0,
+            ..Acesso::default()
         });
         let _ = writeln!(
             saida,

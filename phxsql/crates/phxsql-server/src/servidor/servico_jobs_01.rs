@@ -584,6 +584,8 @@ impl Servidor {
             database: job.pedido.texto_ou("database", "").to_string(),
             tabela: job.pedido.texto_ou("tabela", "").to_string(),
             codigo: resultado.as_ref().err().map(|e| e.codigo()).unwrap_or(0),
+            desfecho: self.desfecho_para_contar(&op, resultado.as_ref().ok()),
+            ..Acesso::default()
         });
         if let Err(e) = &resultado {
             eprintln!("job {} FALHOU: {e}", job.nome);

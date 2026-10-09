@@ -61,11 +61,16 @@ fn pede(s: &Arc<Servidor>, c: &Cadastro, corpo: &str) -> Result<Json> {
 
 const AS_DUAS: [&str; 2] = [r#""op":"aquario_log""#, r#""op":"aquario_contagens""#];
 
-/// Passou do portao: o que volta e a resposta (A6 ja entrou no
-/// `aquario_log`), ou o «ainda nao existe» da fatia que falta -- e nunca o
-/// `ACESSO_NEGADO`. Conferir o NOME do erro e nao so `is_err` e o que impede o
-/// teste de passar por engano.
+/// Passou do portao: o que volta e a resposta -- as series da contagem (A8),
+/// as linhas do log (A6) --, ou o «ainda nao existe» do log ainda fechado; e
+/// nunca o `ACESSO_NEGADO`. Conferir o NOME do erro e nao so `is_err` e o que
+/// impede o teste de passar por engano.
 fn passou_do_portao(r: Result<Json>, corpo: &str) {
+    if corpo.contains("aquario_contagens") {
+        let j = r.unwrap_or_else(|e| panic!("{corpo}: {e}"));
+        assert!(j.campo("series").is_some(), "{corpo}: {}", j.escrever());
+        return;
+    }
     match r {
         Ok(j) => assert!(j.campo("linhas").is_some(), "{corpo}: {}", j.escrever()),
         Err(e) => {
@@ -370,4 +375,359 @@ fn disco_cheio_de_verdade_o_servidor_nao_cai_e_avisa() {
     let texto = std::fs::read_to_string(ponto.join("aquario.log")).unwrap();
     let ilegiveis = texto.lines().filter(|t| Json::analisar(t).is_err()).count();
     assert!(ilegiveis <= 1, "{ilegiveis} linhas ilegiveis:\n{texto}");
+}
+
+/// A4: a base do aquario tambem fica atras do portao -- desligada, nenhuma
+/// amostra entra nela; ligada, entra. E a prova de «desligada custa 0» no
+/// lugar onde o trabalho de verdade mora (hash, trava, `ln`). Chamar o
+/// `base.anotar` fora do `aquario_se_ligada` faz este teste cair.
+#[test]
+fn telemetria_desligada_a_base_nao_soma() {
+    let dir = dir_temp("base-desligada");
+    let s = servidor(&dir, Cadastro::default());
+    let acesso = Acesso {
+        op: "inserir".into(),
+        ok: true,
+        database: "loja".into(),
+        tabela: "pedidos".into(),
+        us: 900,
+        ..Acesso::default()
+    };
+    s.telemetria.desligar();
+    for _ in 0..5 {
+        s.anotar(&acesso);
+    }
+    assert_eq!(s.telemetria.aquario().base().atualizacoes(), 0);
+    s.telemetria.ligar(crate::agora_ms());
+    s.anotar(&acesso);
+    assert_eq!(s.telemetria.aquario().base().atualizacoes(), 1);
+}
+
+/// A espera pela trava chega ao `Acesso` de verdade: com outra thread
+/// segurando a trava de dados 150 ms, o pedido desta thread acha ≥ 100 ms de
+/// espera para descontar. Tirar o `somar_espera` do `contar_espera` deixa a
+/// espera em zero -- e a vitima da fila voltaria a ser anormal.
+#[test]
+fn a_espera_pela_trava_vai_ao_pedido_que_esperou() {
+    let dir = dir_temp("espera");
+    let s = servidor(&dir, Cadastro::default());
+    assert!(s.telemetria.ligada(), "a telemetria nasce ligada");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let segura = {
+        let s = Arc::clone(&s);
+        std::thread::spawn(move || {
+            let _g = s.dados.write().unwrap();
+            tx.send(()).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(150));
+        })
+    };
+    rx.recv().unwrap();
+    crate::aquario::base::tomar_espera();
+    let mut ses = Sessao::default();
+    let (_, _, r) = s.despachar(
+        r#"{"token":"t","op":"criar_database","database":"m"}"#,
+        &mut ses,
+        "127.0.0.1",
+    );
+    r.unwrap();
+    let espera = crate::aquario::base::tomar_espera();
+    segura.join().unwrap();
+    assert!(espera >= 100_000, "espera medida: {espera} µs");
+}
+
+// ------------------------------------------------- a contagem (fatia A8)
+
+/// Uma tabela `c` em `b`, com a coluna de exclusao suave (o padrao).
+fn com_tabela(s: &Arc<Servidor>) {
+    let ses = Sessao::default();
+    s.executar(
+        "criar_database",
+        &Json::analisar(r#"{"database":"b"}"#).unwrap(),
+        &ses,
+    )
+    .unwrap();
+    s.executar(
+        "criar_tabela",
+        &Json::analisar(
+            r#"{"database":"b","tabela":"c",
+                "colunas":[{"nome":"id","tipo":"Int4","obrigatoria":true}],
+                "indices":[{"nome":"porId","colunas":["id"],"unico":true,"primario":true}]}"#,
+        )
+        .unwrap(),
+        &ses,
+    )
+    .unwrap();
+}
+
+fn parcial(s: &Arc<Servidor>) -> Json {
+    let r = s.telemetria.aquario().contagens(&Json::Nulo).unwrap();
+    r.campo("minuto_parcial")
+        .and_then(|m| m.campo("c"))
+        .cloned()
+        .unwrap_or_else(|| {
+            // Antes da primeira virada nao ha minuto armado; arma e relê.
+            s.telemetria.aquario().contagem().virar(crate::agora_ms());
+            let r = s.telemetria.aquario().contagens(&Json::Nulo).unwrap();
+            r.campo("minuto_parcial")
+                .unwrap()
+                .campo("c")
+                .unwrap()
+                .clone()
+        })
+}
+
+/// RED da A8, pelo caminho de verdade (o executor local: `despachar` e
+/// `anotar`, os mesmos da porta de dados): o excluir FISICO conta como
+/// fisico, pelo `modo` que a resposta devolve. Trocar o `"fisico"` do
+/// `da_resposta` pelo padrao suave, ou nao passar o desfecho ao `Acesso`,
+/// faz este teste cair.
+#[test]
+fn excluir_fisico_conta_como_fisico_pelo_caminho_de_verdade() {
+    let dir = dir_temp("conta-excluir");
+    let s = servidor(&dir, Cadastro::default());
+    com_tabela(&s);
+    s.telemetria.aquario().contagem().virar(crate::agora_ms());
+    let ex = ExecutorLocal::novo(Arc::clone(&s), "(teste)");
+    let pede = |txt: &str| {
+        let mut p = Json::analisar(txt).unwrap();
+        p.definir("token", Json::texto_de("t"));
+        ex.executar(&p)
+    };
+    use crate::mcp::Executor;
+    for id in 1..=3 {
+        pede(&format!(
+            r#"{{"op":"inserir","database":"b","tabela":"c","linha":{{"id":{id}}}}}"#
+        ))
+        .unwrap();
+    }
+    let r =
+        pede(r#"{"op":"excluir","database":"b","tabela":"c","rowid":1,"fisico":true}"#).unwrap();
+    assert_eq!(r.texto_ou("modo", ""), "fisico");
+    pede(r#"{"op":"excluir","database":"b","tabela":"c","rowid":2}"#).unwrap();
+    pede(r#"{"op":"varrer","database":"b","tabela":"c"}"#).unwrap();
+    let c = parcial(&s);
+    assert_eq!(c.inteiro_ou("insert", -1), 3, "{}", c.escrever());
+    assert_eq!(c.inteiro_ou("excluir_fisico", -1), 1, "{}", c.escrever());
+    assert_eq!(c.inteiro_ou("excluir_suave", -1), 1, "{}", c.escrever());
+    assert_eq!(c.inteiro_ou("select", -1), 1, "{}", c.escrever());
+    assert_eq!(c.inteiro_ou("erro", -1), 0, "{}", c.escrever());
+}
+
+/// RED da A8: o backup que falhou sobe so `erro`, pelo caminho de verdade.
+#[test]
+fn backup_que_falhou_sobe_so_erro_pelo_caminho_de_verdade() {
+    let dir = dir_temp("conta-backup");
+    let s = servidor(&dir, Cadastro::default());
+    com_tabela(&s);
+    s.telemetria.aquario().contagem().virar(crate::agora_ms());
+    // Um ARQUIVO no lugar do destino: o backup nao tem onde escrever.
+    let bloqueio = dir.join("bloqueio");
+    std::fs::write(&bloqueio, b"x").unwrap();
+    let ex = ExecutorLocal::novo(Arc::clone(&s), "(teste)");
+    use crate::mcp::Executor;
+    let mut p = Json::analisar(r#"{"op":"backup"}"#).unwrap();
+    p.definir("token", Json::texto_de("t"));
+    p.definir(
+        "destino",
+        Json::texto_de(bloqueio.join("dentro").display().to_string()),
+    );
+    assert!(ex.executar(&p).is_err(), "o backup devia ter falhado");
+    let c = parcial(&s);
+    assert_eq!(c.inteiro_ou("backup", -1), 0, "{}", c.escrever());
+    assert_eq!(c.inteiro_ou("erro", -1), 1, "{}", c.escrever());
+}
+
+/// Telemetria desligada, acumulador parado -- o portao vem antes da conta.
+#[test]
+fn telemetria_desligada_a_contagem_fica_parada() {
+    let dir = dir_temp("conta-desligada");
+    let s = servidor(&dir, Cadastro::default());
+    s.telemetria.aquario().contagem().virar(crate::agora_ms());
+    let ex = ExecutorLocal::novo(Arc::clone(&s), "(teste)");
+    use crate::mcp::Executor;
+    // Falha sempre: sem base nem tabela.
+    let falha = Json::analisar(r#"{"op":"varrer","token":"t"}"#).unwrap();
+    s.telemetria.desligar();
+    assert!(ex.executar(&falha).is_err());
+    let c = parcial(&s);
+    assert_eq!(c.inteiro_ou("erro", -1), 0, "{}", c.escrever());
+    s.telemetria.ligar(crate::agora_ms());
+    assert!(ex.executar(&falha).is_err());
+    let c = parcial(&s);
+    assert_eq!(
+        c.inteiro_ou("erro", -1),
+        1,
+        "ligada e nao contou: {}",
+        c.escrever()
+    );
+}
+
+/// O servidor grava as horas ao lado do `acessos.log`, e a consulta diz onde.
+#[test]
+fn o_arquivo_de_horas_mora_ao_lado_do_acessos_log() {
+    let dir = dir_temp("conta-arquivo");
+    let s = servidor(&dir, Cadastro::default());
+    let r = s.telemetria.aquario().contagens(&Json::Nulo).unwrap();
+    assert_eq!(
+        r.texto_ou("arquivo_de_horas", ""),
+        dir.join(crate::aquario::contagem::ARQUIVO_DE_HORAS)
+            .display()
+            .to_string()
+    );
+}
+
+// ------------------------------------- as ligacoes entre as fatias A3/A4/A6/A8
+
+use crate::aquario::contagem::{HORA_MS, MINUTO_MS};
+
+/// Um minuto ja fechado e a virada que o fecha, os dois na MESMA hora: a
+/// virada que cruzasse a hora gravaria o `aquario-horas.jsonl` ali mesmo, e o
+/// teste da retomada passaria sem retomada nenhuma.
+fn minuto_fechavel() -> (i64, i64) {
+    let agora = crate::agora_ms();
+    let este = agora - agora.rem_euclid(MINUTO_MS);
+    let m0 = if este.rem_euclid(HORA_MS) >= MINUTO_MS {
+        este - MINUTO_MS
+    } else {
+        este - 2 * MINUTO_MS
+    };
+    (m0, m0 + MINUTO_MS)
+}
+
+fn pedido_que_falhou() -> Acesso {
+    Acesso {
+        quando_ms: crate::agora_ms(),
+        op: "varrer".into(),
+        ok: false,
+        codigo: 2001,
+        ..Acesso::default()
+    }
+}
+
+/// Um minuto com UM erro contado, fechado pela virada do servidor.
+fn fechar_um_minuto_com_um_erro(s: &Arc<Servidor>) -> i64 {
+    let (m0, vira) = minuto_fechavel();
+    s.telemetria.aquario().contagem().virar(m0);
+    s.anotar(&pedido_que_falhou());
+    assert!(s.virar_a_contagem(vira).is_some(), "o minuto nao fechou");
+    m0
+}
+
+/// Ligacao 1 (A8 -> A6): a linha do minuto que a virada fecha chega ao
+/// `aquario.log` pelo escritor da A6, e a consulta a le. Tirar o `gravar` do
+/// `virar_a_contagem` faz este teste cair.
+#[test]
+fn a_virada_do_minuto_grava_a_contagem_no_aquario_log() {
+    let dir = dir_temp("liga-contagem-log");
+    let s = servidor(&dir, Cadastro::default());
+    let m0 = fechar_um_minuto_com_um_erro(&s);
+    let r = linhas_do_aquario(&s, "");
+    let l = r.campo("linhas").and_then(Json::lista).unwrap();
+    let contagens: Vec<&Json> = l
+        .iter()
+        .filter(|j| j.texto_ou("evento", "") == "contagem")
+        .collect();
+    assert_eq!(contagens.len(), 1, "{}", r.escrever());
+    let dados = contagens[0].campo("dados").unwrap();
+    assert_eq!(dados.inteiro_ou("minuto_ms", 0), m0);
+    assert_eq!(dados.campo("c").unwrap().inteiro_ou("erro", -1), 1);
+}
+
+/// Os erros que a contagem tem, somando a hora corrente e as fechadas.
+fn erros_contados(s: &Arc<Servidor>) -> i64 {
+    let r = s.telemetria.aquario().contagens(&Json::Nulo).unwrap();
+    let mut total = 0;
+    if let Some(ms) = r
+        .campo("hora_corrente")
+        .and_then(|h| h.campo("minutos"))
+        .and_then(Json::lista)
+    {
+        total += ms.iter().map(|m| m.inteiro_ou("erro", 0)).sum::<i64>();
+    }
+    if let Some(hs) = r.campo("horas").and_then(Json::lista) {
+        total += hs
+            .iter()
+            .filter_map(|h| h.campo("c"))
+            .map(|c| c.inteiro_ou("erro", 0))
+            .sum::<i64>();
+    }
+    total
+}
+
+/// Ligacao 2 (A6 -> A8): o processo novo refaz a contagem das linhas
+/// `contagem` que o velho deixou no `aquario.log`, pelo arranque de verdade.
+/// Tirar o `retomar_a_contagem` do `Servidor::novo` faz este teste cair: o
+/// processo novo nasce sem o erro que o velho contou.
+#[test]
+fn o_arranque_retoma_a_contagem_do_aquario_log() {
+    let dir = dir_temp("liga-retomar");
+    {
+        let velho = servidor(&dir, Cadastro::default());
+        fechar_um_minuto_com_um_erro(&velho);
+        assert_eq!(erros_contados(&velho), 1);
+    }
+    let novo = servidor(&dir, Cadastro::default());
+    // A primeira virada do amostrador, que no servidor no ar vem em 1 s: so
+    // depois dela a hora corrente tem um minuto em curso para mostrar.
+    novo.virar_a_contagem(crate::agora_ms());
+    assert_eq!(
+        erros_contados(&novo),
+        1,
+        "o minuto do processo velho nao voltou: {}",
+        novo.telemetria
+            .aquario()
+            .contagens(&Json::Nulo)
+            .unwrap()
+            .escrever()
+    );
+}
+
+/// Ligacao 3 (A4 -> A3 -> A6): o pedido de 10 s depois de vinte de 1 ms na
+/// mesma operacao e tabela acende `fora_do_habitual` na TAREFA, pelo
+/// produtor unico, e deixa a linha `mudou` no `aquario.log`. Tirar o
+/// `sinalizar_desvio` do `anotar` derruba as duas metades; tirar so o
+/// `sinal_em` derruba o bit; tirar so o `gravar` derruba a linha.
+#[test]
+fn fora_do_habitual_acende_o_bit_e_grava_mudou() {
+    use crate::aquario::Alarme;
+    let dir = dir_temp("liga-desvio");
+    let s = servidor(&dir, Cadastro::default());
+    let agora = crate::agora_ms();
+    let a = s
+        .telemetria
+        .entrar("dados:1", "dados", "127.0.0.1", 1, agora)
+        .expect("a telemetria nasce ligada");
+    let _amarrada = crate::telemetria::amarrar(Some(Arc::clone(&a)));
+    let pedido = |us: u64| Acesso {
+        quando_ms: crate::agora_ms(),
+        op: "inserir".into(),
+        ok: true,
+        database: "loja".into(),
+        tabela: "pedidos".into(),
+        duracao_ms: us / 1_000,
+        us,
+        ..Acesso::default()
+    };
+    for _ in 0..20 {
+        a.comecou_pedido("inserir", "root", "loja", "pedidos", agora);
+        s.anotar(&pedido(1_000));
+        assert_eq!(a.alarmes(), 0, "o habitual alarmou");
+    }
+    a.comecou_pedido("inserir", "root", "loja", "pedidos", agora);
+    s.anotar(&pedido(10_000_000));
+    assert_ne!(
+        a.alarmes() & Alarme::ForaDoHabitual.bit(),
+        0,
+        "o desvio nao chegou a tarefa"
+    );
+    let r = linhas_do_aquario(&s, "");
+    let l = r.campo("linhas").and_then(Json::lista).unwrap();
+    let mudou: Vec<&Json> = l
+        .iter()
+        .filter(|j| j.texto_ou("evento", "") == "mudou")
+        .collect();
+    assert_eq!(mudou.len(), 1, "{}", r.escrever());
+    assert_eq!(mudou[0].texto_ou("alarme", ""), "fora_do_habitual");
+    assert_eq!(mudou[0].texto_ou("tabela", ""), "pedidos");
+    assert!(mudou[0].campo("dados").unwrap().inteiro_ou("n", 0) >= 20);
 }
