@@ -495,3 +495,290 @@ async fn verificar_sem_shell_e_esquema_invalido_se_recusam_na_entrada() {
         .unwrap();
     assert_eq!(t["saida_esquema"], esquema);
 }
+
+// ------------------------------------------------------------- seguranca da tela
+
+/// Confere os cabecalhos de seguranca de UMA resposta, com o cache esperado dela.
+fn conferir_blindagem(rota: &str, r: &reqwest::Response, cache: &str) {
+    use phxclaw_agent::pwa::CABECALHOS;
+    for (nome, valor) in CABECALHOS {
+        let visto = r.headers().get(*nome).map(|v| v.to_str().unwrap_or(""));
+        assert_eq!(visto, Some(*valor), "{rota}: cabecalho {nome}");
+    }
+    let visto = r
+        .headers()
+        .get("cache-control")
+        .map(|v| v.to_str().unwrap_or(""));
+    assert_eq!(visto, Some(cache), "{rota}: cache-control");
+}
+
+/// Toda rota da tela -- e o dado, o 401 do portao e o 404 -- sai com a CSP estrita, nosniff,
+/// sem referer, sem camera/microfone, COOP/CORP e sem moldura. Antes de 09/10/2026 so o
+/// formulario dos gatilhos e o canvas mandavam CSP; a tela que guarda o token nao mandava
+/// nenhuma.
+///
+/// RED medido (09/10/2026), cada um com `// REPOSTO` e desfeito:
+/// - sem o `.layer(... pwa::blindar)` do `api::router`: falha em `/` (sem
+///   content-security-policy);
+/// - `blindar_cabecalhos` sem o `no-store` de quem nao disse nada: falha em `/v1/tasks`
+///   (cache-control ausente);
+/// - `servir_arquivo` sem o `no-cache` da casca: falha em `/` (saiu `no-store`: a casca do
+///   PWA deixaria de ser revalidavel e o `blindar` estaria decidindo o cache da tela).
+#[tokio::test]
+async fn toda_rota_da_tela_e_do_dado_sai_com_os_cabecalhos_de_seguranca() {
+    let (base, _) = subir(vec![]).await;
+    for rota in [
+        "/",
+        "/index.html",
+        "/manifest.webmanifest",
+        "/sw.js",
+        "/assets/app.js",
+        "/assets/inspecao.js",
+        "/assets/app.css",
+        "/assets/textos.json",
+    ] {
+        let r = cli().get(format!("{base}{rota}")).send().await.unwrap();
+        assert_eq!(r.status(), 200, "{rota}");
+        conferir_blindagem(rota, &r, "no-cache");
+    }
+    // O dado e o que nao e arquivo da tela: no-store.
+    let r = cli()
+        .get(format!("{base}/v1/tasks"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    conferir_blindagem("/v1/tasks", &r, "no-store");
+    let r = cli().get(format!("{base}/v1/tasks")).send().await.unwrap();
+    assert_eq!(r.status(), 401);
+    conferir_blindagem("/v1/tasks sem token", &r, "no-store");
+    for rota in ["/assets/nao-existe.js", "/rota/que/nao/existe", "/health"] {
+        let r = cli().get(format!("{base}{rota}")).send().await.unwrap();
+        conferir_blindagem(rota, &r, "no-store");
+    }
+    // A politica da tela: publica (sem token) e pelo leitor unico do config.
+    let r = cli()
+        .get(format!("{base}{}", phxclaw_agent::pwa::ROTA_POLITICA))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    conferir_blindagem("/ui/politica", &r, "no-store");
+    let p: Value = r.json().await.unwrap();
+    assert_eq!(
+        p,
+        json!({"bloquear_inspecao": phxclaw_agent::pwa::bloquear_inspecao()})
+    );
+}
+
+/// A CSP precisa de forma, nao so de presenca: as diretivas que separam XSS de texto
+/// inofensivo. Quem afrouxar o `script-src` (ou abrir `object-src`/moldura) reprova aqui.
+/// RED medido: `script-src 'self' 'unsafe-inline'` (`// REPOSTO`) reprova na primeira linha
+/// (e o teste do desktop junto, porque o tauri.conf.json deixou de ser igual).
+#[test]
+fn a_csp_da_tela_fecha_script_em_linha_objeto_base_e_moldura() {
+    let csp = diretivas(phxclaw_agent::pwa::CSP);
+    assert_eq!(csp["script-src"], vec!["'self'"]);
+    assert_eq!(csp["default-src"], vec!["'self'"]);
+    assert_eq!(csp["object-src"], vec!["'none'"]);
+    assert_eq!(csp["base-uri"], vec!["'none'"]);
+    assert_eq!(csp["frame-ancestors"], vec!["'none'"]);
+    assert_eq!(csp["form-action"], vec!["'self'"]);
+    assert_eq!(csp["connect-src"], vec!["'self'"]);
+    for (d, fontes) in &csp {
+        assert!(
+            !fontes.iter().any(|f| f == "'unsafe-eval'" || f == "*"),
+            "{d}: {fontes:?}"
+        );
+    }
+    // O bloqueio do inspetor nasce LIGADO (pedido do dono), pela fabrica de config.
+    let k = phxclaw_agent::config::catalogo_do_config::por_chave("ui.bloquear_inspecao")
+        .expect("ui.bloquear_inspecao no catalogo");
+    assert_eq!(k.padrao, Some("true"));
+    // Camera, microfone e localizacao fechados: a tela nao usa (medido no fonte da UI).
+    for f in ["camera=()", "microphone=()", "geolocation=()"] {
+        assert!(phxclaw_agent::pwa::PERMISSOES.contains(f), "{f}");
+    }
+}
+
+fn diretivas(csp: &str) -> std::collections::BTreeMap<String, Vec<String>> {
+    csp.split(';')
+        .filter_map(|d| {
+            let mut p = d.split_whitespace();
+            let nome = p.next()?.to_string();
+            Some((nome, p.map(String::from).collect()))
+        })
+        .collect()
+}
+
+/// O desktop (Tauri) com a MESMA CSP do servidor -- so o canal do host (`ipc:`) a mais --, sem
+/// a permissao que deixa a pagina abrir o inspetor e sem a feature `devtools` do tauri (sem
+/// ela o build de release nao tem DevTools: `tauri-runtime-wry` so chama `with_devtools`
+/// sob `debug_assertions` ou essa feature, e o wry nasce com `devtools: false` no release).
+///
+/// RED medido (09/10/2026), cada um com `// REPOSTO` e desfeito:
+/// - `"permissions": ["core:default"]` de volta: reprova (o `core:default` traz o
+///   `core:webview:default`, que traz o `allow-internal-toggle-devtools`);
+/// - `style-src 'self'` no tauri.conf.json (a CSP de antes): reprova na diretiva style-src.
+#[test]
+fn a_csp_do_desktop_e_a_do_servidor_e_o_inspetor_fica_fora() {
+    let raiz = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/phxclaw-desktop/src-tauri");
+    let conf: Value =
+        serde_json::from_str(&std::fs::read_to_string(raiz.join("tauri.conf.json")).unwrap())
+            .unwrap();
+    let desktop = diretivas(conf["app"]["security"]["csp"].as_str().unwrap());
+    let servidor = diretivas(phxclaw_agent::pwa::CSP);
+    assert_eq!(
+        desktop.keys().collect::<Vec<_>>(),
+        servidor.keys().collect::<Vec<_>>(),
+        "as diretivas do desktop e do servidor divergem"
+    );
+    for (d, fontes) in &servidor {
+        let mut esperado = fontes.clone();
+        if d == "connect-src" {
+            esperado.extend(["ipc:".to_string(), "http://ipc.localhost".to_string()]);
+        }
+        assert_eq!(&desktop[d], &esperado, "{d}");
+    }
+    let cap: Value = serde_json::from_str(
+        &std::fs::read_to_string(raiz.join("capabilities/default.json")).unwrap(),
+    )
+    .unwrap();
+    let perms: Vec<&str> = cap["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    for proibida in [
+        "core:default",
+        "core:webview:default",
+        "core:webview:allow-internal-toggle-devtools",
+    ] {
+        assert!(!perms.contains(&proibida), "{proibida} nas capabilities");
+    }
+    // A feature `devtools` do tauri ligaria o inspetor no release.
+    let cargo = std::fs::read_to_string(raiz.join("Cargo.toml")).unwrap();
+    let linha_tauri = cargo
+        .lines()
+        .find(|l| l.trim_start().starts_with("tauri ="))
+        .expect("dependencia tauri");
+    assert!(!linha_tauri.contains("devtools"), "{linha_tauri}");
+}
+
+/// M5 (09/10/2026): TODA rota do `servir` -- as da API e as que ele junta por fora do
+/// portao (gatilhos, formulario, retomada de espera) -- sai com os cabecalhos de seguranca.
+/// A lista sai da tabela `rotas::ROTAS` (que a catraca `toda_rota_do_fonte_esta_na_tabela`
+/// cruza com o fonte): rota nova entra no teste sozinha. O formulario guarda a CSP DELE
+/// (a do hash do estilo vence a geral) e ganha o `X-Frame-Options: DENY` que o
+/// `frame-ancestors 'none'` dela pede.
+///
+/// RED medido, cada um com o defeito reposto e desfeito:
+/// - `api::servidor` com o `merge` dos `extras` DEPOIS do `.layer(blindar)`: falha no
+///   `POST /v1/triggers/{nome}` (sem nosniff);
+/// - `blindar_cabecalhos` pulando o XFO de toda rota com CSP propria (a regra antiga):
+///   falha no `GET /v1/triggers/{nome}` (o formulario sem X-Frame-Options).
+#[tokio::test]
+async fn toda_rota_da_tabela_sai_blindada_inclusive_as_que_o_servir_junta() {
+    use phxclaw_agent::gatilhos::{self, GatilhoDeWebhook, Gatilhos};
+    use phxclaw_agent::rotas::ROTAS;
+    let (_, state) = subir(vec![]).await;
+    let dir = std::env::temp_dir().join(format!("phx-api-m5-{}", phxclaw_types::new_uuid_v7()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let fluxo = dir.join("contato.json");
+    std::fs::write(
+        &fluxo,
+        json!({"nome":"contato","formulario":{"titulo":"Fale","campos":[{"nome":"nome"}]},
+               "passos":[{"id":"a","tarefa":"t"}]})
+        .to_string(),
+    )
+    .unwrap();
+    let g = Gatilhos {
+        arquivos: vec![],
+        webhooks: vec![GatilhoDeWebhook {
+            nome: "contato".into(),
+            objetivo: String::new(),
+            fluxo: Some(fluxo.to_string_lossy().into_owned()),
+            segredo: None,
+            segredo_formulario: Some("codigo-do-formulario-123456".into()),
+        }],
+    };
+    let app = phxclaw_agent::api::servidor(
+        state.clone(),
+        [gatilhos::router(state.clone(), Arc::new(g))],
+    );
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", l.local_addr().unwrap());
+    tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+    let http = reqwest::Client::builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .unwrap();
+    let mut falhas = Vec::new();
+    for r in ROTAS {
+        // O molde vira um caminho concreto: `{nome}` e o gatilho do formulario, o resto
+        // um segmento qualquer.
+        let caminho: String = r
+            .caminho
+            .split('/')
+            .map(|seg| match seg {
+                "{nome}" => "contato",
+                s if s.starts_with("{*") => "a/b",
+                s if s.starts_with('{') => "x",
+                s => s,
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+        let metodo = reqwest::Method::from_bytes(r.metodo.as_bytes()).unwrap();
+        let resp = http
+            .request(metodo, format!("{base}{caminho}"))
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("{} {caminho}: {e}", r.metodo));
+        let h = resp.headers();
+        let ver = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
+        let rotulo = format!("{} {} ({})", r.metodo, r.caminho, resp.status());
+        for n in [
+            "x-content-type-options",
+            "content-security-policy",
+            "referrer-policy",
+            "cache-control",
+        ] {
+            if ver(n).is_none() {
+                falhas.push(format!("{rotulo}: sem {n}"));
+            }
+        }
+        let csp = ver("content-security-policy").unwrap_or_default();
+        if csp.contains("frame-ancestors 'none'")
+            && ver("x-frame-options").as_deref() != Some("DENY")
+        {
+            falhas.push(format!(
+                "{rotulo}: frame-ancestors 'none' sem X-Frame-Options DENY"
+            ));
+        }
+    }
+    assert!(
+        falhas.is_empty(),
+        "{} rota(s) sem blindagem:\n{}",
+        falhas.len(),
+        falhas.join("\n")
+    );
+    // O formulario: 200, a CSP DELE (nao a geral) e a moldura proibida nos dois cabecalhos.
+    let r = http
+        .get(format!("{base}/v1/triggers/contato"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 200);
+    let h = r.headers();
+    assert_eq!(
+        h["content-security-policy"].to_str().unwrap(),
+        gatilhos::csp_do_formulario()
+    );
+    assert_eq!(h["x-frame-options"], "DENY");
+    assert_eq!(h["x-content-type-options"], "nosniff");
+    assert_eq!(h["cache-control"], "no-store");
+    let _ = std::fs::remove_dir_all(&dir);
+}

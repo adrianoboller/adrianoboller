@@ -12,6 +12,13 @@ serde_json.workspace = true
 # `io-std`: o `mcp-serve` fala MCP pelo stdin/stdout do processo.
 tokio = { workspace = true, features = ["io-std"] }
 phxclaw-agent = { path = "../../crates/phxclaw-agent" }
+# `phxclaw ferramenta`: a ToolCall e o ToolSpec do contrato comum (o agente nao os
+# reexporta).
+phxclaw-agent-core = { path = "../../crates/phxclaw-agent-core" }
+# `phxclaw api METODO ROTA`: o cliente do SDK, o mesmo que os integradores usam.
+phxclaw-sdk = { path = "../../crates/phxclaw-sdk" }
+# A forma de credencial do argv (`ferramenta`, `api`): o motor unico de `segredo`.
+phxclaw-types = { path = "../../crates/phxclaw-types" }
 phxclaw-api-gateway = { path = "../../crates/phxclaw-api-gateway" }
 phxclaw-browser = { path = "../../crates/phxclaw-browser" }
 phxclaw-core-runtime = { path = "../../crates/phxclaw-core-runtime" }

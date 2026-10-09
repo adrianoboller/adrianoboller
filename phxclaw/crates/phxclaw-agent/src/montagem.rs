@@ -72,7 +72,8 @@ pub struct Montagem {
     /// nem existe.
     pub canal: Option<crate::canal::CanalTelegram>,
     /// Ferramentas dos servidores MCP declarados em `PHXCLAW_MCP_CONFIG`, descobertas uma
-    /// vez na montagem. Capacidade `mcp.<servidor>`, fora do padrao: o operador concede.
+    /// vez na montagem. Capacidade `mcp.<servidor>` (a de pacote, `mcp.<pacote>.<servidor>`),
+    /// fora do padrao: o operador concede.
     pub mcp: Vec<Arc<dyn Tool>>,
     /// Os papeis de `config/agents` (`PHXCLAW_AGENTES_DIR`). Catalogo invalido nao
     /// derruba o agente: vira aviso e `None`, e `team_list`/`team_delegate` nem existem.
@@ -171,8 +172,12 @@ impl Montagem {
 
     /// Agente para um modelo ("ollama:qwen2.5:1.5b", "openai:...", ...). A chave do
     /// provedor de nuvem sai do broker da raiz do agente, nunca do ambiente.
+    /// `rota`/`rota:<spec>` pede o roteamento por politica (`modelo.roteamento`, R4).
     pub fn agent(&self, model_spec: &str) -> Result<Agent, String> {
-        let llm = crate::chaves::modelo(model_spec, self.raiz_do_agente())?;
+        let llm = match crate::roteamento::pedido(model_spec) {
+            Some(cabeca) => crate::roteamento::do_config(cabeca, self.raiz_do_agente())?,
+            None => crate::chaves::modelo(model_spec, self.raiz_do_agente())?,
+        };
         self.montar(llm)
     }
 
@@ -184,6 +189,11 @@ impl Montagem {
     }
 
     fn montar(&self, llm: Arc<dyn Llm>) -> Result<Agent, String> {
+        // O ponto UNICO da cobranca por dentro (A1): todo `llm.clone()` daqui para baixo --
+        // agente, ferramentas que chamam o modelo, subagentes -- cobra a conta da tarefa
+        // sob a qual roda (`orcamento::LlmDaTarefa`). Uma ferramenta nova que receba o
+        // modelo daqui ja nasce cobrada.
+        let llm = crate::orcamento::LlmDaTarefa::envolver(llm);
         let mut tools: Vec<Arc<dyn Tool>> = vec![
             Arc::new(WriteFileTool),
             Arc::new(ReadFileTool),
@@ -341,7 +351,11 @@ impl Montagem {
         ) {
             tools.push(Arc::new(d));
         }
-        tools.extend(crate::git::ferramentas_de_codigo(&self.store, llm.clone()));
+        tools.extend(crate::git::ferramentas_de_codigo(
+            &self.store,
+            self.raiz_do_agente(),
+            llm.clone(),
+        ));
         // Pareceres do conselho de integradores, na pasta do agente (a mesma da CLI
         // `phxclaw gonogo`); `gonogo.write` fica fora do padrao: e o papel 111 que o pede.
         tools.push(Arc::new(crate::gonogo::GoNoGoTool {
@@ -391,6 +405,11 @@ impl Montagem {
             }
         }
         let caps: Vec<&str> = self.capabilities.iter().map(String::as_str).collect();
+        // Preco e orcamento (R2/R3): arquivo de precos ruim ou teto em dinheiro sem tabela
+        // e erro da montagem, nunca o «sem orcamento» calado.
+        let precos = crate::custo::da_configuracao()?;
+        let orcamento = crate::orcamento::Politica::da_configuracao()?;
+        orcamento.conferir_com(precos.as_deref())?;
         let config = AgentConfig {
             max_steps: self.max_steps,
             require_final_tool: true,
@@ -403,6 +422,8 @@ impl Montagem {
             comandos: self.comandos(),
             prazo_de_resposta: Some(PRAZO_DE_RESPOSTA),
             tentativas_de_argumento: tentativas_de_argumento()?,
+            precos,
+            orcamento,
             ..AgentConfig::default()
         }
         .grant(&caps);
@@ -494,8 +515,108 @@ pub const PRAZO_DE_RESPOSTA: Duration = Duration::from_secs(6 * 3600);
 /// A pasta de configuracao do projeto: `$PHXCLAW_PROJETO/.phxclaw`, ou `.phxclaw` na
 /// pasta corrente. Fica FORA do `work/` das tarefas: o que esta aqui manda no agente
 /// (hooks, regras), e o shell do modelo nao pode reescreve-lo.
+///
+/// NAO julga a confianca: quem le o que executa, concede ou fala com o modelo pede a
+/// `pasta_confiada_para`. Leitura direta daqui so com motivo declarado na catraca
+/// `LEITURAS_SEM_CONFIANCA` (`tests/guardas.rs`), que reprova a proxima porta aberta.
 pub fn pasta_do_projeto() -> Option<std::path::PathBuf> {
     Some(raiz_do_projeto()?.join(".phxclaw")).filter(|p| p.is_dir())
+}
+
+/// A `.phxclaw/` do projeto para o que ARMA trabalho no servidor do operador.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PastaConfiada {
+    Confiada(std::path::PathBuf),
+    /// Ha `.phxclaw/`, mas a raiz nao foi confiada: nada dela se arma.
+    Ignorada {
+        pasta: std::path::PathBuf,
+        raiz: std::path::PathBuf,
+    },
+    Nenhuma,
+}
+
+/// A `.phxclaw/` de onde o `servir` le o `gatilhos.json` (webhook, arquivo, poll, MCP) e o
+/// `HEARTBEAT.md` do projeto: SO de projeto confiado, pela MESMA conta do
+/// `.phxclaw/config.json` (`config::projeto`, que usa a lista de `projeto confiar`).
+///
+/// Por que: o gatilho dispara tarefa e fluxo com as credenciais do operador, e o `mcp` liga
+/// um servidor do arquivo do operador. Medido em 09/10/2026 (achado M4): um clone nao
+/// confiado com `.phxclaw/gatilhos.json` armava assinatura MCP, poll com rede a cada
+/// intervalo e webhook no servidor de quem so abriu a pasta.
+pub fn pasta_do_projeto_confiada(pasta_do_agente: &std::path::Path) -> PastaConfiada {
+    let Some(pasta) = pasta_do_projeto() else {
+        return PastaConfiada::Nenhuma;
+    };
+    match crate::config::projeto(pasta_do_agente) {
+        crate::config::Projeto::Confiado(_) => PastaConfiada::Confiada(pasta),
+        crate::config::Projeto::NaoConfiado { raiz, .. } => PastaConfiada::Ignorada { pasta, raiz },
+        crate::config::Projeto::Nenhum => PastaConfiada::Nenhuma,
+    }
+}
+
+/// A `.phxclaw/` do projeto para ler `o_que` quando ele EXECUTA, CONCEDE ou fala com o
+/// modelo -- `hooks.json` (roda comando a cada evento), `commands/` e `estilos/` (texto que
+/// vira objetivo ou prompt de sistema, a classe dos `AGENTS.md`) e `workspace.json` (raiz
+/// extra e permissao de disco): so de projeto confiado, pela MESMA conta do M4. Ignorada com
+/// `o_que` presente vira UM aviso por arquivo e processo, com o comando de confiar -- a
+/// montagem roda a cada tarefa, e o aviso repetido a cada uma viraria ruido que se deixa de ler.
+///
+/// Por que (achado de 09/10/2026, a classe do M4): `hooks`, `comandos`, `estilos` e o
+/// workspace liam `pasta_do_projeto()` sem julgar, e um clone com `.phxclaw/hooks.json`
+/// rodava o comando dele a cada ferramenta de quem so abriu a pasta.
+pub fn pasta_confiada_para(
+    pasta_do_agente: &std::path::Path,
+    o_que: &str,
+) -> Option<std::path::PathBuf> {
+    match pasta_do_projeto_confiada(pasta_do_agente) {
+        PastaConfiada::Confiada(p) => Some(p),
+        PastaConfiada::Ignorada { pasta, raiz } => {
+            let alvo = pasta.join(o_que);
+            if alvo.exists() && avisar_uma_vez(&alvo) {
+                eprintln!(
+                    "aviso: {}",
+                    crate::config::ignorado_por_confianca(&alvo, &raiz)
+                );
+            }
+            None
+        }
+        PastaConfiada::Nenhuma => None,
+    }
+}
+
+fn avisar_uma_vez(alvo: &std::path::Path) -> bool {
+    static AVISADOS: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::BTreeSet<std::path::PathBuf>>,
+    > = std::sync::OnceLock::new();
+    AVISADOS
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(alvo.to_path_buf())
+}
+
+/// As regras de comando do projeto: a MESMA leitura para o portao do motor e o tunel.
+/// Arquivo ilegivel nega todo comando -- o operador escreveu regra para restringir, e
+/// ignora-la calada deixaria passar o que ele quis barrar.
+///
+/// Sem confianca DE PROPOSITO (decisao de 09/10/2026): regra de comando so APERTA. Sem
+/// arquivo o portao e `permitir`, e `avaliar` toma a decisao mais estrita entre o padrao do
+/// arquivo e as regras que casam -- nao existe decisao abaixo de `permitir` para um clone
+/// escrever. Exigir confianca aqui seria afrouxar: o projeto nunca confiado onde o operador
+/// escreveu `negar rm` perderia a guarda calado (guarda nova entra pedida; rede so endurece).
+/// Se um dia entrar regra do operador por cima desta, a do projeto SOMA (max), nunca
+/// substitui -- substituir abre o afrouxo e esta excecao deixa de valer.
+pub fn regras_do_projeto() -> Option<crate::regras::RegrasDeComando> {
+    let arq = pasta_do_projeto()?.join("regras.json");
+    match crate::regras::RegrasDeComando::carregar(&arq) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("aviso: {e}: todo comando de shell negado ate o arquivo se ler");
+            Some(crate::regras::RegrasDeComando::negar_tudo(&format!(
+                "regras ilegiveis: {e}"
+            )))
+        }
+    }
 }
 
 /// A pasta do projeto em que o agente trabalha: `$PHXCLAW_PROJETO`, ou a pasta corrente.
@@ -509,7 +630,7 @@ impl Montagem {
     /// Os hooks do projeto e, atras deles, os dos pacotes assinados (`hooks::somar`).
     fn hooks(&self) -> Option<Arc<crate::hooks::Hooks>> {
         let bwrap = crate::arquivos::achar_bwrap();
-        let mut h = match pasta_do_projeto() {
+        let mut h = match pasta_confiada_para(self.raiz_do_agente(), "hooks.json") {
             Some(p) => crate::hooks::Hooks::carregar(&p, bwrap.clone())
                 .unwrap_or_else(|| crate::hooks::Hooks::vazio(p, bwrap)),
             None => crate::hooks::Hooks::vazio(std::path::PathBuf::from("."), bwrap),
@@ -531,7 +652,7 @@ impl Montagem {
     /// Os comandos de barra: os do projeto primeiro, depois os dos pacotes.
     fn comandos(&self) -> Option<Arc<crate::comandos::ComandosDeBarra>> {
         let mut c = crate::comandos::ComandosDeBarra::default();
-        let (do_projeto, avisos) = crate::comandos::do_projeto();
+        let (do_projeto, avisos) = crate::comandos::do_projeto(self.raiz_do_agente());
         let mut avisos = avisos;
         avisos.extend(c.somar_todos(do_projeto));
         for p in &self.pacotes {
@@ -546,17 +667,9 @@ impl Montagem {
         Some(Arc::new(c))
     }
 
-    /// Arquivo de regras ilegivel nega todo comando: o operador escreveu regra para
-    /// restringir, e ignora-la calado deixaria passar o que ele quis barrar.
+    /// As regras do projeto (`regras_do_projeto`: so apertam, por isso sem confianca).
     fn regras(&self) -> Option<Arc<crate::regras::RegrasDeComando>> {
-        let arq = pasta_do_projeto()?.join("regras.json");
-        match crate::regras::RegrasDeComando::carregar(&arq) {
-            Ok(r) => r.map(Arc::new),
-            Err(e) => {
-                eprintln!("aviso: {e}: todo comando de shell negado ate o arquivo se ler");
-                Some(Arc::new(crate::regras::RegrasDeComando::negar_tudo(&e)))
-            }
-        }
+        regras_do_projeto().map(Arc::new)
     }
 
     /// Os `AGENTS.md` da raiz do repositorio ate a pasta do projeto, se a raiz esta na
@@ -570,7 +683,8 @@ impl Montagem {
     /// rodar por causa da forma da resposta.
     fn estilo_de_saida(&self) -> Option<crate::estilos::EstiloDeSaida> {
         let nome = self.estilo.as_deref()?;
-        crate::estilos::carregar(nome, pasta_do_projeto().as_deref())
+        let pasta = pasta_confiada_para(self.raiz_do_agente(), "estilos");
+        crate::estilos::carregar(nome, pasta.as_deref())
             .map_err(|e| eprintln!("aviso: {e}"))
             .ok()
     }

@@ -72,7 +72,7 @@ pub fn pasta_dos_fluxos(s: &ApiState) -> PathBuf {
 /// a que o webhook, a agenda e o poll rodam, sem passar pelo `publicar`. A conferencia se
 /// repete no caminho canonico porque um link `x.json -> .x.versoes/indice.json` dentro da
 /// pasta passaria pelo `starts_with` e chegaria ao mesmo lugar.
-fn arquivo_do_fluxo(pasta: &Path, nome: &str) -> Option<PathBuf> {
+pub(crate) fn arquivo_do_fluxo(pasta: &Path, nome: &str) -> Option<PathBuf> {
     fn forma_de_fluxo(r: &Path) -> bool {
         let partes: Vec<_> = r.components().collect();
         (1..=2).contains(&partes.len())
@@ -278,6 +278,9 @@ struct Disparo {
     nome: String,
     #[serde(default)]
     ate: Option<String>,
+    /// Orcamento desta execucao (tokens, dinheiro), no teto global; ausente = o padrao.
+    #[serde(default)]
+    orcamento: Option<crate::tarefa::Orcamento>,
 }
 
 async fn rodar(
@@ -302,9 +305,16 @@ async fn rodar(
         .ate
         .map(|a| a.trim().to_string())
         .filter(|a| !a.is_empty());
-    let c =
-        crate::api::criar_fluxo_ate(&s, &arq.to_string_lossy(), vec![], |_| Ok(()), ate, projeto)
-            .map_err(|r| erro(r.status, r.erro))?;
+    let c = crate::api::criar_fluxo_ate(
+        &s,
+        &arq.to_string_lossy(),
+        vec![],
+        |_| Ok(()),
+        ate,
+        projeto,
+        d.orcamento,
+    )
+    .map_err(|r| erro(r.status, r.erro))?;
     Ok((StatusCode::ACCEPTED, Json(json!({"id": c.id}))).into_response())
 }
 

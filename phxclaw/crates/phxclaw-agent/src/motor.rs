@@ -58,6 +58,11 @@ pub struct AgentConfig {
     /// (a chamada que passa zera, como no PydanticAI). Esgotou, a tarefa termina FALHA.
     /// 2 e o medido: com 1, o 3B morria na primeira correcao que errava outro campo.
     pub tentativas_de_argumento: u32,
+    /// Tabela de precos do operador (`custo.precos`). Sem ela, o custo de cada tarefa sai
+    /// «nao medido» -- nunca zero.
+    pub precos: Option<Arc<crate::custo::TabelaDePrecos>>,
+    /// Padrao e teto dos orcamentos (`orcamento.*`). Vazia: sem orcamento.
+    pub orcamento: crate::orcamento::Politica,
 }
 
 impl Default for AgentConfig {
@@ -79,6 +84,8 @@ impl Default for AgentConfig {
             comandos: None,
             prazo_de_resposta: None,
             tentativas_de_argumento: 2,
+            precos: None,
+            orcamento: crate::orcamento::Politica::default(),
         }
     }
 }
@@ -389,6 +396,12 @@ impl Agent {
                 );
             }
         }
+        // Orcamento (R3): o do pedido ou o padrao, cortado no teto. Dinheiro sem preco para
+        // o modelo fecha AGORA, antes de gastar, pela mesma regra da verificacao acima.
+        let conta = match self.abrir_conta(&mut task) {
+            Ok(c) => c,
+            Err(m) => return self.finish(task, TaskStatus::Failed, Some(m), obs),
+        };
         if self.config.require_final_tool {
             let (descricao, parametros) = match &task.saida_esquema {
                 // Saida tipada: o `answer` e o objeto do esquema, e o mesmo validador do
@@ -530,9 +543,43 @@ proceed without a decision or information that only the user has; do not ask wha
             if cancel.is_cancelled() {
                 return self.finish(task, TaskStatus::Cancelled, None, obs);
             }
-            let reply = match self.llm.chat(&msgs, &specs, &self.config.options).await {
+            // Uma filha (ou um passo irmao do fluxo) pode ter gastado o que faltava; e as
+            // irmas em voo reservaram o que podem gastar (M6): confere E reserva.
+            let precos = self.config.precos.clone();
+            let reserva = conta
+                .reservar(|| {
+                    crate::orcamento::estimar(
+                        &msgs,
+                        &specs,
+                        &self.config.options,
+                        &self.llm.provedores(),
+                        precos.as_deref(),
+                    )
+                })
+                .await;
+            let reserva = match reserva {
+                Ok(r) => r,
+                Err(e) => return self.parar_por_orcamento(task, &conta, e, &ledger, obs),
+            };
+            // Com o modelo `rota`, quem atendeu e por que trocou viram passo e evidencia (R4).
+            let (reply, diario) =
+                crate::roteamento::com_diario(crate::orcamento::na_chamada_do_motor(
+                    &conta,
+                    precos,
+                    self.llm.chat(&msgs, &specs, &self.config.options),
+                ))
+                .await;
+            crate::roteamento::registrar(&mut task, passo, &ledger, &diario);
+            // O classificador da rota cobrou a conta la dentro: entra no custo da tarefa.
+            self.registrar_por_dentro(&mut task, &conta, &ledger);
+            let reply = match reply {
                 Ok(r) => r,
                 Err(e) => {
+                    // O classificador pode ter batido o teto la dentro: a parada e do
+                    // orcamento, nao do modelo.
+                    if let Err(o) = conta.conferir() {
+                        return self.parar_por_orcamento(task, &conta, o, &ledger, obs);
+                    }
                     return self.finish(
                         task,
                         TaskStatus::Failed,
@@ -543,6 +590,15 @@ proceed without a decision or information that only the user has; do not ask wha
             };
             task.usage.input_tokens += reply.usage.input_tokens;
             task.usage.output_tokens += reply.usage.output_tokens;
+            // Custo e orcamento ANTES de agir sobre a resposta: a chamada que bateu o teto
+            // nao vira ferramenta rodando nem resposta aceita.
+            let atendeu = diario.last().and_then(|a| a.atendeu.as_deref());
+            let cobrou = self.cobrar(&mut task, &conta, &reply.usage, atendeu, &ledger);
+            // Cobrada, a reserva sai: na ordem inversa a irma veria a chamada sem custo.
+            drop(reserva);
+            if let Err(e) = cobrou {
+                return self.parar_por_orcamento(task, &conta, e, &ledger, obs);
+            }
             if let Some(fim) = reply.tool_calls.iter().find(|c| c.name == "final_answer") {
                 let mut r = fim
                     .arguments
@@ -870,6 +926,12 @@ nova(s) tentativa(s) esgotado. Ultimo erro: {}",
                     call,
                     truncate_for_model(&texto, self.config.max_tool_output_chars),
                 ));
+                // A ferramenta pode ter chamado o modelo por dentro (A1): o que ela gastou
+                // entra na tarefa, e a conta que bateu para AQUI, antes da proxima.
+                self.registrar_por_dentro(&mut task, &conta, &ledger);
+                if let Err(e) = conta.conferir() {
+                    return self.parar_por_orcamento(task, &conta, e, &ledger, obs);
+                }
             }
             self.persist(&task, obs);
         }
@@ -1125,8 +1187,14 @@ nova(s) tentativa(s) esgotado. Ultimo erro: {}",
                         match tokio::time::timeout(
                             self.config.tool_timeout,
                             // O valor COAGIDO ("5" -> 5 onde o esquema pede inteiro): o
-                            // que o validador aceitou e o que a ferramenta recebe.
-                            t.run(validacao.valor.clone(), ctx),
+                            // que o validador aceitou e o que a ferramenta recebe. Sob a
+                            // conta da tarefa: o modelo que a ferramenta chamar por dentro
+                            // cobra o orcamento dela (`orcamento::LlmDaTarefa`).
+                            crate::orcamento::sob_a_conta(
+                                task_id,
+                                self.config.precos.clone(),
+                                t.run(validacao.valor.clone(), ctx),
+                            ),
                         )
                         .await
                         {
@@ -1316,6 +1384,106 @@ work so that it passes, then finish.\n{saida}"
     fn persist(&self, task: &Task, obs: &dyn Observer) {
         let _ = self.store.save(task);
         obs.on_update(task);
+    }
+
+    /// Abre a conta do orcamento desta execucao (ver `orcamento.rs`). O gasto ja gravado
+    /// e o ponto de partida: a retomada continua a conta, nao recomeca do zero.
+    fn abrir_conta(&self, task: &mut Task) -> Result<crate::orcamento::Aberta, String> {
+        use crate::orcamento::{Alvo, abrir, conferir_preco};
+        task.orcamento = self
+            .config
+            .orcamento
+            .efetivo(task.orcamento.as_ref(), Alvo::Tarefa);
+        // Todo provedor que pode atender (a cadeia inteira, com a rota): antes de gastar
+        // nao se sabe qual vai atender.
+        conferir_preco(
+            task.orcamento.as_ref(),
+            self.config.precos.as_deref(),
+            &self.llm.provedores(),
+        )?;
+        let inicial = task.gasto.clone().unwrap_or_else(|| {
+            let c = task.custo.as_ref();
+            phxclaw_agent_core::tarefa::Gasto {
+                tokens: task.usage.input_tokens + task.usage.output_tokens,
+                custo: c.and_then(|c| c.total),
+                moeda: c.and_then(|c| c.moeda.clone()),
+            }
+        });
+        Ok(abrir(
+            &task.id,
+            task.parent.as_deref(),
+            Alvo::Tarefa,
+            task.orcamento.clone(),
+            inicial,
+        ))
+    }
+
+    /// O custo da chamada na tarefa e na evidencia, e a cobranca na conta (e nas dos
+    /// ancestrais). O preco e o do provedor que ATENDEU: com a rota, o `id()` do modelo e
+    /// `rota:...`, e quem atendeu esta no diario do roteamento.
+    fn cobrar(
+        &self,
+        task: &mut Task,
+        conta: &crate::orcamento::Aberta,
+        uso: &phxclaw_agent_core::Usage,
+        atendeu: Option<&str>,
+        ledger: &EvidenceLedger,
+    ) -> Result<(), crate::orcamento::Estouro> {
+        let precos = self.config.precos.as_deref();
+        let modelo = atendeu.map_or_else(|| self.llm.id(), str::to_string);
+        let ch = crate::custo::registrar(task, precos, &modelo, uso, ledger);
+        let r = conta.cobrar(
+            uso.input_tokens + uso.output_tokens,
+            ch.and_then(|c| c.custo),
+            precos.map(|p| p.moeda.as_str()),
+        );
+        task.gasto = Some(conta.gasto());
+        r
+    }
+
+    /// As chamadas que a conta cobrou por dentro (ferramenta, classificador) entram no uso,
+    /// no custo e na evidencia da tarefa, pelo MESMO `custo::registrar` da chamada do laco.
+    fn registrar_por_dentro(
+        &self,
+        task: &mut Task,
+        conta: &crate::orcamento::Aberta,
+        ledger: &EvidenceLedger,
+    ) {
+        let feitas = conta.drenar_por_dentro();
+        if feitas.is_empty() {
+            return;
+        }
+        for (modelo, uso) in feitas {
+            task.usage.input_tokens += uso.input_tokens;
+            task.usage.output_tokens += uso.output_tokens;
+            crate::custo::registrar(task, self.config.precos.as_deref(), &modelo, &uso, ledger);
+        }
+        task.gasto = Some(conta.gasto());
+    }
+
+    /// Para a tarefa no estado proprio do orcamento, com o gasto e o teto na mensagem e
+    /// uma linha de evidencia: parar por dinheiro e decisao que se audita.
+    fn parar_por_orcamento(
+        &self,
+        mut task: Task,
+        conta: &crate::orcamento::Aberta,
+        e: crate::orcamento::Estouro,
+        ledger: &EvidenceLedger,
+        obs: &dyn Observer,
+    ) -> Task {
+        task.gasto = Some(conta.gasto());
+        let _ = ledger.append(EvidenceDraft {
+            action_uuid: phxclaw_types::new_uuid_v7(),
+            correlation_uuid: task.id.parse().ok(),
+            actor: "phxclaw-agent".into(),
+            capability: "llm.chat".into(),
+            action: "orcamento.parada".into(),
+            outcome: EvidenceOutcome::Denied,
+            request_summary: json!({"orcamento": task.orcamento}),
+            result_summary: json!({"gasto": task.gasto, "motivo": e.0}),
+            artifact_uris: vec![],
+        });
+        self.finish(task, TaskStatus::BudgetExceeded, Some(e.0), obs)
     }
 
     fn finish(

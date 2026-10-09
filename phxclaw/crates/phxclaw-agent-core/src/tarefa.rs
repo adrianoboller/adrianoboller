@@ -25,12 +25,82 @@ pub enum TaskStatus {
     Completed,
     Failed,
     Cancelled,
+    /// Parou porque bateu o orcamento (tokens ou dinheiro) da tarefa ou de um ancestral
+    /// (o fluxo, a tarefa-mae). Estado proprio, e nao `Failed`: quem gastou o teto nao
+    /// errou, e quem le a lista tem de distinguir «falhou» de «parou de gastar».
+    BudgetExceeded,
 }
 
 impl TaskStatus {
     pub fn is_final(self) -> bool {
-        matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+        matches!(
+            self,
+            Self::Completed | Self::Failed | Self::Cancelled | Self::BudgetExceeded
+        )
     }
+}
+
+/// Orcamento de uma tarefa ou de um fluxo. Cada dimensao e opcional; `custo` e na moeda da
+/// tabela de precos do operador (`custo.precos`), que nao viaja aqui de proposito: a tabela
+/// e uma so por instancia, e um pedido nao escolhe a moeda em que o servidor confere.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Orcamento {
+    /// Tokens de entrada + saida, somados de todas as chamadas ao modelo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custo: Option<f64>,
+}
+
+impl Orcamento {
+    pub fn vazio(&self) -> bool {
+        self.tokens.is_none() && self.custo.is_none()
+    }
+}
+
+/// A cotacao de onde saiu um preco: a data e a fonte que o operador escreveu na tabela.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Cotacao {
+    pub data: String,
+    pub fonte: String,
+}
+
+/// O custo de UMA chamada ao modelo. `custo` ausente e «nao medido» (modelo sem preco na
+/// tabela), nunca zero: zero e o preco que o operador declarou, ausente e o que ninguem sabe.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CustoDaChamada {
+    pub modelo: String,
+    pub tokens_entrada: u64,
+    pub tokens_saida: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custo: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cotacao: Option<Cotacao>,
+}
+
+/// O custo das chamadas da PROPRIA tarefa (as filhas tem o delas; a soma com elas e o
+/// `Gasto`). `total` ausente e «nao medido», com o motivo em `nao_medido`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CustoDaTarefa {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moeda: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub total: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nao_medido: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chamadas: Vec<CustoDaChamada>,
+}
+
+/// O que conta contra o orcamento: a tarefa e as descendentes (subagentes, passos de
+/// fluxo, sub-fluxos). `custo` ausente e «nao medido»: basta uma chamada sem preco.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Gasto {
+    pub tokens: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custo: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub moeda: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -97,6 +167,16 @@ pub struct Task {
     /// do usuario), nunca do corpo do pedido. Ausente = tarefa da instancia (so dono e admin).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projeto: Option<String>,
+    /// O orcamento em vigor (o do pedido, senao o padrao da configuracao, nunca acima do
+    /// teto global). Gravado na tarefa para a retomada conferir o MESMO teto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orcamento: Option<Orcamento>,
+    /// O custo das chamadas desta tarefa ao modelo, chamada a chamada.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custo: Option<CustoDaTarefa>,
+    /// O gasto desta tarefa somado ao das descendentes: e o numero que o orcamento confere.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gasto: Option<Gasto>,
 }
 
 impl Task {
@@ -122,6 +202,9 @@ impl Task {
             verificar: None,
             saida_esquema: None,
             projeto: None,
+            orcamento: None,
+            custo: None,
+            gasto: None,
         }
     }
 }
@@ -190,6 +273,10 @@ pub struct NovaTarefa {
     /// Esquema JSON da resposta final (ver `Task::saida_esquema`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub saida_esquema: Option<Value>,
+    /// Orcamento deste pedido. Nunca passa do teto global do operador: acima dele, a
+    /// criacao e recusada dizendo o teto, em vez de cortar calado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub orcamento: Option<Orcamento>,
 }
 
 /// Resposta 202 de `POST /v1/tasks`.

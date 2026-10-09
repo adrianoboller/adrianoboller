@@ -1057,3 +1057,30 @@ async fn gatilho_assinado_reenviado_nao_dispara_de_novo() {
     }
     assert_eq!(fluxos_criados(), 4);
 }
+
+/// M4 (09/10/2026): a CHAVE de um objeto de fora tambem vai inteira para o `task.json`, e
+/// o motor unico a julga pela mesma forma dos valores -- em qualquer profundidade. A chave
+/// que so tem NOME de segredo (`key`, `api_key_hint`) continua entrando.
+///
+/// RED medido: o `texto_tem_credencial(k)` retirado de `valor_externo_parece_segredo`
+/// (defeito reposto) -- as tres primeiras entradas passam.
+#[test]
+fn chave_de_objeto_com_forma_de_credencial_e_recusada() {
+    for item in [
+        json!({"sk-ant-api03-AAAAAAAAAAAAAAAAAAAAAAAAAAAA": 1}),
+        json!({"ok": {"fundo": [{"ghp_0123456789abcdefABCDEF0123": true}]}}),
+        json!([{"Bearer abcdefghijklmnopqrstuvwxyz0123": "x"}]),
+    ] {
+        let e = fluxos::conferir_entrada(std::slice::from_ref(&item)).unwrap_err();
+        assert!(e.contains("credencial"), "{item}: {e}");
+    }
+    for item in [
+        json!({"key": "PROJ-1", "api_key_hint": "cabecalho"}),
+        json!({"sk-SK": "locale", "9fceb02d0ae598e95dc970b74767f19372d61af8": 1}),
+    ] {
+        assert!(
+            fluxos::conferir_entrada(std::slice::from_ref(&item)).is_ok(),
+            "{item}"
+        );
+    }
+}

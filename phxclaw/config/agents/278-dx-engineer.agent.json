@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-78be-943b-748ea089b10c",
+  "agent_id": 278,
+  "name": "DX Engineer",
+  "macroarea": "Terceiros · Produto",
+  "nucleus": "Product",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Removes every unnecessary step between a developer and their first success — SDK samples, onboarding flows, error messages, and the feedback loops that make products feel like they were built by someone who's used them.",
+  "responsibilities": "If a developer has to guess, I've already failed — friction is a bug and I'm here to fix it.",
+  "resources": "Descricao completa do papel em config/agents/agency/dx-engineer.md; ferramentas do cabecalho: nenhuma declarada (so leitura); concedidas na importacao: fs.read.",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: o tools: do cabecalho de origem e pedido, nao concessao -- a importacao concede so leitura e escrita de arquivo (sem tools: = so leitura); shell e rede so com concessao do operador por papel; sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo product/product-dx-engineer.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/dx-engineer.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "product",
+    "row": 167
+  }
+}

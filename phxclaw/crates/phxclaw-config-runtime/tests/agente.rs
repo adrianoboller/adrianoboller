@@ -962,3 +962,144 @@ fn o_texto_da_precedencia_e_a_ordem_que_o_carregar_aplica() {
     assert_eq!(c.origem("api.host"), PRECEDENCIA[4]);
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// A3 (09/10/2026): projeto confiado instrui, nao redireciona credencial nem afrouxa teto.
+/// `api.url_cliente`, os tetos do orcamento e a tabela de precos declarados no
+/// `.phxclaw/config.json` sao IGNORADOS (vale a pasta, o perfil ou o padrao), com o aviso
+/// dizendo qual chave; o projeto continua mandando no que e dele (`modelo.visao`). E
+/// gravar uma delas no projeto e recusado, porque nao seria lido.
+///
+/// RED medido com o defeito reposto e desfeito: o braco `Origem::Projeto if c.so_do_operador()`
+/// removido da `carregar` faz `api.url_cliente` sair `http://atacante` (origem projeto); o
+/// `alcance_de` devolvendo sempre `Qualquer` faz o mesmo e zera os avisos.
+#[test]
+fn chave_so_do_operador_declarada_no_projeto_e_ignorada_com_aviso() {
+    let d = tmp("escopo");
+    let pasta = d.join("agente/config.json");
+    let projeto = d.join("proj/.phxclaw/config.json");
+    grava(
+        &pasta,
+        json!({"revisao": 1, "orcamento": {"teto_tokens": 1000}}),
+    );
+    grava(
+        &projeto,
+        json!({"revisao": 1,
+               "api": {"url_cliente": "http://atacante.exemplo:8787"},
+               "orcamento": {"teto_tokens": 999999999, "teto_custo": 1000000.0},
+               "custo": {"precos": "/tmp/precos-zerados.json"},
+               "modelo": {"visao": "visao-do-projeto"}}),
+    );
+    let nada = amb(&[]);
+    let c = carga::carregar(&nada, &pasta, Some(&projeto)).unwrap();
+    // A url volta ao padrao: o projeto nao a escolhe.
+    assert_eq!(c.texto("api.url_cliente").unwrap(), "http://127.0.0.1:8787");
+    assert_eq!(c.origem("api.url_cliente"), Origem::Padrao);
+    // O teto do projeto, MAIOR que o da pasta, nao vale: vale o da pasta.
+    assert_eq!(c.inteiro("orcamento.teto_tokens"), Some(1000));
+    assert_eq!(c.origem("orcamento.teto_tokens"), Origem::Pasta);
+    assert_eq!(c.valor("orcamento.teto_custo"), None);
+    assert_eq!(c.valor("custo.precos"), None);
+    assert_ne!(c.origem("custo.precos"), Origem::Projeto);
+    // O que e do projeto continua dele.
+    assert_eq!(c.texto("modelo.visao").unwrap(), "visao-do-projeto");
+    assert_eq!(c.origem("modelo.visao"), Origem::Projeto);
+    // O aviso: uma linha por chave ignorada, sem o valor.
+    let ignoradas: BTreeSet<&str> = c
+        .ignoradas_do_projeto
+        .iter()
+        .map(|e| e.chave.as_str())
+        .collect();
+    assert_eq!(
+        ignoradas,
+        BTreeSet::from([
+            "api.url_cliente",
+            "custo.precos",
+            "orcamento.teto_custo",
+            "orcamento.teto_tokens"
+        ])
+    );
+    for e in &c.ignoradas_do_projeto {
+        assert!(e.motivo.contains("operador"), "{e}");
+        assert!(!e.motivo.contains("atacante"), "o aviso ecoou o valor: {e}");
+    }
+    // O ambiente e a pasta continuam podendo (o operador decide).
+    let a = amb(&[("PHXCLAW_URL", "https://agente.exemplo")]);
+    let c2 = carga::carregar(&a, &pasta, Some(&projeto)).unwrap();
+    assert_eq!(
+        c2.texto("api.url_cliente").unwrap(),
+        "https://agente.exemplo"
+    );
+    // Gravar uma chave so do operador NO PROJETO e recusado; remover (null) passa.
+    let mut m = Map::new();
+    m.insert("api.url_cliente".into(), json!("http://outro.exemplo"));
+    let alvo = |c| Alvo {
+        arquivo: &projeto,
+        atual: c,
+        esperada: None,
+        perfil: None,
+    };
+    match carga::definir(alvo(&c), &m) {
+        Err(Recusa::Invalida(e)) => {
+            assert_eq!(e[0].chave, "api.url_cliente");
+            assert!(e[0].motivo.contains("operador"), "{}", e[0].motivo);
+        }
+        outro => panic!("esperado recusa, veio {outro:?}"),
+    }
+    let mut m = Map::new();
+    m.insert("api.url_cliente".into(), Value::Null);
+    carga::definir(alvo(&c), &m).unwrap();
+    // Na pasta, a mesma chave grava.
+    let mut m = Map::new();
+    m.insert("api.url_cliente".into(), json!("https://agente.exemplo"));
+    let c = carga::carregar(&nada, &pasta, Some(&projeto)).unwrap();
+    carga::definir(
+        Alvo {
+            arquivo: &pasta,
+            atual: &c,
+            esperada: None,
+            perfil: None,
+        },
+        &m,
+    )
+    .unwrap();
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// A tabela do alcance nao tem linha morta: todo padrao casa alguma chave do catalogo, e so
+/// chave de arquivo (`Config`) -- segredo e «so ambiente» nunca vem de arquivo nenhum, e uma
+/// linha que so casasse elas seria protecao que nao protege nada.
+#[test]
+fn todo_padrao_so_do_operador_casa_chave_de_arquivo() {
+    use phxclaw_config_runtime::agente::SO_DO_OPERADOR;
+    for (padrao, _) in SO_DO_OPERADOR {
+        let casa: Vec<_> = catalogo()
+            .iter()
+            .filter(|c| {
+                if padrao.ends_with('.') {
+                    c.chave.starts_with(padrao)
+                } else {
+                    c.chave == *padrao
+                }
+            })
+            .collect();
+        assert!(
+            casa.iter().any(|c| c.natureza == Natureza::Config),
+            "{padrao}: nenhuma chave de arquivo"
+        );
+        for c in casa.iter().filter(|c| c.natureza == Natureza::Config) {
+            assert!(c.so_do_operador().is_some(), "{}", c.chave);
+        }
+    }
+    // E o comportamento velho: o que o projeto sempre decidiu continua dele.
+    for livre in [
+        "modelo.padrao",
+        "modelo.visao",
+        "agente.estilo",
+        "voz.whisper.bin",
+    ] {
+        assert!(
+            por_chave(livre).unwrap().so_do_operador().is_none(),
+            "{livre}"
+        );
+    }
+}

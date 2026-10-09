@@ -59,16 +59,10 @@ fn raiz() -> Result<PathBuf, Recusa> {
     })
 }
 
-/// A recusa das regras do projeto para uma linha, se houver. Arquivo ilegivel nega tudo
-/// (a regra do `montagem::regras`).
+/// A recusa das regras do projeto para uma linha, se houver: a MESMA leitura do portao do
+/// motor (`montagem::regras_do_projeto`, que diz por que vale sem confianca).
 pub fn recusa_das_regras(linha: &str) -> Option<String> {
-    let arq = crate::montagem::pasta_do_projeto()?.join("regras.json");
-    let regras = match crate::regras::RegrasDeComando::carregar(&arq) {
-        Ok(Some(r)) => r,
-        Ok(None) => return None,
-        Err(e) => crate::regras::RegrasDeComando::negar_tudo(&format!("regras ilegiveis: {e}")),
-    };
-    let v = regras.avaliar(linha);
+    let v = crate::montagem::regras_do_projeto()?.avaliar(linha);
     match v.decisao {
         crate::regras::Decisao::Permitir => None,
         crate::regras::Decisao::Perguntar => Some(format!(

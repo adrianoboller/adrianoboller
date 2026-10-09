@@ -21,10 +21,15 @@
 //! e nao duas corridas que mudaram duas coisas.
 //!
 //! A observacao e o perfil (acerto ponderado, p95) sao os do `phxclaw-ai-benchmark`; esta
-//! camada acrescenta o que ele nao guarda (p50, faixas, CPU, energia). O
-//! `phxclaw-model-arena` NAO entra: ele decide por diferenca de MEDIA entre campeao e
-//! desafiante, com documento assinado e perfil promovido -- outra pergunta, e uma que a
-//! regra das faixas recusaria.
+//! camada acrescenta o que ele nao guarda (p50, faixas, CPU, energia, custo). O
+//! `phxclaw-model-arena` decide por diferenca de MEDIA entre campeao e desafiante, que a
+//! regra das faixas recusaria: na bateria entre provedores (`bateria.rs`, R5) ele entra so
+//! como o REGISTRO pareado (observacao e janela com hash), e o vencedor continua saindo
+//! daqui, de `faixas_decidem`.
+//!
+//! **Custo por tarefa correta** (R2): o custo de TODAS as execucoes -- as que falharam
+//! tambem foram pagas -- dividido pelas que passaram no gabarito. Dividir so o custo das
+//! certas pelas certas premiaria o modelo que erra barato e muito.
 
 use crate::gravacao::{Gravacao, Gravador, gravando};
 use crate::motor::{Agent, CancelFlag, NoObserver, sha256_hex};
@@ -382,6 +387,9 @@ impl Llm for MedidorLlm {
     fn id(&self) -> String {
         self.interno.id()
     }
+    fn provedores(&self) -> Vec<String> {
+        self.interno.provedores()
+    }
     fn chat<'a>(
         &'a self,
         messages: &'a [Message],
@@ -567,6 +575,13 @@ pub struct Execucao {
     pub cpu_s_modelo: Option<f64>,
     pub energia: Energia,
     pub gravacao: PathBuf,
+    /// Custo da execucao na moeda da tabela (`custo.precos`); ausente = nao medido.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custo: Option<f64>,
+    /// Respostas que o modelo deu (com sucesso). Zero com a tarefa falha e o provedor que
+    /// nao respondeu (sem chave, servidor fora): isso e «nao medido», nao «errou».
+    #[serde(default)]
+    pub respostas_modelo: usize,
 }
 
 /// Metrica com faixa, ou o motivo de nao ter sido medida.
@@ -621,10 +636,57 @@ pub struct ResultadoModelo {
     /// Acerto ponderado de todas as execucoes, em pontos-base, do perfil do ai-benchmark.
     pub acerto_bp: u16,
     pub perfil_sha256: String,
+    /// Custo por tarefa concluida corretamente, de todas as execucoes juntas.
+    #[serde(default = "custo_nao_medido")]
+    pub custo_por_acerto: Valor,
+    /// O mesmo por rodada; a faixa e entre rodadas.
+    #[serde(default = "custo_nao_medido_faixa")]
+    pub custo_por_acerto_por_rodada: Medida,
 }
 
 fn nao_medida_sem_sequencia() -> Medida {
     Medida::NaoMedida("caso sem gabarito de sequencia".into())
+}
+
+fn custo_nao_medido() -> Valor {
+    Valor::NaoMedido("resultado gravado antes do custo".into())
+}
+
+fn custo_nao_medido_faixa() -> Medida {
+    Medida::NaoMedida("resultado gravado antes do custo".into())
+}
+
+/// Um numero, ou o motivo de nao haver numero.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Valor {
+    Medido(f64),
+    NaoMedido(String),
+}
+
+impl std::fmt::Display for Valor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Valor::Medido(v) => write!(f, "{}", crate::custo::valor(*v)),
+            Valor::NaoMedido(m) => write!(f, "não medido ({m})"),
+        }
+    }
+}
+
+/// Custo por tarefa concluida corretamente: o custo de TODAS as execucoes (as que falharam
+/// tambem custaram) sobre as que passaram no gabarito. Nao medido se alguma execucao nao
+/// tem custo (somar so as medidas daria um numero menor que o gasto), ou se nenhuma acertou
+/// (sem denominador -- e «infinito» nao e numero que se publique).
+pub fn custo_por_acerto(ex: &[&Execucao]) -> Valor {
+    let Some(custos) = ex.iter().map(|e| e.custo).collect::<Option<Vec<f64>>>() else {
+        return Valor::NaoMedido(
+            "execução sem custo medido (modelo sem preço ou sem tabela)".into(),
+        );
+    };
+    let acertos = ex.iter().filter(|e| e.acerto).count();
+    if acertos == 0 {
+        return Valor::NaoMedido("nenhuma execução acertou: sem denominador".into());
+    }
+    Valor::Medido(custos.iter().sum::<f64>() / acertos as f64)
 }
 
 /// As execucoes de um modelo sob o MESMO prompt e as mesmas skills: a unidade que se
@@ -724,69 +786,23 @@ pub async fn avaliar(
         for rodada in 0..rodadas {
             let run_uuid = uuid::Uuid::now_v7();
             for (caso, bc) in casos.iter().zip(&suite.cases) {
-                let base = fabrica(modelo)?;
-                let visto = Arc::new(Mutex::new(Vec::new()));
-                let mut agente = base;
-                agente.llm = Arc::new(MedidorLlm {
-                    interno: agente.llm,
-                    visto: visto.clone(),
-                });
                 let arq = dir_grav.join(format!(
                     "{}-{}-r{}.jsonl",
                     nome_de_arquivo(modelo),
                     nome_de_arquivo(&caso.id),
                     rodada + 1
                 ));
-                let g = Gravador::criar(&arq, &caso.objetivo, modelo)
-                    .map_err(|e| format!("{}: {e}", arq.display()))?;
-                let tarefa = Task::new(caso.objetivo.clone(), modelo.clone());
-                g.tarefa(&tarefa.id);
-                let agente = gravando(agente, &g);
-                let ollama = modelo.starts_with("ollama:");
-                let proc_raiz = Path::new("/proc");
-                let (cpu_a0, cpu_m0) = (
-                    cpu_s(&proc_raiz.join("self"), true),
-                    cpu_da_arvore(proc_raiz, "ollama"),
-                );
-                let e0 = energia.amostra();
-                let t0 = Instant::now();
-                let t = agente
-                    .run(tarefa, &CancelFlag::default(), &NoObserver)
-                    .await;
-                let ms = t0.elapsed().as_secs_f64() * 1e3;
-                let e1 = energia.amostra();
-                let cpu_a1 = cpu_s(&proc_raiz.join("self"), true);
-                let cpu_m1 = cpu_da_arvore(proc_raiz, "ollama");
-                g.resultado()?;
-                let gravada = Gravacao::ler(&arq)?;
-                let seq = gravada.sequencia();
-                let ok = acertou(&caso.gabarito, &t, &seq);
-                let nota = caso
-                    .gabarito
-                    .sequencia
-                    .as_deref()
-                    .and_then(|e| nota_ferramentas(e, &seq));
-                let geracoes = visto.lock().unwrap().clone();
-                let ex = Execucao {
-                    modelo: modelo.clone(),
-                    caso: caso.id.clone(),
-                    rodada: rodada + 1,
-                    acerto: ok,
-                    nota_ferramentas: nota,
-                    prompt_sha256: gravada.prompt_sha256.clone(),
-                    skills_sha256: gravada.skills_sha256_junto(),
-                    estado: format!("{:?}", t.status),
-                    erro: (t.status != TaskStatus::Completed)
-                        .then(|| t.error.clone().unwrap_or_default()),
-                    latencia_ms: ms,
-                    tokens_saida: geracoes.iter().map(|x| x.tokens).sum(),
-                    tokens_por_s: tokens_por_s(&geracoes),
-                    cpu_s_agente: cpu_a0.zip(cpu_a1).map(|(a, b)| b - a),
-                    cpu_s_modelo: (ollama && !cpu_m1.is_empty())
-                        .then(|| delta_cpu(&cpu_m0, &cpu_m1)),
-                    energia: energia.entre(&e0, &e1),
-                    gravacao: arq,
-                };
+                let (ex, t) = executar_caso(
+                    fabrica,
+                    modelo,
+                    caso,
+                    rodada + 1,
+                    &arq,
+                    energia,
+                    &NoObserver,
+                )
+                .await?;
+                let (ok, nota, ms) = (ex.acerto, ex.nota_ferramentas, ex.latencia_ms);
                 obs.push(BenchmarkObservation {
                     tenant_uuid: suite.tenant_uuid,
                     run_uuid,
@@ -805,7 +821,7 @@ pub async fn avaliar(
                     latency_ms: ms.round() as u64,
                     input_tokens: t.usage.input_tokens,
                     output_tokens: t.usage.output_tokens,
-                    actual_cost_micro_usd: None,
+                    actual_cost_micro_usd: crate::custo::micro_usd(&t),
                     output_sha256: sha256_hex(t.answer.clone().unwrap_or_default().as_bytes()),
                     error_class: (!ok).then(|| format!("{:?}", t.status)),
                     observed_at_unix: chrono::Utc::now().timestamp(),
@@ -837,7 +853,77 @@ pub async fn avaliar(
     })
 }
 
-fn nome_de_arquivo(s: &str) -> String {
+/// UMA execucao de um caso por um modelo, gravada em `arq`: o unico laco de medicao, que o
+/// `avaliar` e a bateria entre provedores (`bateria.rs`) chamam -- duas copias mediriam
+/// coisas diferentes com o mesmo nome. Devolve a execucao e a tarefa final.
+pub async fn executar_caso(
+    fabrica: Fabrica<'_>,
+    modelo: &str,
+    caso: &Caso,
+    rodada: usize,
+    arq: &Path,
+    energia: &LeitorEnergia,
+    obs: &dyn crate::motor::Observer,
+) -> Result<(Execucao, Task), String> {
+    let base = fabrica(modelo)?;
+    let visto = Arc::new(Mutex::new(Vec::new()));
+    let mut agente = base;
+    agente.llm = Arc::new(MedidorLlm {
+        interno: agente.llm,
+        visto: visto.clone(),
+    });
+    let g = Gravador::criar(arq, &caso.objetivo, modelo)
+        .map_err(|e| format!("{}: {e}", arq.display()))?;
+    let tarefa = Task::new(caso.objetivo.clone(), modelo.to_string());
+    g.tarefa(&tarefa.id);
+    let agente = gravando(agente, &g);
+    let ollama = modelo.starts_with("ollama:");
+    let proc_raiz = Path::new("/proc");
+    let (cpu_a0, cpu_m0) = (
+        cpu_s(&proc_raiz.join("self"), true),
+        cpu_da_arvore(proc_raiz, "ollama"),
+    );
+    let e0 = energia.amostra();
+    let t0 = Instant::now();
+    let t = agente.run(tarefa, &CancelFlag::default(), obs).await;
+    let ms = t0.elapsed().as_secs_f64() * 1e3;
+    let e1 = energia.amostra();
+    let cpu_a1 = cpu_s(&proc_raiz.join("self"), true);
+    let cpu_m1 = cpu_da_arvore(proc_raiz, "ollama");
+    g.resultado()?;
+    let gravada = Gravacao::ler(arq)?;
+    let seq = gravada.sequencia();
+    let ok = acertou(&caso.gabarito, &t, &seq);
+    let nota = caso
+        .gabarito
+        .sequencia
+        .as_deref()
+        .and_then(|e| nota_ferramentas(e, &seq));
+    let geracoes = visto.lock().unwrap().clone();
+    let ex = Execucao {
+        modelo: modelo.to_string(),
+        caso: caso.id.clone(),
+        rodada,
+        acerto: ok,
+        nota_ferramentas: nota,
+        prompt_sha256: gravada.prompt_sha256.clone(),
+        skills_sha256: gravada.skills_sha256_junto(),
+        estado: format!("{:?}", t.status),
+        erro: (t.status != TaskStatus::Completed).then(|| t.error.clone().unwrap_or_default()),
+        latencia_ms: ms,
+        tokens_saida: geracoes.iter().map(|x| x.tokens).sum(),
+        tokens_por_s: tokens_por_s(&geracoes),
+        cpu_s_agente: cpu_a0.zip(cpu_a1).map(|(a, b)| b - a),
+        cpu_s_modelo: (ollama && !cpu_m1.is_empty()).then(|| delta_cpu(&cpu_m0, &cpu_m1)),
+        energia: energia.entre(&e0, &e1),
+        gravacao: arq.to_path_buf(),
+        custo: crate::custo::total(&t),
+        respostas_modelo: geracoes.len(),
+    };
+    Ok((ex, t))
+}
+
+pub(crate) fn nome_de_arquivo(s: &str) -> String {
     s.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '.' || c == '-' {
@@ -963,6 +1049,23 @@ fn resumir(
         ),
         acerto_bp: perfil.success_basis_points,
         perfil_sha256: perfil.profile_sha256.clone(),
+        custo_por_acerto: custo_por_acerto(&ex.iter().collect::<Vec<_>>()),
+        custo_por_acerto_por_rodada: {
+            let mut motivo = String::new();
+            let v: Vec<Option<f64>> = (1..=rodadas)
+                .map(|r| {
+                    let da: Vec<&Execucao> = ex.iter().filter(|e| e.rodada == r).collect();
+                    match custo_por_acerto(&da) {
+                        Valor::Medido(x) => Some(x),
+                        Valor::NaoMedido(m) => {
+                            motivo = format!("rodada {r}: {m}");
+                            None
+                        }
+                    }
+                })
+                .collect();
+            Medida::de(&v, &motivo)
+        },
     }
 }
 
@@ -971,7 +1074,7 @@ fn resumir(
 /// de desempenho, so quem concluiu tudo.
 fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
     type Pega = fn(&ResultadoModelo) -> Option<Faixa>;
-    let metricas: [(&str, bool, Pega); 5] = [
+    let metricas: [(&str, bool, Pega); 6] = [
         ("acerto_por_rodada", true, |m| Some(m.acerto_por_rodada)),
         ("nota_sequencia", true, |m| {
             m.nota_sequencia_por_rodada.faixa().copied()
@@ -979,6 +1082,9 @@ fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
         ("latencia_ms", false, |m| Some(m.latencia_ms)),
         ("tokens_por_s", true, |m| m.tokens_por_s.faixa().copied()),
         ("cpu_s_modelo", false, |m| m.cpu_s_modelo.faixa().copied()),
+        ("custo_por_acerto", false, |m| {
+            m.custo_por_acerto_por_rodada.faixa().copied()
+        }),
     ];
     if r.len() < 2 {
         return vec![];
@@ -989,7 +1095,12 @@ fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
             let elegiveis: Vec<&ResultadoModelo> = r
                 .iter()
                 .filter(|m| {
-                    matches!(*nome, "acerto_por_rodada" | "nota_sequencia") || m.falhas == 0
+                    // O custo por acerto ja carrega as falhas (elas custaram): nao e metrica
+                    // de desempenho de quem concluiu, e todos entram.
+                    matches!(
+                        *nome,
+                        "acerto_por_rodada" | "nota_sequencia" | "custo_por_acerto"
+                    ) || m.falhas == 0
                 })
                 .collect();
             let fora = r.len() - elegiveis.len();
@@ -1006,17 +1117,11 @@ fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
             } else if elegiveis.iter().any(|m| pega(m).is_none()) {
                 (None, format!("não medida em todos{com_falha}"))
             } else {
-                let v = elegiveis.iter().find_map(|cand| {
-                    let fc = pega(cand)?;
-                    elegiveis
-                        .iter()
-                        .filter(|o| o.modelo != cand.modelo)
-                        .all(|o| {
-                            pega(o)
-                                .is_some_and(|fo| faixas_decidem(&fc, &fo, *maior) == Some(Lado::A))
-                        })
-                        .then(|| cand.modelo.clone())
-                });
+                let cands: Vec<(&str, Faixa)> = elegiveis
+                    .iter()
+                    .filter_map(|m| Some((m.modelo.as_str(), pega(m)?)))
+                    .collect();
+                let v = vencedor_entre(&cands, *maior);
                 let m = if v.is_some() {
                     "faixa separada de todas"
                 } else {
@@ -1031,6 +1136,18 @@ fn decidir(r: &[ResultadoModelo]) -> Vec<Vencedor> {
             }
         })
         .collect()
+}
+
+/// Entre N candidatos, vence o UNICO cuja faixa fica separada da de todos os outros, do
+/// lado bom (`faixas_decidem`); senao, ninguem. Um lugar so para o `avaliar` e a bateria.
+pub fn vencedor_entre(cands: &[(&str, Faixa)], maior_e_melhor: bool) -> Option<String> {
+    cands.iter().find_map(|(nome, fc)| {
+        cands
+            .iter()
+            .filter(|(o, _)| o != nome)
+            .all(|(_, fo)| faixas_decidem(fc, fo, maior_e_melhor) == Some(Lado::A))
+            .then(|| nome.to_string())
+    })
 }
 
 /// A tabela do terminal: cada numero com a faixa, o N e a data.
@@ -1073,6 +1190,11 @@ pub fn tabela(a: &Avaliacao) -> String {
             "  ferramentas : conjunto {} | sequencia {} (nota 0–1, mediana dos casos por rodada)\n",
             f(&m.nota_conjunto_por_rodada, 2),
             f(&m.nota_sequencia_por_rodada, 2),
+        ));
+        s.push_str(&format!(
+            "  custo/acerto: {} no total | por rodada {} (todas as execuções / as que acertaram)\n",
+            m.custo_por_acerto,
+            f(&m.custo_por_acerto_por_rodada, 6),
         ));
         if m.falhas > 0 {
             s.push_str(&format!(
@@ -1222,6 +1344,57 @@ mod testes {
         assert_eq!(nota_ferramentas(&esp, &[]).unwrap().sequencia, 0.0);
         assert_eq!(nota_ferramentas(&[], &esp), None);
         assert_eq!(lcs(&v(&["a", "b", "c", "d"]), &v(&["b", "d", "a", "c"])), 2);
+    }
+
+    fn execucao(acerto: bool, custo: Option<f64>) -> Execucao {
+        Execucao {
+            modelo: "falso:x".into(),
+            caso: "c".into(),
+            rodada: 1,
+            acerto,
+            nota_ferramentas: None,
+            prompt_sha256: None,
+            skills_sha256: None,
+            estado: "Completed".into(),
+            erro: None,
+            latencia_ms: 1.0,
+            tokens_saida: 1,
+            tokens_por_s: None,
+            cpu_s_agente: None,
+            cpu_s_modelo: None,
+            energia: Energia::NaoMedida("prova".into()),
+            gravacao: PathBuf::new(),
+            custo,
+            respostas_modelo: 1,
+        }
+    }
+
+    /// Guarda R2: o custo por tarefa correta divide o custo de TODAS as execucoes -- as
+    /// que falharam tambem foram pagas -- pelas que acertaram.
+    ///
+    /// RED medido: `custos.iter().sum()` trocado pela soma so das execucoes com `acerto`
+    /// (`// REPOSTO`) -- deu 0,5 em vez de 2,0 e a asserção caiu.
+    #[test]
+    fn custo_por_acerto_conta_as_execucoes_que_falharam() {
+        let ex = [
+            execucao(true, Some(1.0)),
+            execucao(false, Some(3.0)),
+            execucao(true, Some(0.0)),
+        ];
+        let r: Vec<&Execucao> = ex.iter().collect();
+        assert_eq!(custo_por_acerto(&r), Valor::Medido(2.0));
+        // Uma execucao sem custo: nao medido (somar so as medidas daria menos que o gasto).
+        let ex2 = [execucao(true, Some(1.0)), execucao(false, None)];
+        assert!(matches!(
+            custo_por_acerto(&ex2.iter().collect::<Vec<_>>()),
+            Valor::NaoMedido(m) if m.contains("sem custo")
+        ));
+        // Nenhum acerto: sem denominador, nunca «infinito» nem zero.
+        let ex3 = [execucao(false, Some(1.0))];
+        assert!(matches!(
+            custo_por_acerto(&ex3.iter().collect::<Vec<_>>()),
+            Valor::NaoMedido(m) if m.contains("nenhuma")
+        ));
     }
 
     #[test]

@@ -372,7 +372,14 @@ fn importa_skills_dos_quatro_formatos_com_scripts_desligados_e_origem() {
     let r2 = importar(&fixtures(), &destino, &Opcoes::default());
     assert_eq!((r2.importadas.len(), r2.repetidas), (0, 4));
     let d2 = SkillFolder::new(tmp("skills-dest2"));
-    importar(&fixtures(), &d2, &Opcoes { com_scripts: true });
+    importar(
+        &fixtures(),
+        &d2,
+        &Opcoes {
+            com_scripts: true,
+            ..Opcoes::default()
+        },
+    );
     assert!(d2.root().join("pesquisa-web/scripts/coletar.py").is_file());
 }
 
@@ -383,6 +390,14 @@ fn importa_skills_dos_quatro_formatos_com_scripts_desligados_e_origem() {
 #[test]
 fn importador_recusa_symlink_em_scripts_e_laco_termina_com_erro() {
     let origem = tmp("skills-symlink");
+    // A porta de licenca vem antes dos scripts: com licenca MIT na raiz, o que se prova aqui
+    // e a recusa pelo atalho, nao pela falta de licenca.
+    escrever(
+        &origem.join("LICENSE"),
+        "MIT License\n\nPermission is hereby granted, free of charge, to any person obtaining a copy \
+of this software. The above copyright notice and this permission notice shall be included in all \
+copies or substantial portions of the Software.\n",
+    );
     escrever(
         &origem.join("laco/SKILL.md"),
         "---\nname: laco\ndescription: Tem um laco em scripts.\n---\nCorpo.\n",
@@ -404,7 +419,14 @@ fn importador_recusa_symlink_em_scripts_e_laco_termina_com_erro() {
         "---\nname: limpa\ndescription: Passa.\n---\nCorpo limpo.\n",
     );
     let destino = SkillFolder::new(tmp("skills-symlink-dest"));
-    let r = importar(&origem, &destino, &Opcoes { com_scripts: true });
+    let r = importar(
+        &origem,
+        &destino,
+        &Opcoes {
+            com_scripts: true,
+            ..Opcoes::default()
+        },
+    );
     assert_eq!(r.achados, 4);
     assert_eq!(r.importadas.len(), 1, "{:?}", r.recusadas);
     assert_eq!(r.importadas[0].nome, "limpa");

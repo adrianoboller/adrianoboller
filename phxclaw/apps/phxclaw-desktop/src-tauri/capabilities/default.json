@@ -1,7 +1,19 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
-  "description": "PhxClaw trusted Command Center webview. Remote managed webviews are intentionally excluded.",
+  "description": "PhxClaw trusted Command Center webview. Remote managed webviews are intentionally excluded. core:default is spelled out WITHOUT core:webview:allow-internal-toggle-devtools: the page must not be able to open the inspector.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:path:default",
+    "core:event:default",
+    "core:window:default",
+    "core:app:default",
+    "core:image:default",
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:webview:allow-get-all-webviews",
+    "core:webview:allow-webview-position",
+    "core:webview:allow-webview-size"
+  ]
 }

@@ -29,10 +29,12 @@
 // #ideMinimapa, e um textos.json velho mostraria as chaves cruas do painel.
 // Casca 13: a tela Fluxos (editor em grafo) -- dois arquivos a mais (fluxos.js, fluxos.css), e
 // index.html, app.js, tarefas.js e textos.json mudaram junto.
-const CACHE = 'phxclaw-casca-13';
+// Casca 14: o inspecao.js (bloqueio do inspetor, `ui.bloquear_inspecao`) entrou no <head>; sem
+// ele no cache, a primeira abertura sem rede perderia o bloqueio.
+const CACHE = 'phxclaw-casca-14';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
-  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css', './assets/fluxos.js', './assets/fluxos.css',
+  './assets/app.css', './assets/app.js', './assets/tema.js', './assets/inspecao.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css', './assets/fluxos.js', './assets/fluxos.css',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json', './assets/ide.js', './assets/paineis.js',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/fonte/exo2-latin.woff2',

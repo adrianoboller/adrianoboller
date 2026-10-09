@@ -78,6 +78,7 @@
     completed: () => txt('tarefas.estado.completed', 'CONCLUÍDA'),
     failed: () => txt('tarefas.estado.failed', 'FALHOU'),
     cancelled: () => txt('tarefas.estado.cancelled', 'CANCELADA'),
+    budget_exceeded: () => txt('tarefas.estado.budget_exceeded', 'ORÇAMENTO ESGOTADO'),
   };
   // Estado que esta tela nao conhece e DADO do servidor: aparece cru, nao inventado.
   const estado = s => (ESTADOS[s] ? ESTADOS[s]() : s);
@@ -105,7 +106,7 @@
   // registro escolhido no navegador abrem o detalhe.
   const ROTULOS_ESTADO = () => Object.fromEntries(Object.keys(ESTADOS).map(k => [k, estado(k)]));
   const FORMA_ESTADO = {
-    completed: 'st-ok', failed: 'st-erro', cancelled: 'st-erro',
+    completed: 'st-ok', failed: 'st-erro', cancelled: 'st-erro', budget_exceeded: 'st-erro',
     awaiting_input: 'st-espera', awaiting_approval: 'st-espera', running: 'st-anda', pending: 'st-anda',
   };
   const vazio = el('p', 'vazio');
@@ -231,7 +232,7 @@
       });
       detalhe.append(caixa);
     }
-    if (!['completed', 'failed', 'cancelled'].includes(t.status)) {
+    if (!['completed', 'failed', 'cancelled', 'budget_exceeded'].includes(t.status)) {
       acoes.append(botao('exclui', txt('tarefas.cancelar', 'CANCELAR'), () => api('POST', `tasks/${t.id}/cancel`)));
     }
     if (acoes.children.length) detalhe.append(acoes);

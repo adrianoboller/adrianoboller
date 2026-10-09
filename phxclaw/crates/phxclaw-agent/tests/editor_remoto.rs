@@ -1042,6 +1042,11 @@ async fn workspace_de_duas_raizes_busca_e_lsp_na_segunda() {
     unsafe {
         std::env::set_var("PHXCLAW_PROJETO", &projeto);
     }
+    // Raiz extra e permissao de disco: so de projeto confiado (09/10/2026). A pasta do
+    // agente fixada aqui e a que guarda a lista de confiados.
+    let agente = pasta("ws-agente");
+    phxclaw_agent::config::fixar_pasta(&agente);
+    phxclaw_agent::instrucoes::confiar(&agente, &projeto).unwrap();
     assert_eq!(
         phxclaw_agent::workspace::raizes().unwrap(),
         vec![segunda.clone()]
@@ -1090,7 +1095,7 @@ async fn workspace_de_duas_raizes_busca_e_lsp_na_segunda() {
     unsafe {
         std::env::remove_var("PHXCLAW_PROJETO");
     }
-    for p in [&projeto, &segunda, &d] {
+    for p in [&projeto, &segunda, &d, &agente] {
         let _ = std::fs::remove_dir_all(p);
     }
 }

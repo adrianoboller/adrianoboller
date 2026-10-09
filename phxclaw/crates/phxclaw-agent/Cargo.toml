@@ -75,6 +75,10 @@ phxclaw-key-provider = { path = "../phxclaw-key-provider", features = ["arquivo"
 # Medicao (`phxclaw avaliar`): a observacao e o perfil (p95, acerto) sao os do
 # ai-benchmark, para o agente e o resto da base nao terem dois agregadores. Ja no workspace.
 phxclaw-ai-benchmark = { path = "../phxclaw-ai-benchmark" }
+# A bateria entre provedores (`phxclaw avaliar --provedores`, R5): o registro pareado
+# campeao x desafiante e a janela com hash sao os do arena. Ja no workspace (nada novo no
+# Cargo.lock alem da aresta).
+phxclaw-model-arena = { path = "../phxclaw-model-arena" }
 # O config.json: catalogo das chaves, carga com origem e gravacao com revisao. Ja no workspace.
 phxclaw-config-runtime = { path = "../phxclaw-config-runtime" }
 # O workspace de varias raizes (`.phxclaw/workspace.json`), o mesmo leitor do IDE de mesa.

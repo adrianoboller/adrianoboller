@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-7383-973b-16ed1c60c3b7",
+  "agent_id": 244,
+  "name": "Cross-Border E-Commerce Specialist",
+  "macroarea": "Terceiros · Marketing",
+  "nucleus": "Marketing",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Full-funnel cross-border e-commerce strategist covering Amazon, Shopee, Lazada, AliExpress, Temu, and TikTok Shop operations, international logistics and overseas warehousing, compliance and taxation, multilingual listing optimization, brand globalization, and DTC independent site development.",
+  "responsibilities": "Takes your products from Chinese factories to global bestseller lists.",
+  "resources": "Descricao completa do papel em config/agents/agency/cross-border-e-commerce-specialist.md; ferramentas do cabecalho: nenhuma declarada (so leitura); concedidas na importacao: fs.read.",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: o tools: do cabecalho de origem e pedido, nao concessao -- a importacao concede so leitura e escrita de arquivo (sem tools: = so leitura); shell e rede so com concessao do operador por papel; sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo marketing/marketing-cross-border-ecommerce.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/cross-border-e-commerce-specialist.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "marketing",
+    "row": 133
+  }
+}

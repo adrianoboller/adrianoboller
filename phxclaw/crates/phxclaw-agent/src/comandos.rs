@@ -182,9 +182,11 @@ pub fn de_texto(nome: &str, texto: &str, origem: &str) -> Result<ComandoDeBarra,
 }
 
 /// Os comandos do projeto: `<raiz>/.phxclaw/commands/*.md` (a pasta do operador, fora do
-/// `work/` que o modelo enxerga -- a mesma regra dos hooks).
-pub fn do_projeto() -> (Vec<ComandoDeBarra>, Vec<String>) {
-    match crate::montagem::pasta_do_projeto() {
+/// `work/` que o modelo enxerga -- a mesma regra dos hooks), so de projeto CONFIADO pela
+/// lista de `pasta_do_agente`: o corpo vira o objetivo da tarefa, e o `/revisar` de um clone
+/// mandaria o modelo fazer o que o clone quisesse com as ferramentas do operador.
+pub fn do_projeto(pasta_do_agente: &std::path::Path) -> (Vec<ComandoDeBarra>, Vec<String>) {
+    match crate::montagem::pasta_confiada_para(pasta_do_agente, "commands") {
         Some(p) => ler_pasta(&p.join("commands"), "projeto"),
         None => (vec![], vec![]),
     }

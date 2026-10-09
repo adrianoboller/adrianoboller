@@ -3,8 +3,11 @@
 mod ajuda;
 mod config;
 mod contexto;
+mod evolucao;
+mod ferramenta;
 mod interacao;
 mod medicao;
+mod rota;
 
 use anyhow::{Context, Result, bail};
 use phxclaw_agent::api::{AgentFactory, ApiState, disparar_agenda, router};
@@ -26,16 +29,34 @@ const MODELO_PADRAO: &str = "ollama:qwen2.5:1.5b";
 
 fn main() -> Result<()> {
     let args = env::args().skip(1).collect::<Vec<_>>();
-    if args.is_empty() || matches!(args[0].as_str(), "-h" | "--help" | "help" | "ajuda") {
-        match args.get(1).and_then(|n| ajuda::achar(n)) {
-            Some(c) => print!("{}", ajuda::de(c, PRODUCT_CLI)),
-            None => print_help(),
+    if args.is_empty()
+        || matches!(
+            args[0].as_str(),
+            "-h" | "--help" | "--ajuda" | "help" | "ajuda"
+        )
+    {
+        match args.get(1).map(String::as_str) {
+            // Tudo: os comandos, cada ferramenta montada com os parametros do esquema e
+            // cada rota da API -- o que `docs/AGENTE_AUTONOMO.md` publica.
+            Some("--tudo" | "--all") => print!(
+                "{}",
+                ajuda::tudo(
+                    PRODUCT_NAME,
+                    VERSION,
+                    PRODUCT_CLI,
+                    &ferramenta::montar(&args[2..], MODELO_PADRAO)?
+                )
+            ),
+            Some(n) if ajuda::achar(n).is_some() => {
+                print!("{}", ajuda::de(ajuda::achar(n).unwrap(), PRODUCT_CLI))
+            }
+            _ => print_help(),
         }
         return Ok(());
     }
-    // `phxclaw COMANDO --help` mostra a ajuda daquele comando, pela mesma tabela.
+    // `phxclaw COMANDO --ajuda` mostra a ajuda daquele comando, pela mesma tabela.
     if args.len() == 2
-        && matches!(args[1].as_str(), "-h" | "--help")
+        && matches!(args[1].as_str(), "-h" | "--help" | "--ajuda")
         && let Some(c) = ajuda::achar(&args[0])
     {
         print!("{}", ajuda::de(c, PRODUCT_CLI));
@@ -50,7 +71,12 @@ fn main() -> Result<()> {
     // deixar de valer sem ninguem ver. So o `config` entra com arquivo invalido -- e ele
     // que o conserta.
     if args[0] != "config" {
-        phxclaw_agent::config::configuracao().map_err(anyhow::Error::msg)?;
+        let c = phxclaw_agent::config::configuracao().map_err(anyhow::Error::msg)?;
+        // A chave so do operador que o projeto declarou nao vale (o catalogo decide), e
+        // quem a escreveu precisa ouvir isso antes de achar que ela valeu.
+        for e in &c.ignoradas_do_projeto {
+            eprintln!("aviso: .phxclaw/config.json: {e}");
+        }
     }
     match args[0].as_str() {
         "version" | "--version" | "-V" => println!("{PRODUCT_NAME} {VERSION}"),
@@ -118,7 +144,20 @@ com PHXCLAW_IMAGEM_PROVEDOR=nanobanana (capacidade media.generate)"
         "dispositivos" | "devices" => runtime()?.block_on(dispositivos(&args[1..]))?,
         // Os segredos que so tinham variavel de ambiente: `phxclaw <servico> chave` guarda
         // a variavel no broker pelo mesmo `Servico` da ElevenLabs e da Gemini.
-        "api" => chave_de(&phxclaw_agent::chaves::API, &args[1..])?,
+        // `api chave` guarda o Bearer; `api rotas` e `api METODO ROTA` chamam o servidor
+        // de pe pelo cliente do SDK (`rota.rs`): o mesmo handler, nunca uma copia.
+        "api" => match args.get(1).map(String::as_str) {
+            Some("chave") => chave_de(&phxclaw_agent::chaves::API, &args[1..])?,
+            _ => {
+                let raiz = pasta(&args[1..]);
+                let token =
+                    token_existente(&raiz, &raiz.join("api.token"), &phxclaw_agent::chaves::API)?;
+                let c = runtime()?.block_on(rota::comando(&args[1..], token, PRODUCT_CLI))?;
+                if c != 0 {
+                    std::process::exit(c);
+                }
+            }
+        },
         // Usuarios da API: so pela CLI local, nunca por HTTP (`rbac::comando`).
         "usuario" | "user" => println!(
             "{}",
@@ -156,6 +195,20 @@ de e-mail a leem quando PHXCLAW_SMTP_PASSWORD nao esta no ambiente"
             }
         }
         "ferramentas" | "tools" => runtime()?.block_on(ferramentas())?,
+        // Qualquer ferramenta montada, com os parametros do esquema, pelo portao unico.
+        "ferramenta" | "tool" => {
+            let c =
+                runtime()?.block_on(ferramenta::comando(&args[1..], PRODUCT_CLI, MODELO_PADRAO))?;
+            if c != 0 {
+                std::process::exit(c);
+            }
+        }
+        // O completar do shell, do mesmo inventario da ajuda.
+        "completar" | "completion" => print!(
+            "{}",
+            ajuda::completar(args.get(1).map(String::as_str).unwrap_or(""), PRODUCT_CLI)
+                .map_err(anyhow::Error::msg)?
+        ),
         "revisar" | "review" => runtime()?.block_on(revisar(&args[1..]))?,
         "testes" | "tests" => runtime()?.block_on(testes(&args[1..]))?,
         "tarefa" | "task" => runtime()?.block_on(tarefa(&args[1..]))?,
@@ -176,8 +229,10 @@ de e-mail a leem quando PHXCLAW_SMTP_PASSWORD nao esta no ambiente"
         "ui" => runtime()?.block_on(medicao::ui(&args[1..]))?,
         "skill" => runtime()?.block_on(medicao::skill(&args[1..]))?,
         "skills" => contexto::skills(&args[1..])?,
+        "licenca" | "license" => contexto::licenca(&args[1..])?,
         "indexar" | "index" => contexto::indexar(&args[1..])?,
         "projeto" | "project" => contexto::projeto(&args[1..])?,
+        "evoluir" | "evolve" => runtime()?.block_on(evolucao::comando(&args[1..]))?,
         "config" => config::comando(&args[1..])?,
         other => match ajuda::sugestao(other) {
             Some(s) => bail!("comando desconhecido: {other}. Quis dizer `{PRODUCT_CLI} {s}`?"),
@@ -366,6 +421,7 @@ async fn agente(args: &[String]) -> Result<()> {
         "tokens: {} entrada, {} saida",
         fim.usage.input_tokens, fim.usage.output_tokens
     );
+    println!("{}", phxclaw_agent::custo::linha(&fim));
     if fim.status != TaskStatus::Completed {
         std::process::exit(2);
     }
@@ -525,10 +581,9 @@ async fn servir(args: &[String]) -> Result<()> {
         l.local_addr()?,
         raiz.join("api.token").display()
     );
-    let mut app = router(state).merge(gatilhos);
-    if let Some(r) = rotas_do_canal {
-        app = app.merge(r);
-    }
+    // O roteador FINAL e um so, e os cabecalhos de seguranca se aplicam nele: juntar os
+    // gatilhos e o canal DEPOIS da blindagem deixava o formulario sem moldura proibida (M5).
+    let app = phxclaw_agent::api::servidor(state, std::iter::once(gatilhos).chain(rotas_do_canal));
     axum::serve(l, app).await?;
     Ok(())
 }
@@ -538,7 +593,24 @@ async fn servir(args: &[String]) -> Result<()> {
 /// `criar_tarefa_com` da API.
 fn armar_gatilhos(raiz: &std::path::Path, state: &ApiState) -> Result<axum::Router> {
     use phxclaw_agent::gatilhos;
-    let projeto = phxclaw_agent::montagem::pasta_do_projeto();
+    use phxclaw_agent::montagem::PastaConfiada;
+    // So projeto confiado arma gatilho (a mesma confianca do `.phxclaw/config.json`): o
+    // `gatilhos.json` de um clone dispararia trabalho com as credenciais do operador.
+    let projeto = match phxclaw_agent::montagem::pasta_do_projeto_confiada(raiz) {
+        PastaConfiada::Confiada(p) => Some(p),
+        PastaConfiada::Ignorada { pasta, raiz: r } => {
+            for a in ["gatilhos.json", "HEARTBEAT.md"] {
+                if pasta.join(a).is_file() {
+                    eprintln!(
+                        "aviso: {}",
+                        phxclaw_agent::config::ignorado_por_confianca(&pasta.join(a), &r)
+                    );
+                }
+            }
+            None
+        }
+        PastaConfiada::Nenhuma => None,
+    };
     let g = match &projeto {
         Some(p) => gatilhos::Gatilhos::carregar(p).map_err(anyhow::Error::msg)?,
         None => gatilhos::Gatilhos::default(),
@@ -588,6 +660,27 @@ fn armar_gatilhos(raiz: &std::path::Path, state: &ApiState) -> Result<axum::Rout
     for p in polls {
         let sondagem = phxclaw_agent::gatilho_poll::Sondagem::new(p, raiz);
         tokio::spawn(phxclaw_agent::gatilho_poll::laco(state.clone(), sondagem));
+    }
+    // As notificacoes de recurso MCP (lista `mcp`): uma assinatura viva por gatilho, so de
+    // servidor do arquivo do operador. Sem esse arquivo, gatilho declarado e erro na subida,
+    // nao uma assinatura que nunca ouve nada.
+    let mcps = match &projeto {
+        Some(p) => phxclaw_agent::gatilho_mcp::carregar(p).map_err(anyhow::Error::msg)?,
+        None => vec![],
+    };
+    if !mcps.is_empty() {
+        let chave = phxclaw_agent::mcp::CHAVE_CONFIG;
+        let cfg = phxclaw_agent::config::caminho_de(chave).ok_or_else(|| {
+            anyhow::anyhow!(
+                "gatilhos mcp declarados sem {}",
+                phxclaw_agent::config::variavel(chave)
+            )
+        })?;
+        println!("gatilhos: {}", phxclaw_agent::gatilho_mcp::descrever(&mcps));
+        for g in mcps {
+            let a = phxclaw_agent::gatilho_mcp::Assinante::new(g, &cfg, raiz);
+            tokio::spawn(phxclaw_agent::gatilho_mcp::laco(state.clone(), a));
+        }
     }
     Ok(gatilhos::router(state.clone(), Arc::new(g)))
 }
@@ -718,24 +811,38 @@ fn token_de(
     arq: &std::path::Path,
     servico: &phxclaw_agent::chaves::Servico,
 ) -> Result<String> {
+    Ok(match token_existente(raiz, arq, servico)? {
+        Some(t) => t,
+        None => {
+            let t = phxclaw_api_gateway::generate_bearer_token();
+            phxclaw_secret_broker::write_private_file(arq, t.as_bytes())?;
+            t
+        }
+    })
+}
+
+/// O token que o servidor usaria, sem gerar um: ambiente, broker, arquivo. O `servir` gera
+/// quando nao ha; o cliente (`phxclaw api`) nao, porque token novo do lado de quem chama
+/// nao abre servidor nenhum.
+fn token_existente(
+    raiz: &std::path::Path,
+    arq: &std::path::Path,
+    servico: &phxclaw_agent::chaves::Servico,
+) -> Result<Option<String>> {
     Ok(
         match servico
             .do_ambiente_ou_broker(raiz)
             .map_err(anyhow::Error::msg)?
         {
-            Some(t) if t.len() >= 24 => t,
+            Some(t) if t.len() >= 24 => Some(t),
             Some(_) => bail!(
                 "{} precisa de pelo menos 24 caracteres",
                 servico.variaveis()[0]
             ),
-            None => match std::fs::read_to_string(arq) {
-                Ok(t) if !t.trim().is_empty() => t.trim().to_string(),
-                _ => {
-                    let t = phxclaw_api_gateway::generate_bearer_token();
-                    phxclaw_secret_broker::write_private_file(arq, t.as_bytes())?;
-                    t
-                }
-            },
+            None => std::fs::read_to_string(arq)
+                .ok()
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty()),
         },
     )
 }

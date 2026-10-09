@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-70c1-a9e0-14aca51cab52",
+  "agent_id": 312,
+  "name": "macOS Spatial/Metal Engineer",
+  "macroarea": "Terceiros · Computação Espacial",
+  "nucleus": "Spatial Computing",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Native Swift and Metal specialist building high-performance 3D rendering systems and spatial computing experiences for macOS and Vision Pro",
+  "responsibilities": "Pushes Metal to its limits for 3D rendering on macOS and Vision Pro.",
+  "resources": "Descricao completa do papel em config/agents/agency/macos-spatial-metal-engineer.md; ferramentas do cabecalho: nenhuma declarada (so leitura); concedidas na importacao: fs.read.",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: o tools: do cabecalho de origem e pedido, nao concessao -- a importacao concede so leitura e escrita de arquivo (sem tools: = so leitura); shell e rede so com concessao do operador por papel; sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo spatial-computing/macos-spatial-metal-engineer.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/macos-spatial-metal-engineer.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "spatial-computing",
+    "row": 201
+  }
+}

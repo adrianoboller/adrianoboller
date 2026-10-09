@@ -10,4 +10,6 @@ pub mod catalogo;
 pub mod gerar;
 
 pub use carga::{carregar, definir, Configuracao, Efetivo, Erro, Origem, Recusa};
-pub use catalogo::{catalogo, por_chave, por_variavel, Chave, Natureza, Referencia, Tipo};
+pub use catalogo::{
+    catalogo, por_chave, por_variavel, Alcance, Chave, Natureza, Referencia, Tipo, SO_DO_OPERADOR,
+};

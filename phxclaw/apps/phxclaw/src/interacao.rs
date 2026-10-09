@@ -103,9 +103,11 @@ pub fn resumo(store: &TaskStore, args: &[String]) -> Result<()> {
     Ok(())
 }
 
-/// `phxclaw estilos`: os embutidos e os do projeto, com a descricao.
+/// `phxclaw estilos`: os embutidos e os do projeto confiado, com a descricao -- a lista
+/// mostra o que a montagem carregaria, nao o estilo que ela ignora.
 pub fn estilos() {
-    let p = phxclaw_agent::montagem::pasta_do_projeto();
+    let agente = phxclaw_agent::config::pasta_padrao();
+    let p = phxclaw_agent::montagem::pasta_confiada_para(&agente, "estilos");
     for e in phxclaw_agent::estilos::listar(p.as_deref()) {
         println!("{:<14} {}", e.nome, e.descricao);
     }

@@ -332,6 +332,28 @@
     "api": null,
     "contato": null
   },
+  "custo": {
+    "//": [
+      "precos: Arquivo JSON da tabela de preços por modelo (moeda; entrada, saída e cache por milhão de tokens; data e fonte da cotação); vazio = custo não medido [caminho; ambiente PHXCLAW_CUSTO_PRECOS]"
+    ],
+    "precos": null
+  },
+  "decisao": {
+    "laya": {
+      "//": [
+        "credencial_nome: Nome da credencial bearer declarada no http.json (o segredo fica no broker: phxclaw credencial guardar NOME); vazio = sem Authorization [texto; ambiente PHXCLAW_DECISAO_LAYA_CREDENCIAL_NOME]",
+        "limiar: Confiança mínima (answer_confidence, 0 a 1) para a decisão do Laya valer; abaixo, a escada sobe ao próximo degrau [real; ambiente PHXCLAW_DECISAO_LAYA_LIMIAR]",
+        "modelo: Checkpoint do Laya pedido ao servidor (multilingual para português) [enum english|multilingual|typed-decisions; ambiente PHXCLAW_DECISAO_LAYA_MODELO]",
+        "prazo_ms: Prazo de cada pergunta ao laya-serve, em ms (1 a 60000); estourou, sem decisão e a escada sobe [inteiro; ambiente PHXCLAW_DECISAO_LAYA_PRAZO_MS]",
+        "url: URL base do laya-serve (decisor System 1, POST /v1/systemone); vazio = Laya desligado. Loopback e rede privada só com liberar no http.json [texto; ambiente PHXCLAW_DECISAO_LAYA_URL]"
+      ],
+      "credencial_nome": null,
+      "limiar": 0.8,
+      "modelo": "multilingual",
+      "prazo_ms": 5000,
+      "url": null
+    }
+  },
   "desktop": {
     "//": [
       "captura_tela: App de mesa: captura de tela [booleano; ambiente PHXCLAW_ENABLE_SCREEN_CAPTURE]",
@@ -455,12 +477,14 @@
       "api_url: URL por onde o editor fala com este agente (padrão: o Host da conexão do IDE) [texto; ambiente PHXCLAW_IDE_API_URL]",
       "historico_versoes_max: IDE: versões guardadas por arquivo no histórico local de gravações (.phxclaw/historico) [inteiro; ambiente PHXCLAW_IDE_HISTORICO_VERSOES_MAX]",
       "ia_ms: Teto de tempo (ms) de uma completação por IA no editor [inteiro; ambiente PHXCLAW_IDE_IA_MS]",
+      "ia_teto_tokens_hora: Teto de tokens que a completação por IA do editor gasta por hora, somadas todas (ela não roda sob tarefa e nenhum orcamento.* a alcança); acima, recusa (429); vazio: sem teto [inteiro; ambiente PHXCLAW_IDE_IA_TETO_TOKENS_HORA]",
       "ia_tokens: Teto de tokens de uma completação por IA no editor (o modelo é o do agente) [inteiro; ambiente PHXCLAW_IDE_IA_TOKENS]",
       "raizes: Raízes extras do workspace além da pasta do projeto (também em .phxclaw/workspace.json); o IDE as expõe ao terminal [lista; ambiente PHXCLAW_RAIZES]"
     ],
     "api_url": null,
     "historico_versoes_max": 50,
     "ia_ms": 6000,
+    "ia_teto_tokens_hora": null,
     "ia_tokens": 64,
     "raizes": null
   },
@@ -494,10 +518,12 @@
     "//": [
       "local: Modelo local dos papéis da equipe que a planilha roteia para o Ollama [texto; ambiente PHXCLAW_MODELO_LOCAL]",
       "padrao: Modelo padrão do agente e da API (provedor:modelo) [texto; ambiente PHXCLAW_MODELO]",
+      "roteamento: Arquivo JSON da política de roteamento e troca de provedor; vale só para o modelo rota ou rota:<spec> [caminho; ambiente PHXCLAW_MODELO_ROTEAMENTO]",
       "visao: Modelo de visão da leitura de tela [texto; ambiente PHXCLAW_MODELO_VISAO]"
     ],
     "local": null,
     "padrao": "ollama:qwen2.5:1.5b",
+    "roteamento": null,
     "visao": "qwen2.5vl:3b"
   },
   "n8n": {
@@ -511,6 +537,22 @@
       "chromium: Executável do Chromium [caminho; ambiente PHXCLAW_CHROMIUM]"
     ],
     "chromium": null
+  },
+  "orcamento": {
+    "//": [
+      "fluxo_custo: Orçamento padrão em dinheiro por execução de fluxo, na moeda da tabela de preços [real; ambiente PHXCLAW_ORCAMENTO_FLUXO_CUSTO]",
+      "fluxo_tokens: Orçamento padrão de tokens por execução de fluxo, somando todos os passos [inteiro; ambiente PHXCLAW_ORCAMENTO_FLUXO_TOKENS]",
+      "tarefa_custo: Orçamento padrão em dinheiro por tarefa, na moeda da tabela de preços (exige custo.precos) [real; ambiente PHXCLAW_ORCAMENTO_TAREFA_CUSTO]",
+      "tarefa_tokens: Orçamento padrão de tokens (entrada + saída) por tarefa; ao bater, a tarefa para em budget_exceeded [inteiro; ambiente PHXCLAW_ORCAMENTO_TAREFA_TOKENS]",
+      "teto_custo: Teto por pedido, em dinheiro: nenhum pedido passa dele; acima, a criação é recusada. Não soma pedidos diferentes: não é teto de gasto do processo [real; ambiente PHXCLAW_ORCAMENTO_TETO_CUSTO]",
+      "teto_tokens: Teto por pedido, em tokens: nenhum pedido (tarefa ou fluxo) passa dele; acima, a criação é recusada. Não soma pedidos diferentes: não é teto de gasto do processo [inteiro; ambiente PHXCLAW_ORCAMENTO_TETO_TOKENS]"
+    ],
+    "fluxo_custo": null,
+    "fluxo_tokens": null,
+    "tarefa_custo": null,
+    "tarefa_tokens": null,
+    "teto_custo": null,
+    "teto_tokens": null
   },
   "pacotes": {
     "//": [
@@ -604,9 +646,11 @@
   },
   "ui": {
     "//": [
+      "bloquear_inspecao: Bloqueia na tela o menu de contexto, F12 e os atalhos do inspetor. No navegador é dissuasão, não segurança (o menu do navegador e o view-source alcançam o mesmo); no desktop vale sempre [booleano; ambiente PHXCLAW_UI_BLOQUEAR_INSPECAO]",
       "bootstrap_css: Folha LOCAL do Bootstrap 5.3 nas telas geradas (nunca CDN); vazio = vendor/bootstrap-5.3.3/bootstrap.min.css [caminho; ambiente PHXCLAW_UI_BOOTSTRAP_CSS]",
       "dir: Pasta da interface (PWA) [caminho; ambiente PHXCLAW_UI_DIR]"
     ],
+    "bloquear_inspecao": true,
     "bootstrap_css": null,
     "dir": null
   },

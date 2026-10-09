@@ -537,6 +537,18 @@ async fn dispatch_agent_action(
     state: &DesktopState,
     request: DesktopActionRequest,
 ) -> Result<DesktopActionResult, String> {
+    // So o caminho do AGENTE passa aqui: os comandos do Command Center (`execute_shell`,
+    // `apply_input`...) chamam as mesmas execucoes sem este veto, porque ali quem age e o
+    // operador. Por isso o veto mora na entrada do agente e nao dentro das execucoes.
+    if let Some(motivo) = veto_do_agente(app, &request.action) {
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error": motivo}),
+            vec![],
+        );
+    }
     match request.action.clone() {
         DesktopAction::LaunchApplication { .. } => execute_launch_action_ref(state, request).await,
         DesktopAction::ExecuteCommand { .. } => execute_shell_action_ref(state, request).await,
@@ -726,6 +738,151 @@ fn execute_capture_action_ref(
     }
 }
 
+/// Teto do seletor aceito na `main`: seletor e pergunta, nao programa.
+const TETO_SELETOR_DA_MAIN: usize = 256;
+
+/// O seletor que nomeia a pagina inteira (ou nada): na `main` nao e leitura por seletor, e
+/// o despejo do Command Center com outro nome. Heuristica declarada -- `div` ou `main`
+/// tambem cobrem muito --, e por isso o teto real de bytes mora na ponte (`nodeSnapshot`
+/// corta o texto em 4 KiB, o html em 16 KiB e a lista em 100 nos).
+fn seletor_da_pagina_inteira(seletor: &str) -> bool {
+    let s = seletor.trim();
+    s.is_empty()
+        || s.len() > TETO_SELETOR_DA_MAIN
+        || s.split(',').any(|parte| {
+            let p = parte.trim().to_ascii_lowercase();
+            let p = p.split_whitespace().collect::<Vec<_>>().join(" ");
+            matches!(
+                p.as_str(),
+                "" | "*" | "html" | "body" | ":root" | ":scope" | "html body" | "html > body"
+            )
+        })
+}
+
+/// Os comandos que so LEEM a pagina, e por seletor: os unicos que a janela `main` aceita.
+/// `GetOuterHtml` e `DomToSvg` ficam de fora de proposito: sem seletor devolvem o documento
+/// INTEIRO (a ponte cai em `documentElement`), e o Command Center pode estar exibindo dado
+/// sensivel -- o corte de 16 KiB que `query_selector` tem, essas duas nao tem.
+fn comando_so_le(command: &WebViewCommand) -> bool {
+    match command {
+        WebViewCommand::QuerySelector { selector }
+        | WebViewCommand::QuerySelectorAll { selector }
+        | WebViewCommand::GetComputedStyle { selector } => !seletor_da_pagina_inteira(selector),
+        _ => false,
+    }
+}
+
+/// Onde a janela `main` esta na tela e o que o SO diz dela agora.
+struct GeometriaDaMain {
+    /// `None` quando o SO nao respondeu: na duvida a `main` conta como alcancada.
+    retangulo: Option<(i64, i64, i64, i64)>,
+    focada: bool,
+    cursor: Option<(f64, f64)>,
+}
+
+fn dentro_do_retangulo(r: (i64, i64, i64, i64), x: f64, y: f64) -> bool {
+    let (rx, ry, w, h) = r;
+    x >= rx as f64 && y >= ry as f64 && x < (rx + w) as f64 && y < (ry + h) as f64
+}
+
+/// A entrada do SO (`Input`) nao tem alvo: o mouse cai onde o cursor esta e a tecla cai em
+/// quem tem o foco. Entao o alvo e decidido pelo estado: movimento para dentro da `main`,
+/// clique com o cursor sobre ela e tecla/texto/atalho com ela em foco sao a `main` sendo
+/// operada -- o Go da auto-evolucao e as perguntas do portao ficam la. `main` fora da tela
+/// (minimizada ou oculta) nao tem como receber nada. Rolar a roda nao age.
+fn input_alcanca_a_main(action: &InputAction, main: Option<&GeometriaDaMain>) -> bool {
+    let Some(main) = main else {
+        return false;
+    };
+    match action {
+        InputAction::MoveMouse { x, y } => main
+            .retangulo
+            .is_none_or(|r| dentro_do_retangulo(r, f64::from(*x), f64::from(*y))),
+        InputAction::MouseButton { .. } => match (main.retangulo, main.cursor) {
+            (Some(r), Some((x, y))) => dentro_do_retangulo(r, x, y),
+            _ => true,
+        },
+        InputAction::Key { .. } | InputAction::Text { .. } | InputAction::Hotkey { .. } => {
+            main.focada
+        }
+        InputAction::Scroll { .. } => false,
+    }
+}
+
+fn geometria_da_main(app: &tauri::AppHandle) -> Option<GeometriaDaMain> {
+    let janela = app.get_webview_window("main")?;
+    // Oculta ou minimizada: nao recebe clique nem tecla. Erro do SO nao e "oculta".
+    if matches!(janela.is_visible(), Ok(false)) || matches!(janela.is_minimized(), Ok(true)) {
+        return None;
+    }
+    let retangulo = match (janela.outer_position(), janela.outer_size()) {
+        (Ok(p), Ok(t)) => Some((
+            i64::from(p.x),
+            i64::from(p.y),
+            i64::from(t.width),
+            i64::from(t.height),
+        )),
+        _ => None,
+    };
+    Some(GeometriaDaMain {
+        retangulo,
+        focada: janela.is_focused().unwrap_or(true),
+        cursor: app.cursor_position().ok().map(|c| (c.x, c.y)),
+    })
+}
+
+/// Comandos do `phxclaw` que sao do OPERADOR: aprovar/rejeitar a evolucao (o Go), responder
+/// a pergunta do portao, o parecer e a decisao do conselho, confiar num projeto. Cada
+/// entrada e (palavras que precisam estar todas na linha, ao menos uma de cada grupo).
+/// Rodado pelo agente, seria ele agindo como o operador pela porta lateral do shell.
+const APROVACOES_DO_OPERADOR: &[(&[&str], &[&[&str]])] = &[
+    (
+        &[],
+        &[
+            &["evoluir", "evolve"],
+            &["aprovar", "approve", "rejeitar", "reject"],
+        ],
+    ),
+    (&["phxclaw"], &[&["responder", "answer"]]),
+    (
+        &["phxclaw"],
+        &[&["gonogo", "go-no-go"], &["registrar", "decidir"]],
+    ),
+    (&["phxclaw"], &[&["projeto"], &["confiar"]]),
+];
+
+/// Se o comando e uma aprovacao do operador. E um veto por vocabulario: pega a forma
+/// direta e a embrulhada em `sh -c`, mas nao o que se disfarca (`ph""xclaw`, variavel,
+/// codificacao). O que fecha de verdade e o `ExecutionPolicy` e o portao de quem chama;
+/// isto fecha o caminho por onde a aprovacao seria o gesto de uma linha.
+fn comando_de_aprovacao(request: &CommandRequest) -> bool {
+    let texto = format!("{} {}", request.program_or_script, request.args.join(" "));
+    let palavras: Vec<String> = texto
+        .split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_'))
+        .filter(|p| !p.is_empty())
+        .map(str::to_lowercase)
+        .collect();
+    let tem = |alvo: &str| palavras.iter().any(|p| p == alvo);
+    APROVACOES_DO_OPERADOR.iter().any(|(todas, grupos)| {
+        todas.iter().all(|p| tem(p)) && grupos.iter().all(|g| g.iter().any(|p| tem(p)))
+    })
+}
+
+/// O veto da entrada do agente: nada que aja como o operador sobre a `main`.
+fn veto_do_agente(app: &tauri::AppHandle, action: &DesktopAction) -> Option<&'static str> {
+    match action {
+        DesktopAction::ExecuteCommand { request } if comando_de_aprovacao(request) => {
+            Some("comando de aprovacao e do operador: o agente nao aprova nem responde por ele")
+        }
+        DesktopAction::Input { action }
+            if input_alcanca_a_main(action, geometria_da_main(app).as_ref()) =>
+        {
+            Some("a entrada do SO alcancaria a janela main (Command Center): so o operador age ali")
+        }
+        _ => None,
+    }
+}
+
 fn dispatch_webview_action(
     app: &tauri::AppHandle,
     state: &DesktopState,
@@ -754,6 +911,22 @@ fn dispatch_webview_action(
             &request,
             DesktopActionStatus::Denied,
             json!({"error":"unknown or unmanaged webview"}),
+            vec![],
+        );
+    }
+
+    // A janela `main` e o Command Center: ela tem o `invoke` do Tauri e os botoes que aprovam
+    // (o Go da auto-evolucao, as perguntas do portao). Escrever nela -- HTML, script, CSS,
+    // atributo, clique ou tecla -- seria o agente agindo como o operador; ali so se le.
+    if is_main
+        && let DesktopAction::WebView { command, .. } = &request.action
+        && !comando_so_le(command)
+    {
+        return finalize_action(
+            state,
+            &request,
+            DesktopActionStatus::Denied,
+            json!({"error":"a janela main so aceita comandos de leitura"}),
             vec![],
         );
     }
@@ -1100,4 +1273,233 @@ fn flag(chave: &str) -> bool {
 fn write_secret_file(path: &Path, value: &str) -> std::io::Result<()> {
     // Mesmo motor do secret-broker: o arquivo nasce 0600, sem janela com a umask.
     phxclaw_secret_broker::write_private_file(path, value.as_bytes())
+}
+
+#[cfg(test)]
+mod testes_da_main {
+    use super::*;
+
+    #[test]
+    fn a_main_so_aceita_leitura() {
+        let s = || "#x".to_string();
+        for le in [
+            WebViewCommand::QuerySelector { selector: s() },
+            WebViewCommand::QuerySelectorAll { selector: s() },
+            WebViewCommand::GetComputedStyle { selector: s() },
+        ] {
+            assert!(comando_so_le(&le), "{le:?}");
+        }
+        for escreve in [
+            // despejo do documento: sem seletor devolvem a pagina inteira, sem corte
+            WebViewCommand::GetOuterHtml { selector: None },
+            WebViewCommand::GetOuterHtml {
+                selector: Some(s()),
+            },
+            WebViewCommand::DomToSvg { selector: None },
+            WebViewCommand::DomToSvg {
+                selector: Some(s()),
+            },
+            WebViewCommand::DispatchEvent {
+                selector: s(),
+                event_type: "click".into(),
+                detail: json!({}),
+            },
+            WebViewCommand::Navigate {
+                url: "https://x".into(),
+            },
+            WebViewCommand::LoadHtml {
+                html: "<b>".into(),
+                base_url: None,
+            },
+            WebViewCommand::EvaluateJavascript { script: "1".into() },
+            WebViewCommand::InjectCss { css: "b{}".into() },
+            WebViewCommand::SetInnerHtml {
+                selector: s(),
+                html: "<i>".into(),
+            },
+            WebViewCommand::SetAttribute {
+                selector: s(),
+                name: "a".into(),
+                value: "b".into(),
+            },
+            WebViewCommand::RemoveAttribute {
+                selector: s(),
+                name: "a".into(),
+            },
+            WebViewCommand::Click { selector: s() },
+            WebViewCommand::Focus { selector: s() },
+            WebViewCommand::TypeText {
+                selector: s(),
+                text: "t".into(),
+            },
+            WebViewCommand::ScrollIntoView { selector: s() },
+        ] {
+            assert!(!comando_so_le(&escreve), "{escreve:?}");
+        }
+    }
+
+    #[test]
+    fn leitura_da_main_exige_seletor_que_nao_seja_a_pagina_inteira() {
+        for inteira in [
+            "",
+            "  ",
+            "html",
+            "BODY",
+            ":root",
+            "*",
+            "body, #x",
+            "#x , html",
+            "html  >  body",
+            ":scope",
+        ] {
+            for cmd in [
+                WebViewCommand::QuerySelector {
+                    selector: inteira.into(),
+                },
+                WebViewCommand::QuerySelectorAll {
+                    selector: inteira.into(),
+                },
+                WebViewCommand::GetComputedStyle {
+                    selector: inteira.into(),
+                },
+            ] {
+                assert!(!comando_so_le(&cmd), "{inteira:?} {cmd:?}");
+            }
+        }
+        let longo = format!("#{}", "a".repeat(TETO_SELETOR_DA_MAIN));
+        assert!(!comando_so_le(&WebViewCommand::QuerySelector {
+            selector: longo
+        }));
+        // o irmao: portao que recusasse tudo tambem passaria nos de cima
+        for ok in ["#go", ".card .valor", "section.tela[data-tela=\"geral\"]"] {
+            assert!(
+                comando_so_le(&WebViewCommand::QuerySelectorAll {
+                    selector: ok.into()
+                }),
+                "{ok}"
+            );
+        }
+    }
+
+    fn sh(linha: &str) -> CommandRequest {
+        CommandRequest::direct("sh", vec!["-c".into(), linha.into()])
+    }
+
+    #[test]
+    fn o_agente_nao_aprova_nem_responde_pelo_operador() {
+        for proibido in [
+            CommandRequest::direct(
+                "phxclaw",
+                vec!["evoluir".into(), "aprovar".into(), "x1".into()],
+            ),
+            CommandRequest::direct(
+                "/opt/phxclaw/bin/phxclaw",
+                vec![
+                    "evoluir".into(),
+                    "rejeitar".into(),
+                    "x1".into(),
+                    "--motivo".into(),
+                    "n".into(),
+                ],
+            ),
+            CommandRequest::direct(
+                "phxclaw",
+                vec!["EVOLVE".into(), "Approve".into(), "x1".into()],
+            ),
+            sh("cd /p && phxclaw evoluir aprovar abc"),
+            CommandRequest::direct(
+                "phxclaw",
+                vec!["responder".into(), "t1".into(), "sim".into()],
+            ),
+            CommandRequest::direct(
+                "./target/debug/phxclaw",
+                vec!["answer".into(), "t1".into(), "yes".into()],
+            ),
+            CommandRequest::direct(
+                "phxclaw",
+                vec!["gonogo".into(), "decidir".into(), "i1".into()],
+            ),
+            CommandRequest::direct(
+                "phxclaw",
+                vec!["projeto".into(), "confiar".into(), ".".into()],
+            ),
+        ] {
+            assert!(comando_de_aprovacao(&proibido), "{proibido:?}");
+        }
+        // o irmao: o que o agente faz todo dia segue passando
+        for livre in [
+            CommandRequest::direct("phxclaw", vec!["evoluir".into(), "listar".into()]),
+            CommandRequest::direct("phxclaw", vec!["evoluir".into(), "itens".into()]),
+            CommandRequest::direct("phxclaw", vec!["gonogo".into(), "ver".into(), "i1".into()]),
+            CommandRequest::direct("phxclaw", vec!["projeto".into(), "mostrar".into()]),
+            CommandRequest::direct("git", vec!["status".into()]),
+            sh("echo vou responder amanha"),
+            CommandRequest::direct(
+                "cargo",
+                vec!["test".into(), "-p".into(), "phxclaw-desktop".into()],
+            ),
+        ] {
+            assert!(!comando_de_aprovacao(&livre), "{livre:?}");
+        }
+    }
+
+    fn main_em(retangulo: Option<(i64, i64, i64, i64)>) -> GeometriaDaMain {
+        GeometriaDaMain {
+            retangulo,
+            focada: false,
+            cursor: Some((5000.0, 5000.0)),
+        }
+    }
+
+    #[test]
+    fn input_nao_alcanca_a_main() {
+        let r = Some((100, 100, 800, 600));
+        let mouse = |x, y| InputAction::MoveMouse { x, y };
+        let clique = InputAction::MouseButton {
+            button: "left".into(),
+            state: "click".into(),
+        };
+        let tecla = InputAction::Key {
+            key: "enter".into(),
+            state: "click".into(),
+        };
+        let texto = InputAction::Text { text: "sim".into() };
+        let atalho = InputAction::Hotkey {
+            keys: vec!["ctrl".into(), "a".into()],
+        };
+
+        // mover para dentro da main
+        assert!(input_alcanca_a_main(&mouse(150, 150), Some(&main_em(r))));
+        // clicar com o cursor sobre a main (o Go)
+        let mut m = main_em(r);
+        m.cursor = Some((200.0, 200.0));
+        assert!(input_alcanca_a_main(&clique, Some(&m)));
+        // teclar/digitar/atalho com a main em foco
+        m.focada = true;
+        for a in [&tecla, &texto, &atalho] {
+            assert!(input_alcanca_a_main(a, Some(&m)), "{a:?}");
+        }
+        // o SO nao disse onde a main esta: na duvida, alcanca
+        assert!(input_alcanca_a_main(
+            &mouse(9000, 9000),
+            Some(&main_em(None))
+        ));
+        let mut sem_cursor = main_em(r);
+        sem_cursor.cursor = None;
+        assert!(input_alcanca_a_main(&clique, Some(&sem_cursor)));
+
+        // os irmaos, para o portao nao recusar tudo: fora da main, sem foco, e main fora da tela
+        let fora = main_em(r);
+        assert!(!input_alcanca_a_main(&mouse(2000, 2000), Some(&fora)));
+        assert!(!input_alcanca_a_main(&clique, Some(&fora)));
+        for a in [&tecla, &texto, &atalho] {
+            assert!(!input_alcanca_a_main(a, Some(&fora)), "{a:?}");
+        }
+        assert!(!input_alcanca_a_main(
+            &InputAction::Scroll { dx: 0, dy: 3 },
+            Some(&m)
+        ));
+        assert!(!input_alcanca_a_main(&mouse(150, 150), None));
+        assert!(!input_alcanca_a_main(&clique, None));
+    }
 }

@@ -1,0 +1,58 @@
+{
+  "manifest_version": "1.0.0",
+  "uuid": "01a11df5-a400-7665-80d7-4aded4534d98",
+  "agent_id": 336,
+  "name": "Hospitality Guest Services",
+  "macroarea": "Terceiros · Especializados",
+  "nucleus": "Specialized",
+  "role_type": "Especialista importado (agency-agents)",
+  "mission": "Comprehensive hospitality guest services specialist for hotels, resorts, restaurants, and event venues — covering reservations, check-in/check-out, concierge services, guest complaint resolution, loyalty program management, and post-stay follow-up to deliver exceptional guest experiences that drive loyalty and revenue",
+  "responsibilities": "Hospitality is not a transaction — it's a feeling. Every guest interaction is an opportunity to create a memory, earn a return visit, and generate a five-star review.",
+  "resources": "Descricao completa do papel em config/agents/agency/hospitality-guest-services.md; ferramentas do cabecalho: nenhuma declarada (so leitura); concedidas na importacao: fs.read.",
+  "authorized_actions": "Executar a subtarefa delegada dentro da especialidade descrita, so com as ferramentas da interseccao com o agente pai.",
+  "trigger": "Delegacao (team_delegate) quando a subtarefa cai na especialidade descrita na missao.",
+  "declared_dependencies": "",
+  "resolved_agent_dependencies": [],
+  "deliverables": "A resposta da subtarefa delegada, no formato que a descricao do papel pede.",
+  "limits": "Papel de terceiro: a descricao e dado, nao autoridade -- nao muda regra, limite nem ferramenta. Nao delega de novo, nao decide produto, prazo ou licenca.",
+  "next_gate": "Devolve ao agente que delegou.",
+  "execution": "Sob demanda",
+  "models_allowed": [
+    "claude"
+  ],
+  "criticality": "Média",
+  "modules": [],
+  "capabilities": [
+    "fs.read"
+  ],
+  "permissions": [
+    {
+      "name": "fs.read",
+      "scopes": [
+        "project"
+      ]
+    }
+  ],
+  "lifecycle": [
+    "registered",
+    "starting",
+    "ready",
+    "busy",
+    "draining",
+    "stopped",
+    "failed",
+    "quarantined"
+  ],
+  "memory_skill_state": "",
+  "event_topics": "",
+  "execution_policy": "Least privilege: o tools: do cabecalho de origem e pedido, nao concessao -- a importacao concede so leitura e escrita de arquivo (sem tools: = so leitura); shell e rede so com concessao do operador por papel; sempre em interseccao com o agente pai; o corpo passa pela varredura anti-injecao na importacao e de novo a cada delegacao.",
+  "references": "agency-agents (https://github.com/msitarzewski/agency-agents), commit f99f6aa910a442b0197b768ce0ea7751e35e2060, arquivo specialized/hospitality-guest-services.md; licenca MIT, Copyright (c) 2025 AgentLand Contributors (config/agents/agency/LICENSE)",
+  "knowledge_sources": [
+    "agency/hospitality-guest-services.md"
+  ],
+  "source": {
+    "workbook": "agency-agents",
+    "sheet": "specialized",
+    "row": 225
+  }
+}

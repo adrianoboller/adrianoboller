@@ -146,6 +146,9 @@ pub fn texto_de_medir(g: &Gravacao, somas: &[phxclaw_agent::gravacao::SomaDaTare
 }
 
 pub async fn avaliar(args: &[String]) -> Result<()> {
+    if opcao(args, "--provedores").is_some() || opcao(args, "--bateria").is_some() {
+        return bateria(args).await;
+    }
     const USO: &str = "uso: phxclaw avaliar --modelos A,B --tarefas DIR [--rodadas N] [--saida DIR] [--pasta DIR]";
     let modelos: Vec<String> = opcao(args, "--modelos")
         .context(USO)?
@@ -179,6 +182,42 @@ pub async fn avaliar(args: &[String]) -> Result<()> {
     print!("{}", avaliacao::tabela(&a));
     let arq = saida.join("resultado.json");
     std::fs::write(&arq, serde_json::to_vec_pretty(&a)?)?;
+    println!("\nresultado: {}", arq.display());
+    Ok(())
+}
+
+/// `phxclaw avaliar --provedores A,B --bateria ARQ` (R5): a mesma bateria por todos os
+/// provedores, vencedor so com os intervalos de 95% separados. A logica e o
+/// `phxclaw_agent::bateria`; as chaves dos provedores pagos entram pelo `phxclaw ...
+/// chave`, nunca por argumento nem arquivo daqui.
+async fn bateria(args: &[String]) -> Result<()> {
+    const USO: &str =
+        "uso: phxclaw avaliar --provedores A,B --bateria ARQ|DIR [--saida DIR] [--pasta DIR]";
+    let provedores: Vec<String> = opcao(args, "--provedores")
+        .context(USO)?
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let b = phxclaw_agent::bateria::ler(Path::new(&opcao(args, "--bateria").context(USO)?))
+        .map_err(anyhow::Error::msg)?;
+    let saida = opcao(args, "--saida")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| pasta(args).join("baterias").join(carimbo()));
+    let m = Montagem::new(TaskStore::new(saida.join("tasks"))?);
+    let fabrica = |modelo: &str| m.agent(modelo);
+    let r = phxclaw_agent::bateria::rodar(
+        &fabrica,
+        &provedores,
+        &b,
+        &saida,
+        &LeitorEnergia::do_sistema(),
+    )
+    .await
+    .map_err(anyhow::Error::msg)?;
+    print!("{}", phxclaw_agent::bateria::tabela(&r));
+    let arq = saida.join("resultado.json");
+    std::fs::write(&arq, serde_json::to_vec_pretty(&r)?)?;
     println!("\nresultado: {}", arq.display());
     Ok(())
 }

@@ -7,6 +7,15 @@
 //! `carregar` e `rodar` daqui. A linha que as regras conferem (`comando_de_shell`) e a
 //! MESMA que o sandbox executa, montada por `linha_de_shell` -- regra sobre `cargo` ou
 //! `npm` alcanca a tarefa como alcanca o `shell`.
+//!
+//! **De onde a ferramenta le a definicao, e quando** (defeito de 09/10/2026): as regras liam
+//! o `tarefas.json` da RAIZ do projeto e a corrida lia o da PASTA DA TAREFA, que o modelo
+//! escreve. Sem o arquivo na raiz, as regras viam so `project_task <nome>` e um `negar rm`
+//! nao alcancava a tarefa plantada. Agora a definicao vem SO da `.phxclaw/` do projeto
+//! CONFIADO (`montagem::pasta_confiada_para`, a conta dos hooks: o arquivo arma comando) e
+//! se le UMA vez, na montagem; `comando_de_shell` e `run` consultam a MESMA lista em
+//! memoria. Nada que o modelo escreva depois -- na pasta da tarefa ou na raiz -- muda a
+//! linha entre o portao e o sandbox.
 
 use crate::python::aspas;
 use crate::sistema::caminho_do_projeto;
@@ -42,7 +51,20 @@ fn grupo_padrao() -> String {
 /// arquivo ilegivel ou tarefa invalida e ERRO com o motivo, nunca «vale o padrao» calado.
 pub fn carregar(raiz: &Path) -> Result<Vec<Tarefa>, String> {
     let p = raiz.join(".phxclaw").join(ARQUIVO);
-    let texto = match std::fs::read_to_string(&p) {
+    ler(&p)
+}
+
+/// O `tarefas.json` da `.phxclaw/` do projeto CONFIADO de `pasta_do_agente`; projeto nao
+/// confiado (ou sem `.phxclaw/`) e lista vazia, com o aviso unico da montagem.
+pub fn do_projeto_confiado(pasta_do_agente: &Path) -> Result<Vec<Tarefa>, String> {
+    match crate::montagem::pasta_confiada_para(pasta_do_agente, ARQUIVO) {
+        Some(pasta) => ler(&pasta.join(ARQUIVO)),
+        None => Ok(vec![]),
+    }
+}
+
+fn ler(p: &Path) -> Result<Vec<Tarefa>, String> {
+    let texto = match std::fs::read_to_string(p) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(e) => return Err(format!("{}: {e}", p.display())),
@@ -136,11 +158,12 @@ pub fn resultado(t: &Tarefa, s: &WorkdirOutput) -> Value {
 pub struct ProjectTaskTool {
     pub bwrap: PathBuf,
     pub timeout: Duration,
-    /// A raiz do projeto do agente (`montagem::raiz_do_projeto`), de onde as regras de
-    /// comando leem a linha de verdade da tarefa ANTES de rodar: o portao do motor so tem
-    /// os argumentos, nao a pasta da tarefa. A corrida le o `.phxclaw/tarefas.json` da
-    /// pasta da tarefa, que e a unica que o sandbox ve.
-    pub projeto: Option<PathBuf>,
+    /// As tarefas, resolvidas UMA vez (`do_projeto_confiado`, na montagem): o portao do motor
+    /// (`comando_de_shell`) e a corrida (`run`) leem esta lista e nenhum arquivo, entao a
+    /// linha que as regras conferem e a que o sandbox executa. Ler de novo em qualquer um
+    /// dos dois abriria a janela entre o portao e o sandbox; ler da pasta da tarefa e ler o
+    /// que o modelo escreveu. `Err` (arquivo ilegivel) recusa toda corrida, com o motivo.
+    pub tarefas: Result<Vec<Tarefa>, String>,
 }
 
 impl ProjectTaskTool {
@@ -156,18 +179,23 @@ impl ProjectTaskTool {
         })
     }
 
-    fn tarefa_pedida(raiz: &Path, args: &Value) -> Result<Tarefa, ToolError> {
+    /// A definicao pedida, da lista resolvida na montagem. O portao e a corrida chamam
+    /// ESTA funcao: a tarefa que as regras veem e a que roda saem do mesmo lugar.
+    fn tarefa_pedida(&self, args: &Value) -> Result<&Tarefa, ToolError> {
         let nome = args
             .get("name")
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .ok_or_else(|| ToolError::InvalidArguments("falta 'name' (veja action=list)".into()))?;
-        let lista = carregar(raiz).map_err(ToolError::Failed)?;
-        lista.into_iter().find(|t| t.nome == nome).ok_or_else(|| {
+        let lista = self
+            .tarefas
+            .as_ref()
+            .map_err(|e| ToolError::Failed(e.clone()))?;
+        lista.iter().find(|t| t.nome == nome).ok_or_else(|| {
             ToolError::InvalidArguments(format!(
-                "tarefa {nome:?} nao esta em .phxclaw/{ARQUIVO} (sem arquivo valem rust_project \
-                 e python_project)"
+                "tarefa {nome:?} nao esta em .phxclaw/{ARQUIVO} do projeto confiado (a pasta da \
+                 tarefa nao declara tarefa; sem arquivo valem rust_project e python_project)"
             ))
         })
     }
@@ -177,10 +205,12 @@ impl Tool for ProjectTaskTool {
     fn spec(&self) -> ToolSpec {
         ToolSpec {
             name: "project_task".into(),
-            description: "Tasks the project declares in .phxclaw/tarefas.json ([{nome, comando, \
-args?, cwd?, grupo: build|test|run}]). action=list shows them; action=run {name} runs one in \
-the task sandbox (no network) and returns exit code, stdout and stderr. Without the file, use \
-rust_project / python_project. 'path' selects the project folder (default: task root)."
+            description: "Tasks the trusted project declares in its .phxclaw/tarefas.json \
+([{nome, comando, args?, cwd?, grupo: build|test|run}]), read once when the agent starts; a \
+tarefas.json inside the task folder is NOT read. action=list shows them; action=run {name} runs \
+one in the task sandbox (no network) and returns exit code, stdout and stderr. Without the \
+file, use rust_project / python_project. 'path' selects the folder, inside the task folder, \
+where the task runs (default: task root)."
                 .into(),
             parameters: json!({"type":"object","properties":{
                 "action":{"type":"string","enum":["list","run"]},
@@ -193,20 +223,19 @@ rust_project / python_project. 'path' selects the project folder (default: task 
         "shell.exec"
     }
     /// A linha de verdade da tarefa pedida: as regras de comando a conferem antes de rodar.
-    /// Tarefa que nao se acha devolve o nome, para a regra ver ao menos o pedido.
+    /// Tarefa que nao se acha devolve o nome, para a regra ver ao menos o pedido -- e a
+    /// corrida, lendo a MESMA lista, recusa sem criar processo.
     fn comando_de_shell(&self, args: &Value) -> Option<String> {
         if args.get("action").and_then(Value::as_str) != Some("run") {
             return None;
         }
-        let nome = args.get("name").and_then(Value::as_str).unwrap_or("");
-        let linha = self
-            .projeto
-            .as_deref()
-            .and_then(|raiz| carregar(raiz).ok())
-            .and_then(|l| l.into_iter().find(|t| t.nome == nome))
-            .map(|t| linha_de_shell(&t))
-            .unwrap_or_else(|| format!("project_task {}", aspas(nome)));
-        Some(linha)
+        Some(match self.tarefa_pedida(args) {
+            Ok(t) => linha_de_shell(t),
+            Err(_) => format!(
+                "project_task {}",
+                aspas(args.get("name").and_then(Value::as_str).unwrap_or(""))
+            ),
+        })
     }
     fn run<'a>(
         &'a self,
@@ -218,7 +247,10 @@ rust_project / python_project. 'path' selects the project folder (default: task 
             let raiz = Self::raiz(ctx, &args)?;
             match acao {
                 "list" => {
-                    let lista = carregar(&raiz).map_err(ToolError::Failed)?;
+                    let lista = self
+                        .tarefas
+                        .as_ref()
+                        .map_err(|e| ToolError::Failed(e.clone()))?;
                     let padrao = lista.is_empty();
                     Ok(ToolOutput::text(
                         json!({
@@ -230,9 +262,9 @@ rust_project / python_project. 'path' selects the project folder (default: task 
                     ))
                 }
                 "run" => {
-                    let t = Self::tarefa_pedida(&raiz, &args)?;
-                    let s = rodar(&self.bwrap, &raiz, &t, self.timeout.min(ctx.timeout)).await?;
-                    Ok(ToolOutput::text(resultado(&t, &s).to_string()))
+                    let t = self.tarefa_pedida(&args)?;
+                    let s = rodar(&self.bwrap, &raiz, t, self.timeout.min(ctx.timeout)).await?;
+                    Ok(ToolOutput::text(resultado(t, &s).to_string()))
                 }
                 outra => Err(ToolError::InvalidArguments(format!(
                     "action desconhecida: {outra} (list, run)"

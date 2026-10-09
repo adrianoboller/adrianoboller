@@ -58,6 +58,17 @@ fn mostrar(args: &[String]) -> Result<()> {
         (_, Value::String(m)) => println!("aviso: {m}"),
         _ => {}
     }
+    for e in v["arquivos"]["projeto_chaves_ignoradas"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        println!(
+            "aviso: {}: {}",
+            e["chave"].as_str().unwrap_or(""),
+            e["motivo"].as_str().unwrap_or("")
+        );
+    }
     for c in v["chaves"].as_array().into_iter().flatten() {
         let valor = if c["segredo"] == true {
             if c["origem"] == "ambiente" {

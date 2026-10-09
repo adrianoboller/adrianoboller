@@ -582,6 +582,9 @@ async fn o_minimapa_nao_serve_a_pasta_do_agente_nem_o_cofre() {
         r#"{"raizes": ["."]}"#,
     )
     .unwrap();
+    // Raiz do workspace so vale de projeto confiado (09/10/2026): sem confiar, a porta do
+    // absoluto nem abriria, e a prova deixaria de provar.
+    phxclaw_agent::instrucoes::confiar(&agente, proj.path()).unwrap();
     #[cfg(unix)]
     std::os::unix::fs::symlink(&mestra, proj.path().join("chave.txt")).unwrap();
     let (base, _dir) = subir(proj.path(), "cofre").await;

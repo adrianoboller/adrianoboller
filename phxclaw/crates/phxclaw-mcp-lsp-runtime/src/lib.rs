@@ -1000,7 +1000,14 @@ pub mod managed_runtime {
 
         async fn read_line(&mut self, max: usize) -> Result<Value, RuntimeError> {
             let mut bytes = Vec::new();
-            let read = self.stdout.read_until(b'\n', &mut bytes).await?;
+            // Com teto: sem o `take`, a linha inteira ia para a memoria ANTES da conferencia
+            // do tamanho, e um servidor que mandasse um gigabyte sem `\n` levava o agente
+            // junto. Com a escuta das notificacoes (`next_message`) o fio fica aberto por
+            // horas, e esse e o lugar unico onde toda linha do servidor e lida.
+            let read = (&mut self.stdout)
+                .take(max as u64 + 1)
+                .read_until(b'\n', &mut bytes)
+                .await?;
             if read == 0 {
                 return Err(RuntimeError::ProcessClosed);
             }
@@ -1260,6 +1267,28 @@ pub mod managed_runtime {
         pub async fn kill(mut self) -> Result<Vec<u8>, RuntimeError> {
             let child = self.child.take().ok_or(RuntimeError::SessionClosed)?;
             child.terminate(Duration::ZERO).await
+        }
+
+        /// A proxima mensagem que o servidor mandar por conta propria (a notificacao de um
+        /// recurso assinado, ou um pedido dele). Sem prazo de proposito: quem escuta espera o
+        /// servidor falar. Descartar o futuro no meio de uma linha deixa o fio sem fronteira,
+        /// entao quem o descarta descarta a sessao junto -- a escuta do agente vive numa
+        /// tarefa propria e morre inteira.
+        pub async fn next_message(&mut self) -> Result<Value, RuntimeError> {
+            let max = self.policy.max_frame_bytes;
+            self.child()?.read_line(max).await
+        }
+
+        /// Responde a um PEDIDO do servidor (o `ping` dele, ou o erro de metodo que o
+        /// cliente nao atende). So resposta: mensagem com `method` passaria por fora da
+        /// politica de metodos, que vale para o que o cliente inicia.
+        pub async fn reply(&mut self, response: &Value) -> Result<(), RuntimeError> {
+            if response.get("method").is_some() || response.get("id").is_none() {
+                return Err(RuntimeError::Protocol(
+                    "reply aceita so resposta JSON-RPC (id, sem method)".into(),
+                ));
+            }
+            self.child()?.write_line(response).await
         }
 
         /// `initialize` + `notifications/initialized`, conferindo a versao que o servidor

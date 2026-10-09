@@ -458,7 +458,7 @@
     {
       "capacidade": "shell.exec",
       "concedida": true,
-      "descricao": "Tasks the project declares in .phxclaw/tarefas.json ([{nome, comando, args?, cwd?, grupo: build|test|run}]). action=list shows them; action=run {name} runs one in the task sandbox (no network) and returns exit code, stdout and stderr. Without the file, use rust_project / python_project. 'path' selects the project folder (default: task root).",
+      "descricao": "Tasks the trusted project declares in its .phxclaw/tarefas.json ([{nome, comando, args?, cwd?, grupo: build|test|run}]), read once when the agent starts; a tarefas.json inside the task folder is NOT read. action=list shows them; action=run {name} runs one in the task sandbox (no network) and returns exit code, stdout and stderr. Without the file, use rust_project / python_project. 'path' selects the folder, inside the task folder, where the task runs (default: task root).",
       "grupo": "shell",
       "nome": "project_task"
     },
@@ -486,7 +486,7 @@
     {
       "capacidade": "team.read",
       "concedida": true,
-      "descricao": "List the 111 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
+      "descricao": "List the 391 PhxClaw team roles (id | name | macro-area | type | criticality | main capability | when to call). Filter with 'macroarea' and/or 'text'; pass 'id' (number or name) to get one role in full. Use before team_delegate to pick the right role.",
       "grupo": "team",
       "nome": "team_list"
     },

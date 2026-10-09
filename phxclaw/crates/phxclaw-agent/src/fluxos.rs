@@ -1695,8 +1695,9 @@ async fn rodar_grupo(
     let sub = match estilo {
         None => sub,
         Some(nome) => {
-            let e =
-                crate::estilos::carregar(&nome, crate::montagem::pasta_do_projeto().as_deref())?;
+            let agente = sub.store.root().parent().unwrap_or(sub.store.root());
+            let pasta = crate::montagem::pasta_confiada_para(agente, "estilos");
+            let e = crate::estilos::carregar(&nome, pasta.as_deref())?;
             let mut config = sub.config.clone();
             config.estilo = Some(e);
             com_estilo = Agent::new(
@@ -1931,10 +1932,16 @@ ou cabecalho Basic/Bearer): segredo nao entra em item gravado, so pelo broker"
 /// nome recusava com 400 eventos legitimos). Julga-se pela FORMA, no motor unico
 /// `phxclaw_types::segredo` (o mesmo separador e a mesma regra que a tarja do broker usa):
 /// prefixo de provedor com corpo, JWT, PEM, URL com senha, `Basic`/`Bearer` com valor.
+///
+/// A CHAVE do objeto tambem e dado de fora e vai inteira para o `task.json`: julgada pela
+/// mesma forma (nao pelo nome -- a chave `key` continua passando). Medido em 09/10/2026
+/// (achado M4): `{"sk-ant-api03-…": 1}` passava, porque so os valores eram olhados.
 fn valor_externo_parece_segredo(v: &Value) -> bool {
     match v {
         Value::String(s) => phxclaw_types::segredo::texto_tem_credencial(s),
-        Value::Object(o) => o.values().any(valor_externo_parece_segredo),
+        Value::Object(o) => o.iter().any(|(k, v)| {
+            phxclaw_types::segredo::texto_tem_credencial(k) || valor_externo_parece_segredo(v)
+        }),
         Value::Array(a) => a.iter().any(valor_externo_parece_segredo),
         _ => false,
     }
@@ -2250,6 +2257,26 @@ velhas a passos novos; rode de novo"
             t
         }
     };
+    // Orcamento do fluxo (R3): o do pedido ou o padrao `orcamento.fluxo_*`, no teto. Os
+    // passos sao tarefas filhas desta e cobram a conta dela a cada chamada ao modelo;
+    // dinheiro sem preco para o modelo recusa antes do primeiro passo.
+    mae.orcamento = agente
+        .config
+        .orcamento
+        .efetivo(mae.orcamento.as_ref(), crate::orcamento::Alvo::Fluxo);
+    crate::orcamento::conferir_preco(
+        mae.orcamento.as_ref(),
+        agente.config.precos.as_deref(),
+        &agente.llm.provedores(),
+    )
+    .map_err(|e| format!("fluxo '{}': {e}", fluxo.nome))?;
+    let conta = crate::orcamento::abrir(
+        &mae.id,
+        mae.parent.as_deref(),
+        crate::orcamento::Alvo::Fluxo,
+        mae.orcamento.clone(),
+        mae.gasto.clone().unwrap_or_default(),
+    );
     mae.status = TaskStatus::Running;
     mae.error = None;
     mae.question = None;
@@ -2290,6 +2317,8 @@ velhas a passos novos; rode de novo"
     let mut feitos: Vec<Resultado> = Vec::new();
     let mut tentativas: BTreeMap<String, u16> = BTreeMap::new();
     let mut estourou = false;
+    // O orcamento do fluxo bateu (um passo gastou o que faltava): a proxima onda nao sai.
+    let mut sem_orcamento: Option<String> = None;
     // Um passo `esperar` nao vencido para o fluxo no fim da onda em que apareceu.
     let mut parou_esperando = false;
     loop {
@@ -2308,6 +2337,11 @@ velhas a passos novos; rode de novo"
                 tokio::time::sleep(Duration::from_millis(25)).await;
                 continue;
             }
+            break;
+        }
+        // So quando ha trabalho a sair: o fluxo que terminou exatamente no teto concluiu.
+        if let Err(e) = conta.conferir() {
+            sem_orcamento = Some(e.0);
             break;
         }
         // Separa a onda: agentes vao juntos pelo laco unico; ferramentas, pelo portao; nos
@@ -2833,6 +2867,7 @@ velhas a passos novos; rode de novo"
             formato: FORMATO_RELATORIO,
             ate: ate.map(str::to_string),
         };
+        mae.gasto = Some(conta.gasto());
         gravar_relatorio(agente, &ledger, &mut mae, &progresso);
         if parou_esperando {
             break;
@@ -2846,17 +2881,21 @@ velhas a passos novos; rode de novo"
         if !feitos.iter().any(|r| r.id == p.id) {
             let estado = if parou_esperando {
                 "pendente"
-            } else if estourou {
+            } else if estourou || sem_orcamento.is_some() {
                 "falhou"
             } else {
                 "bloqueado"
             };
             feitos.push(Resultado {
-                saida: if estourou && !parou_esperando {
+                saida: if parou_esperando {
+                    String::new()
+                } else if estourou {
                     format!(
                         "teto do fluxo ({} ms) estourou antes de rodar",
                         fluxo.teto_ms
                     )
+                } else if let Some(m) = &sem_orcamento {
+                    format!("não rodou: {m}")
                 } else {
                     String::new()
                 },
@@ -2963,8 +3002,20 @@ velhas a passos novos; rode de novo"
         passos: feitos,
         ate: ate.map(str::to_string),
     };
+    // O passo que bateu o orcamento do fluxo falha ele mesmo (a tarefa filha para em
+    // `budget_exceeded`), e o resto fica bloqueado sem ninguem passar pela conferencia do
+    // laco: o fluxo que nao concluiu com a conta estourada parou POR ela.
+    if !sucesso
+        && sem_orcamento.is_none()
+        && let Err(e) = conta.conferir()
+    {
+        sem_orcamento = Some(e.0);
+    }
+    mae.gasto = Some(conta.gasto());
     mae.status = if parou_esperando {
         TaskStatus::AwaitingInput
+    } else if sem_orcamento.is_some() {
+        TaskStatus::BudgetExceeded
     } else if sucesso {
         TaskStatus::Completed
     } else {
@@ -2990,6 +3041,8 @@ velhas a passos novos; rode de novo"
     } else if !sucesso {
         mae.error = Some(if estourou {
             format!("teto do fluxo ({} ms) estourou", fluxo.teto_ms)
+        } else if let Some(m) = sem_orcamento {
+            m
         } else {
             "passo falhou ou ficou bloqueado".into()
         });

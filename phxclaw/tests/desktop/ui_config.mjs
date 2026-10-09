@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cabecalhosDaUi, avisoDoCoopSemTls, ROTA_POLITICA, POLITICA_PADRAO } from './seguranca.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -21,6 +22,8 @@ const UI = resolve(process.argv[2] || join(RAIZ, 'apps/phxclaw-ui'));
 const OUT = join(AQUI, 'out');
 mkdirSync(OUT, { recursive: true });
 const ORIGEM = 'http://phxclaw.local';
+// A tela sob os cabecalhos que o agente manda (pwa.rs): violacao de CSP e erro de console.
+const CABECALHOS = cabecalhosDaUi();
 const TIPOS = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png' };
 const VISTA = JSON.parse(readFileSync(join(AQUI, 'dados/config_vista.json'), 'utf8'));
 const fab = JSON.parse(readFileSync(join(UI, 'assets/textos.json'), 'utf8')).textos;
@@ -81,20 +84,21 @@ async function abrir(browser, st, { token = 'token-de-teste', ponte = false } = 
   page.on('pageerror', e => erros.push(String(e)));
   // 409 e 422 fazem parte do contrato: o navegador os registra como «Failed to load
   // resource», que nao e erro de JavaScript.
-  page.on('console', m => { if (m.type() === 'error' && !/Failed to load resource: the server responded with a status of (403|409|422)/.test(m.text())) erros.push(m.text()); });
+  page.on('console', m => { if (m.type() === 'error' && !avisoDoCoopSemTls(m.text()) && !/Failed to load resource: the server responded with a status of (403|409|422)/.test(m.text())) erros.push(m.text()); });
   await page.route(`${ORIGEM}/**`, route => {
+    if (new URL(route.request().url()).pathname === ROTA_POLITICA) return route.fulfill({ status: 200, contentType: 'application/json', headers: CABECALHOS, body: POLITICA_PADRAO });
     const req = route.request();
     const caminho = decodeURIComponent(new URL(req.url()).pathname);
     if (caminho === '/v1/config') {
-      if (ponte) return route.fulfill({ status: 403, contentType: 'application/json', body: '{"error":"rota fora do controle remoto"}' });
-      if (req.headers().authorization !== `Bearer ${token}`) return route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"token"}' });
+      if (ponte) return route.fulfill({ headers: CABECALHOS, status: 403, contentType: 'application/json', body: '{"error":"rota fora do controle remoto"}' });
+      if (req.headers().authorization !== `Bearer ${token}`) return route.fulfill({ headers: CABECALHOS, status: 401, contentType: 'application/json', body: '{"error":"token"}' });
       const [s, corpo] = st.tratar(req.method(), req.postData() ? JSON.parse(req.postData()) : null, req.headers()['if-match']);
-      return route.fulfill({ status: s, contentType: 'application/json', body: JSON.stringify(corpo) });
+      return route.fulfill({ headers: CABECALHOS, status: s, contentType: 'application/json', body: JSON.stringify(corpo) });
     }
-    if (caminho.startsWith('/v1/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    if (caminho.startsWith('/v1/')) return route.fulfill({ headers: CABECALHOS, status: 200, contentType: 'application/json', body: '[]' });
     const arq = join(UI, caminho === '/' ? 'index.html' : caminho);
-    if (!arq.startsWith(UI) || !existsSync(arq)) return route.fulfill({ status: 404, body: 'nao existe' });
-    return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream' });
+    if (!arq.startsWith(UI) || !existsSync(arq)) return route.fulfill({ headers: CABECALHOS, status: 404, body: 'nao existe' });
+    return route.fulfill({ headers: CABECALHOS, status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream' });
   });
   await page.addInitScript(t => { try { localStorage.setItem('phxclaw.token', t); } catch { /* */ } }, token);
   await page.goto(`${ORIGEM}/index.html?screen=dashboard#config`);

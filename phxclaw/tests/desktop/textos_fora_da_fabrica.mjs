@@ -156,7 +156,7 @@ function registrar(estado, lista) {
 // A API de tarefas falsa: uma tarefa em cada estado, com plano, pergunta, passos, erro e
 // artefato -- texto que so aparece com a tarefa num estado tambem e texto. Todo campo e
 // DADO (vem do servidor), entao vai como "§".
-const ESTADOS_DE_TAREFA = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled'];
+const ESTADOS_DE_TAREFA = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled', 'budget_exceeded'];
 const tarefaFalsa = (s, i) => ({
   id: `t${i}`, objective: '§', status: s, model: '§', created_at: `2026-10-01T00:00:0${i}Z`, updated_at: '§',
   plan: ['§'], steps: [{ n: 1, kind: '§', tool: null, outcome: 'ok', summary: '§' }, { n: 2, kind: '§', tool: '§', outcome: 'erro', summary: '§' }],

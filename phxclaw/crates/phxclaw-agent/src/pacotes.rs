@@ -9,13 +9,16 @@
 //! subsistemas ja sabem isolar.
 //!
 //! O que entra no agente, e por qual porta de cada subsistema (nenhuma e nova):
-//! - **servidores MCP**, pela MESMA subida do `PHXCLAW_MCP_CONFIG` (`mcp::carregar_config`),
-//!   com `${CLAUDE_PLUGIN_ROOT}` trocado pela raiz do pacote;
+//! - **servidores MCP**, pela MESMA subida do `PHXCLAW_MCP_CONFIG`
+//!   (`mcp::carregar_config_de_pacote`), com `${CLAUDE_PLUGIN_ROOT}` trocado pela raiz do
+//!   pacote e a capacidade `mcp.<pacote>.<servidor>`, que o operador concede a parte;
 //! - **comandos** (`commands/*.md`), que viram comandos de barra (`comandos.rs`), depois
 //!   dos do projeto -- nome repetido fica com o projeto;
 //! - **skills** (`skills/*/SKILL.md`), pelo importador de skills (`importar_skills`): a
-//!   mesma varredura anti-injecao, o mesmo `ORIGEM.json` com o SHA-256, e a licenca do
-//!   `plugin.json` registrada ao lado;
+//!   mesma varredura anti-injecao, o mesmo `ORIGEM.json` com o SHA-256, e a mesma porta de
+//!   licenca (`licenca`), subindo ate a raiz do pacote: o `license` do `plugin.json` e o
+//!   `LICENSE` da raiz entram na conta, copyleft e desconhecida ficam de fora com aviso, e a
+//!   compativel entra com o texto em `LICENCA.txt`;
 //! - **hooks** (`hooks/hooks.json`), somados aos do projeto (`hooks::somar`) com a raiz do
 //!   pacote em `/hooks` -- e so chegam aqui porque a assinatura da pasta inteira ja
 //!   passou: hook de pacote sem assinatura valida nao existe para o agente;
@@ -52,7 +55,8 @@ pub struct Pacote {
     /// O `hooks.json` do pacote (eventos do Claude Code); `integrar` o liga.
     pub hooks: Option<Value>,
     pub mcp: ConfigMcp,
-    /// A licenca declarada no `plugin.json` (vai para o `ORIGEM.json` das skills).
+    /// A licenca declarada no `plugin.json`, como veio. Quem decide se o texto do pacote pode
+    /// ser copiado e a porta de licenca (`licenca::conferir`), que le o mesmo campo.
     pub licenca: Option<String>,
 }
 
@@ -166,6 +170,38 @@ fn traduzir_mcp(v: &Value, raiz: &Path) -> Result<ConfigMcp, String> {
     Ok(ConfigMcp { servidores })
 }
 
+/// O nome de pacote vira a capacidade `mcp.<pacote>.<servidor>` pela `normalize_mcp_name`,
+/// que troca tudo fora de `[A-Za-z0-9_-]` por `_`. Se o nome aceitasse `.`, `foo.bar` e
+/// `foo_bar` dariam a MESMA capacidade e o operador que concedeu `mcp.foo_bar.x` a um
+/// estaria concedendo ao outro. O conserto e tirar do alfabeto do nome o que a normalizacao
+/// destroi: nesse alfabeto ela e a identidade, logo injetiva por construcao.
+pub fn nome_de_pacote_valido(n: &str) -> bool {
+    !n.is_empty()
+        && n.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+}
+
+/// Reserva a chave de capacidade de um pacote, ou recusa dizendo com quem ela colide.
+/// Defesa de segunda linha: mesmo com o alfabeto fechado, DUAS pastas podem declarar o
+/// mesmo `name` no `plugin.json` (a pasta nao e o nome), e a segunda herdaria a concessao
+/// da primeira. A chave e a que a capacidade usa de verdade, nao o nome cru -- se o
+/// alfabeto um dia abrir, esta checagem continua cobrindo a colisao.
+fn reservar_nome(
+    vistos: &mut BTreeMap<String, String>,
+    nome: &str,
+    origem: &str,
+) -> Result<(), String> {
+    let chave = phxclaw_mcp_lsp_runtime::normalize_mcp_name(nome.trim());
+    if let Some(outro) = vistos.get(&chave) {
+        return Err(format!(
+            "o nome {nome:?} da a mesma capacidade mcp.{chave}.* de {outro}: dois pacotes nao \
+dividem concessao; remova um dos dois"
+        ));
+    }
+    vistos.insert(chave, origem.to_string());
+    Ok(())
+}
+
 fn ler_json(p: &Path) -> Result<Value, String> {
     serde_json::from_str(&std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))?)
         .map_err(|e| format!("{}: {e}", p.display()))
@@ -183,12 +219,8 @@ pub fn ler(dir: &Path, trust: &TrustStore) -> Result<Pacote, String> {
     let nome = m
         .get("name")
         .and_then(Value::as_str)
-        .filter(|n| {
-            !n.is_empty()
-                && n.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-        })
-        .ok_or("plugin.json sem 'name' valido")?
+        .filter(|n| nome_de_pacote_valido(n))
+        .ok_or("plugin.json sem 'name' valido (so letras ASCII, digitos, '-' e '_')")?
         .to_string();
     phxclaw_plugin_registry::pasta::verificar_pasta(&raiz, &nome, trust)
         .map_err(|e| format!("assinatura do pacote {nome}: {e}"))?;
@@ -235,9 +267,11 @@ pub fn ler(dir: &Path, trust: &TrustStore) -> Result<Pacote, String> {
     })
 }
 
-/// As ferramentas MCP do pacote, pela mesma subida do `PHXCLAW_MCP_CONFIG`.
+/// As ferramentas MCP do pacote, pela mesma subida do `PHXCLAW_MCP_CONFIG`, com a
+/// capacidade no espaco do pacote (`mcp.<pacote>.<servidor>`): servidor de pacote com o nome
+/// de um do operador nao herda a concessao dele.
 pub fn ferramentas(p: &Pacote) -> (Vec<Arc<dyn Tool>>, Vec<String>) {
-    crate::mcp::carregar_config(&p.mcp, &p.raiz)
+    crate::mcp::carregar_config_de_pacote(&p.mcp, &p.raiz, &p.nome)
 }
 
 /// O primeiro paragrafo nao vazio de um texto, para a missao de um subagente sem
@@ -256,8 +290,12 @@ fn primeiro_paragrafo(corpo: &str) -> String {
 }
 
 /// Capacidades de um subagente a partir dos nomes de ferramenta do Claude Code
-/// (`tools: Read, Write, Bash`): so o que a casa sabe mapear; o resto e aviso.
-fn capacidades_das_ferramentas(tools: &[String], avisos: &mut Vec<String>) -> Vec<String> {
+/// (`tools: Read, Write, Bash`): so o que a casa sabe mapear; o resto e aviso. O importador
+/// do agency-agents (`importar_papeis`) usa esta mesma tabela: duas divergiriam.
+pub(crate) fn capacidades_das_ferramentas(
+    tools: &[String],
+    avisos: &mut Vec<String>,
+) -> Vec<String> {
     let mut caps = std::collections::BTreeSet::new();
     for t in tools {
         let cap = match t.trim().to_ascii_lowercase().as_str() {
@@ -288,6 +326,17 @@ fn papel_de(
     indice: u32,
 ) -> Result<(AgentManifest, Vec<String>), String> {
     use crate::importar_skills::{Valor, ler_cabecalho, separar};
+    // O corpo vira `responsibilities` e o `prompt_do_papel` o imprime: e texto de terceiro
+    // como o dos papeis importados, e passa pela MESMA varredura (antes do cabecalho) e
+    // pelo MESMO teto. Reprovado, o papel nao entra -- fica so o aviso de bloqueio.
+    let achados = crate::instrucoes::varrer(texto);
+    if !achados.is_empty() {
+        return Err(format!(
+            "[BLOCKED: {}/agents/{nome_arquivo}.md contained potential prompt injection ({}). Content not loaded.]",
+            pacote.nome,
+            achados.join(", ")
+        ));
+    }
     let (cab, corpo) = separar(texto)?;
     let cab = cab.map(ler_cabecalho).unwrap_or_default();
     let texto_de = |k: &str| match cab.get(k) {
@@ -330,7 +379,10 @@ fn papel_de(
         "nucleus": pacote.nome,
         "role_type": "subagente de pacote",
         "mission": missao,
-        "responsibilities": corpo.trim(),
+        "responsibilities": phxclaw_agent_core::truncate_for_model(
+            corpo.trim(),
+            crate::equipe::TETO_DESCRICAO_DO_PAPEL,
+        ),
         "execution": "local",
         "models_allowed": texto_de("model").map(|m| vec![m]).unwrap_or_default(),
         "capabilities": capacidades,
@@ -360,20 +412,20 @@ pub fn integrar(p: &Pacote, skills: Option<&SkillFolder>, bwrap: Option<PathBuf>
         skills,
         componente(&p.raiz, &Value::Null, "skills", "skills"),
     ) {
+        // A porta sobe ate a raiz do pacote (e nao ate um `.git` acima da pasta de pacotes):
+        // e la que moram o `plugin.json` e o `LICENSE` de quem escreveu. Desconhecida nao se
+        // aceita aqui -- carga de pacote nao tem operador presente para decidir.
         let r = crate::importar_skills::importar(
             &dir,
             destino,
-            &crate::importar_skills::Opcoes { com_scripts: false },
+            &crate::importar_skills::Opcoes {
+                com_scripts: false,
+                limite_licenca: Some(p.raiz.clone()),
+                aceitar_licenca_desconhecida: false,
+            },
         );
         for i in &r.importadas {
             c.skills.push((i.nome.clone(), i.sha256.clone()));
-            if let Some(l) = &p.licenca {
-                // A licenca do pacote fica ao lado da origem da skill.
-                let _ = std::fs::write(
-                    destino.root().join(&i.nome).join("LICENCA.txt"),
-                    format!("pacote {} {}: {l}\n", p.nome, p.versao),
-                );
-            }
         }
         for (arq, m) in &r.recusadas {
             c.avisos
@@ -447,6 +499,8 @@ pub fn do_ambiente_completo(
         .filter(|p| p.is_dir())
         .collect();
     pastas.sort();
+    // chave de capacidade -> pasta que a ocupou primeiro (ordem alfabetica das pastas)
+    let mut vistos: BTreeMap<String, String> = BTreeMap::new();
     for p in pastas {
         if p.file_name()
             .is_some_and(|n| n.to_string_lossy().starts_with('.'))
@@ -454,7 +508,9 @@ pub fn do_ambiente_completo(
             // `.instalando-*` da loja: pacote pela metade nao e pacote.
             continue;
         }
-        match ler(&p, &trust) {
+        match ler(&p, &trust).and_then(|pac| {
+            reservar_nome(&mut vistos, &pac.nome, &p.display().to_string()).map(|()| pac)
+        }) {
             Ok(pac) => {
                 let (t, avisos) = ferramentas(&pac);
                 for a in avisos {
@@ -471,4 +527,57 @@ pub fn do_ambiente_completo(
         }
     }
     (tools, componentes)
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    #[test]
+    fn nome_que_a_normalizacao_funde_nao_e_nome() {
+        use phxclaw_mcp_lsp_runtime::normalize_mcp_name as norm;
+        // o defeito: estes dois eram nomes validos e davam a mesma capacidade
+        assert_eq!(norm("foo.bar"), norm("foo_bar"));
+        assert!(!nome_de_pacote_valido("foo.bar"));
+        assert!(nome_de_pacote_valido("foo_bar"));
+        for ruim in ["", "a b", "a/b", "a.b", "..", "ç", "a:b"] {
+            assert!(!nome_de_pacote_valido(ruim), "{ruim:?}");
+        }
+        // o irmao: o que o catalogo usa hoje segue valendo, e a normalizacao e identidade nele
+        for bom in ["pacote-teste", "foo_bar", "Foo-Bar_2"] {
+            assert!(nome_de_pacote_valido(bom), "{bom}");
+            assert_eq!(norm(bom), bom);
+        }
+    }
+
+    #[test]
+    fn ler_recusa_o_nome_com_ponto_antes_de_qualquer_outra_coisa() {
+        let d = std::env::temp_dir().join(format!("pacotes-nome-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join(".claude-plugin")).unwrap();
+        std::fs::write(
+            d.join(".claude-plugin/plugin.json"),
+            r#"{"name":"foo.bar","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        let trust = TrustStore::from_json(r#"{"version":"1","signers":[]}"#).unwrap();
+        let e = ler(&d, &trust).unwrap_err();
+        let _ = std::fs::remove_dir_all(&d);
+        // a recusa e a do NOME, nao a da assinatura que viria depois
+        assert!(e.contains("'name' valido"), "{e}");
+    }
+
+    #[test]
+    fn dois_pacotes_na_mesma_capacidade_a_segunda_e_recusada() {
+        let mut vistos = BTreeMap::new();
+        reservar_nome(&mut vistos, "foo_bar", "/p/a").unwrap();
+        let e = reservar_nome(&mut vistos, "foo_bar", "/p/b").unwrap_err();
+        assert!(e.contains("/p/a") && e.contains("mcp.foo_bar.*"), "{e}");
+        // se o alfabeto do nome um dia abrir, a colisao pela normalizacao tambem cai aqui
+        let e = reservar_nome(&mut vistos, "foo.bar", "/p/c").unwrap_err();
+        assert!(e.contains("/p/a"), "{e}");
+        // o irmao: nome diferente reserva normalmente
+        reservar_nome(&mut vistos, "foo_baz", "/p/d").unwrap();
+        reservar_nome(&mut vistos, "foo-bar", "/p/e").unwrap();
+    }
 }

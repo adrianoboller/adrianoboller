@@ -472,9 +472,9 @@ async fn project_task_roda_a_tarefa_definida_e_a_regra_nega_o_comando() {
     )
     .unwrap();
     let t = ProjectTaskTool {
-        bwrap: b,
+        bwrap: b.clone(),
         timeout: Duration::from_secs(30),
-        projeto: Some(d.clone()),
+        tarefas: carregar(&d),
     };
     let l = rodar(&t, &c, json!({"action":"list"})).await;
     assert_eq!(l["tarefas"].as_array().unwrap().len(), 2, "{l}");
@@ -515,7 +515,12 @@ async fn project_task_roda_a_tarefa_definida_e_a_regra_nega_o_comando() {
     // Sem arquivo: lista vazia e o padrao nomeado. Arquivo invalido: erro com o motivo.
     let vazio = tmp("sem-tarefas");
     assert_eq!(carregar(&vazio).unwrap(), vec![]);
-    let l = rodar(&t, &ctx_em(&vazio), json!({"action":"list"})).await;
+    let sem = ProjectTaskTool {
+        bwrap: b,
+        timeout: Duration::from_secs(30),
+        tarefas: carregar(&vazio),
+    };
+    let l = rodar(&sem, &ctx_em(&vazio), json!({"action":"list"})).await;
     assert_eq!(
         l["padrao"],
         json!(["rust_project", "python_project"]),
@@ -528,6 +533,12 @@ async fn project_task_roda_a_tarefa_definida_e_a_regra_nega_o_comando() {
     .unwrap();
     let e = carregar(&d).unwrap_err();
     assert!(e.contains("grupo \"deploy\""), "{e}");
+    // A ferramenta resolveu a lista UMA vez: o arquivo trocado depois nao muda a linha que
+    // as regras veem nem a que roda (as duas saem da mesma lista).
+    let linha = linha_para_as_regras(&t, &json!({"action":"run","name":"ola"})).unwrap();
+    assert_eq!(linha, "'echo' 'ola mundo'");
+    let r = rodar(&t, &c, json!({"action":"run","name":"ola"})).await;
+    assert_eq!(r["stdout"], "ola mundo\n", "{r}");
     let _ = std::fs::remove_dir_all(&d);
     let _ = std::fs::remove_dir_all(&vazio);
 }

@@ -1705,6 +1705,7 @@ fn excluir_worktrees(workdir: &Path, repo: &str, caminho: &str) -> Result<(), To
 /// existe, como o `shell`), busca, caderno, pontos de restauracao e revisao.
 pub fn ferramentas_de_codigo(
     store: &crate::tarefa::TaskStore,
+    pasta_do_agente: &Path,
     llm: std::sync::Arc<dyn phxclaw_agent_core::Llm>,
 ) -> Vec<std::sync::Arc<dyn Tool>> {
     use std::sync::Arc;
@@ -1733,12 +1734,12 @@ pub fn ferramentas_de_codigo(
     if let Some(b) = bwrap {
         v.push(Arc::new(GitTool::leitura(b.clone())));
         v.push(Arc::new(GitTool::escrita(b.clone())));
-        // Tarefas do projeto no mesmo bwrap do shell; a raiz do projeto e de onde as
-        // regras de comando leem a linha de verdade.
+        // Tarefas do projeto CONFIADO no mesmo bwrap do shell, resolvidas aqui uma vez: as
+        // regras de comando e a corrida leem a mesma lista.
         v.push(Arc::new(crate::projeto_tarefas::ProjectTaskTool {
             bwrap: b.clone(),
             timeout: Duration::from_secs(600),
-            projeto: crate::montagem::raiz_do_projeto(),
+            tarefas: crate::projeto_tarefas::do_projeto_confiado(pasta_do_agente),
         }));
         v.push(Arc::new(WorktreeTool {
             bwrap: b,

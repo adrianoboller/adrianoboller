@@ -333,7 +333,69 @@ SHA-256 antes de rodar; capacidade media.stt fora do padrao. DIVIDA: levar ao bw
 pelo `phxclaw avaliar`: precisa do /dev/nvidia* do hospedeiro, que o bwrap nao expoe. Argumentos \
 fixos, sem entrada do modelo, env_clear; so roda se o binario existir no PATH.",
     ),
+    (
+        "evolucao.rs",
+        "Command::new(\"git\")",
+        "`git_hospedeiro`: so no repositorio do PRODUTO (confiavel) -- `rev-parse` da raiz e \
+das refs, o `clone` raso que faz nascer o clone e o `fetch` do bundle que cria a ref \
+`evolucao/`. O sandbox nao ve o produto, e e de proposito. O verbo se confere dentro da funcao \
+(so rev-parse/clone/fetch), ramo e repositorio vindos do registro passam por \
+`conferir_registro`, e `git_hospedeiro_so_no_produto` confere o primeiro argumento de cada \
+chamada. Todo git no CLONE vai pelo `rodar_git`.",
+    ),
+    (
+        "evolucao.rs",
+        "Command::new(\\\"sh\\\")",
+        "fixture de `conteudo_recusado_mesmo_dentro_do_permitido` (#[cfg(test)]): TEXTO de diff \
+que o portao do alcance tem de recusar, dentro de um literal; nao cria processo.",
+    ),
+    (
+        "evolucao.rs",
+        "Command::new(\\\"true\\\")",
+        "fixture de `teste_comum_e_calculadora_pura_passam` (#[cfg(test)]): TEXTO de um teste \
+de crate que o portao do alcance aceita, dentro de um literal; nao cria processo.",
+    ),
 ];
+
+/// O primeiro argumento de toda chamada que roda git no hospedeiro em `evolucao.rs`: so o
+/// repositorio do produto. O clone, a pasta da tarefa e qualquer caminho montado a partir
+/// dela ficam de fora -- o agente escreveu la (o `.git/config` dele declara o que quiser).
+const GIT_DO_HOSPEDEIRO_SO_EM: &[&str] = &[
+    "projeto",
+    "&c.projeto",
+    "Path::new(&topo)",
+    "Path::new(&r.repositorio)",
+    "repo",
+];
+
+#[test]
+fn git_hospedeiro_so_no_produto() {
+    let fonte = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/evolucao.rs");
+    let todo = std::fs::read_to_string(fonte).unwrap();
+    // O modulo de testes chama `git_hospedeiro` com caminho falso para provar a recusa do
+    // verbo; a guarda e do codigo que roda.
+    let texto = &todo[..todo.find("#[cfg(test)]\nmod tests").unwrap_or(todo.len())];
+    let mut vistas = 0;
+    let mut fora = Vec::new();
+    for porta in ["git_hospedeiro(", "ramo_existe(", "buscar_ramo("] {
+        for (i, _) in texto.match_indices(porta) {
+            if texto[..i].ends_with("fn ") {
+                continue;
+            }
+            let resto = &texto[i + porta.len()..];
+            let primeiro = resto[..resto.find(',').unwrap()].trim();
+            vistas += 1;
+            if !GIT_DO_HOSPEDEIRO_SO_EM.contains(&primeiro) {
+                fora.push(format!("{porta}{primeiro}, ..."));
+            }
+        }
+    }
+    assert!(vistas >= 8, "a varredura nao achou as chamadas ({vistas})");
+    assert!(
+        fora.is_empty(),
+        "git no hospedeiro fora do repositorio do produto (use o rodar_git): {fora:?}"
+    );
+}
 
 /// Maneiras de criar processo que a guarda procura. `transcribe_verified`,
 /// `Browser::launch` e `*StdioSession::spawn` sao portas indiretas: o processo nasce
@@ -751,4 +813,133 @@ fn chave_de_modelo_no_ambiente_nao_vale_sem_o_broker() {
     unsafe {
         std::env::remove_var("OPENAI_API_KEY");
     }
+}
+
+// ------------------------------------------------------- a `.phxclaw/` do projeto e a confianca
+
+/// Quem le a `.phxclaw/` do projeto SEM julgar a confianca, e por que pode. Todo o resto
+/// passa por `montagem::pasta_confiada_para` (ou `pasta_do_projeto_confiada`): hooks,
+/// comandos, estilos, workspace e gatilhos de um clone executam, concedem ou falam com o
+/// modelo (achados M4 e de 09/10/2026). `(raiz, arquivo, trecho, motivo)`.
+const LEITURAS_SEM_CONFIANCA: &[(&str, &str, &str, &str)] = &[
+    (
+        "crates/phxclaw-agent/src",
+        "montagem.rs",
+        "Some(raiz_do_projeto()?.join(\".phxclaw\"))",
+        "a definicao de `pasta_do_projeto`: so localiza a pasta, quem a le e que julga.",
+    ),
+    (
+        "crates/phxclaw-agent/src",
+        "montagem.rs",
+        "let Some(pasta) = pasta_do_projeto() else",
+        "`pasta_do_projeto_confiada`, o proprio juiz: le a pasta para julga-la pela lista de \
+confiados.",
+    ),
+    (
+        "crates/phxclaw-agent/src",
+        "montagem.rs",
+        "let arq = pasta_do_projeto()?.join(\"regras.json\");",
+        "`regras_do_projeto`: regra de comando so APERTA (sem arquivo o portao e `permitir` e \
+`avaliar` toma a mais estrita); exigir confianca tiraria o `negar` de quem ja o tinha.",
+    ),
+    (
+        "crates/phxclaw-agent/src",
+        "config.rs",
+        "let arquivo = raiz.join(\".phxclaw\").join(ARQUIVO);",
+        "`config::projeto`: so monta o caminho do `config.json`, julgado na linha seguinte pela \
+mesma lista de confiados (`instrucoes::confiado`).",
+    ),
+    (
+        "crates/phxclaw-agent/src",
+        "projeto_tarefas.rs",
+        "let p = raiz.join(\".phxclaw\").join(ARQUIVO);",
+        "`carregar` e a leitura da CLI `phxclaw tarefa`, que o operador digita na pasta dele \
+(roda no MESMO bwrap sem rede do `shell`). A ferramenta do agente NAO passa por aqui: le por \
+`do_projeto_confiado` (`pasta_confiada_para`), uma vez, na montagem.",
+    ),
+    (
+        "apps/phxclaw-desktop/src-tauri/src",
+        "terminal.rs",
+        "let cwd = pasta_do_projeto();",
+        "funcao homonima do aplicativo de mesa: a RAIZ do projeto (pasta do terminal), nao a \
+`.phxclaw/`.",
+    ),
+    (
+        "apps/phxclaw-desktop/src-tauri/src",
+        "terminal.rs",
+        "phxclaw_workspace::raizes(&cwd.join(\".phxclaw\"))",
+        "o terminal do aplicativo de mesa e o bash de quem digita, fora de sandbox: as raizes so \
+viram a variavel PHXCLAW_RAIZES e nao concedem nada que ele ja nao tenha.",
+    ),
+];
+
+/// Maneiras de ler a `.phxclaw/` do projeto que a catraca procura.
+const LEITURAS_DA_PASTA_DO_PROJETO: &[&str] = &["pasta_do_projeto()", ".join(\".phxclaw\")"];
+
+/// A catraca da confianca: leitura da `.phxclaw/` do projeto fora da lista declarada
+/// reprova, para a proxima porta (hook, comando, gatilho...) nao nascer aberta como as
+/// cinco de 09/10/2026. Varre o agente, a CLI e o aplicativo de mesa.
+///
+/// RED medido: `comandos::do_projeto` lendo de novo `crate::montagem::pasta_do_projeto()`
+/// -- a catraca aponta `comandos.rs` e a linha.
+#[test]
+fn toda_leitura_da_pasta_do_projeto_julga_a_confianca_ou_esta_declarada() {
+    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let raizes = [
+        "crates/phxclaw-agent/src",
+        "apps/phxclaw/src",
+        "apps/phxclaw-desktop/src-tauri/src",
+    ];
+    let mut usadas = vec![false; LEITURAS_SEM_CONFIANCA.len()];
+    let mut soltas = Vec::new();
+    for r in raizes {
+        let base = repo.join(r);
+        for arq in arquivos_rs(&base) {
+            let rel = arq
+                .strip_prefix(&base)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            let texto = std::fs::read_to_string(&arq).unwrap();
+            for (n, linha) in texto.lines().enumerate() {
+                let l = linha.trim_start();
+                let definicao = l.starts_with("fn ") || l.starts_with("pub fn ");
+                if l.starts_with("//")
+                    || definicao
+                    || !LEITURAS_DA_PASTA_DO_PROJETO.iter().any(|p| l.contains(p))
+                {
+                    continue;
+                }
+                match LEITURAS_SEM_CONFIANCA
+                    .iter()
+                    .position(|(ra, a, t, _)| *ra == r && *a == rel && l.contains(t))
+                {
+                    Some(i) => usadas[i] = true,
+                    None => soltas.push(format!("{r}/{rel}:{}: {l}", n + 1)),
+                }
+            }
+        }
+    }
+    assert!(
+        soltas.is_empty(),
+        "leitura da `.phxclaw/` do projeto sem julgar a confianca: use \
+`montagem::pasta_confiada_para`, ou declare em LEITURAS_SEM_CONFIANCA com o motivo:\n{}",
+        soltas.join("\n")
+    );
+    let mortas: Vec<_> = LEITURAS_SEM_CONFIANCA
+        .iter()
+        .zip(&usadas)
+        .filter(|(_, u)| !**u)
+        .map(|((r, a, t, _), _)| format!("{r}/{a}: {t}"))
+        .collect();
+    assert!(
+        mortas.is_empty(),
+        "excecao que nao existe mais no fonte: {mortas:?}"
+    );
+    assert!(
+        LEITURAS_SEM_CONFIANCA
+            .iter()
+            .all(|(_, _, _, m)| m.len() > 40),
+        "excecao sem motivo"
+    );
 }

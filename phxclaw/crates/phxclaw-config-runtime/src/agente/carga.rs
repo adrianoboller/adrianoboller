@@ -180,6 +180,10 @@ pub struct Configuracao {
     pub projeto: Option<Arquivo>,
     /// O perfil em vigor (o da variavel, senao o do arquivo) e de onde veio.
     pub perfil_ativo: Option<(String, Origem)>,
+    /// As chaves que o projeto declarou e que so valem do operador (`Chave::alcance`):
+    /// ignoradas, e ditas aqui para a CLI e a vista avisarem -- ignorar calado faria quem
+    /// escreveu o arquivo achar que valeu.
+    pub ignoradas_do_projeto: Vec<Erro>,
 }
 
 impl Configuracao {
@@ -844,6 +848,7 @@ pub fn carregar(
         None => None,
     };
     let mut efetivos = BTreeMap::new();
+    let mut ignoradas_do_projeto = Vec::new();
     for c in catalogo() {
         let bruto = ambiente(&c.variavel).filter(|v| !v.trim().is_empty());
         let efetivo = if c.segredo() {
@@ -867,9 +872,23 @@ pub fn carregar(
                 }
             }
         } else {
+            if let Some((motivo, _)) = c.so_do_operador() {
+                if arq_projeto
+                    .as_ref()
+                    .is_some_and(|p| p.valores.contains_key(&c.chave))
+                {
+                    ignoradas_do_projeto.push(Erro::novo(
+                        &c.chave,
+                        format!("ignorada no projeto, so vale do operador: {motivo}"),
+                    ));
+                }
+            }
             // As fontes de arquivo, na ordem da constante: a primeira que define a chave ganha.
+            // A chave so do operador nem pergunta ao projeto: o escopo e decidido AQUI, uma
+            // vez, e nenhum leitor precisa lembrar dele.
             let de = |o: Origem| -> Option<Value> {
                 match o {
+                    Origem::Projeto if c.so_do_operador().is_some() => None,
                     Origem::Projeto => arq_projeto.as_ref()?.valores.get(&c.chave).cloned(),
                     Origem::Perfil => perfil?.get(&c.chave).cloned(),
                     Origem::Pasta => arq_pasta.valores.get(&c.chave).cloned(),
@@ -901,6 +920,7 @@ pub fn carregar(
             pasta: arq_pasta,
             projeto: arq_projeto,
             perfil_ativo,
+            ignoradas_do_projeto,
         })
     } else {
         Err(erros)
@@ -947,6 +967,12 @@ pub struct Alvo<'a> {
 pub fn definir(alvo: Alvo<'_>, mudancas: &Map<String, Value>) -> Result<String, Recusa> {
     let atual = alvo.atual;
     let perfil = alvo.perfil.map(str::to_string);
+    // O alvo e o arquivo do projeto? Gravar ali uma chave so do operador seria gravar
+    // configuracao que a carga nao le -- e configuracao que nao e lida mente.
+    let no_projeto = atual
+        .projeto
+        .as_ref()
+        .is_some_and(|p| p.caminho == alvo.arquivo);
     gravar_com(alvo, &mut |arq: &mut Arquivo| {
         let mut erros = Vec::new();
         let valores = match &perfil {
@@ -972,6 +998,14 @@ pub fn definir(alvo: Alvo<'_>, mudancas: &Map<String, Value>) -> Result<String, 
             };
             if let Some(m) = recusa_fora_do_arquivo(c) {
                 erros.push(Erro::novo(chave, m));
+                continue;
+            }
+            if let (true, Some((motivo, _)), false) = (no_projeto, c.so_do_operador(), v.is_null())
+            {
+                erros.push(Erro::novo(
+                    chave,
+                    format!("so vale do operador (pasta ou perfil), nunca do projeto: {motivo}"),
+                ));
                 continue;
             }
             if atual.origem(chave) == Origem::Ambiente {

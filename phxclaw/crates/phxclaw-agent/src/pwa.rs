@@ -9,11 +9,139 @@
 //! texto exigir recompilar o agente.
 
 use axum::Router;
-use axum::extract::Path;
-use axum::http::{StatusCode, header};
+use axum::extract::{Path, Request};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use std::path::{Component, PathBuf};
+
+/// A CSP da interface. Medido em 09/10/2026 contra a tela inteira (roteiros de
+/// `tests/desktop/`, zero violacao no console):
+///
+/// - `script-src 'self'` sem `unsafe-inline` nem `unsafe-eval`: nenhum `<script>` em linha,
+///   nenhum `on*=` e nenhum `eval`/`new Function` na tela -- o `tema.js` ja tinha saido do
+///   `<head>` por isso. E a diretiva que separa XSS de texto inofensivo.
+/// - `style-src 'unsafe-inline'` e o preco medido do phx-grid: ele monta `style="..."` por
+///   `innerHTML` (largura de coluna, recuo de grupo, barra do Gantt) e cria `<style>` por
+///   instancia. Sem ele a grade perde o desenho; com ele o pior caso de injecao e CSS, que
+///   nao executa nada.
+/// - `worker-src blob:`: o phx-grid ordena e agrega em worker montado de `Blob`.
+/// - `img-src data:`: o ruido do fundo (`app.css`) e SVG em `data:`.
+/// - `connect-src 'self'`: a API e o websocket do terminal do IDE sao da mesma origem (a
+///   CSP 3 casa `ws:`/`wss:` do mesmo host com `'self'`; medido no Chromium pelo
+///   `tests/desktop/ide_web.mjs`, o WebKit do iPhone nao foi medido).
+/// - Medido o preco de cada recusa: com `style-src 'self'` so as telas Agentes e Cubo davam
+///   81 violacoes (79 `style-src-attr`, 2 `style-src-elem`).
+///
+/// O `tauri.conf.json` repete esta politica e so acrescenta o canal do host (`ipc:`); o
+/// teste `a_csp_do_desktop_e_a_do_servidor` reprova se as duas divergirem.
+pub const CSP: &str = concat!(
+    "default-src 'self'; ",
+    "script-src 'self'; ",
+    "style-src 'self' 'unsafe-inline'; ",
+    "img-src 'self' data: blob:; ",
+    "font-src 'self'; ",
+    "connect-src 'self'; ",
+    "worker-src 'self' blob:; ",
+    "manifest-src 'self'; ",
+    "frame-src 'none'; ",
+    "object-src 'none'; ",
+    "base-uri 'none'; ",
+    "frame-ancestors 'none'; ",
+    "form-action 'self'"
+);
+
+/// O que a pagina pode pedir ao navegador. Medido: a tela nao usa camera, microfone nem
+/// localizacao (a voz roda no agente, nao no navegador); a area de transferencia fica
+/// porque o phx-grid copia a selecao e o IDE cola no terminal.
+pub const PERMISSOES: &str = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), \
+serial=(), hid=(), midi=(), display-capture=()";
+
+/// Os cabecalhos de seguranca de toda resposta deste servidor, num lugar so. Rota que ja
+/// decidiu o seu (o artefato e o site com `sandbox`, o canvas com `frame-ancestors 'self'`)
+/// fica com o dela: a decisao de quem conhece o conteudo vale mais que a regra geral.
+pub const CABECALHOS: &[(&str, &str)] = &[
+    ("content-security-policy", CSP),
+    ("x-frame-options", "DENY"),
+    ("x-content-type-options", "nosniff"),
+    ("referrer-policy", "no-referrer"),
+    ("permissions-policy", PERMISSOES),
+    ("cross-origin-opener-policy", "same-origin"),
+    ("cross-origin-resource-policy", "same-origin"),
+];
+
+/// Resposta sem `Cache-Control` e dado (tarefa, configuracao, erro): nao fica em disco do
+/// navegador nem em proxy. Os arquivos da tela dizem o deles em `servir_arquivo`.
+pub const SEM_CACHE: &str = "no-store";
+
+/// O `x-frame-options` que a CSP propria de uma rota pede, pelo `frame-ancestors` dela:
+/// `'none'` e DENY, `'self'` sozinho e SAMEORIGIN; sem a diretiva (ou com outra origem, que
+/// o XFO nao sabe dizer), nenhum -- um DENY ali contradiria a decisao de quem conhece o
+/// conteudo. O XFO e o que o navegador velho entende quando nao le `frame-ancestors`.
+fn moldura_da_csp(csp: &str) -> Option<&'static str> {
+    let fa = csp
+        .split(';')
+        .map(str::trim)
+        .find_map(|d| d.strip_prefix("frame-ancestors"))?;
+    match fa.split_whitespace().collect::<Vec<_>>().as_slice() {
+        ["'none'"] => Some("DENY"),
+        ["'self'"] => Some("SAMEORIGIN"),
+        _ => None,
+    }
+}
+
+/// Poe os cabecalhos de seguranca que faltam. A CSP propria de uma rota (o formulario do
+/// gatilho, o widget do canvas, o artefato com `sandbox`) VENCE a geral; o
+/// `x-frame-options` entao acompanha o `frame-ancestors` dela (`moldura_da_csp`). Antes,
+/// CSP propria tirava o XFO de vez, e o formulario do gatilho (`frame-ancestors 'none'`)
+/// saia sem ele.
+pub fn blindar_cabecalhos(h: &mut HeaderMap) {
+    let csp_propria = h
+        .get(header::CONTENT_SECURITY_POLICY)
+        .map(|v| v.to_str().unwrap_or("").to_string());
+    for (nome, valor) in CABECALHOS {
+        let nome = HeaderName::from_static(nome);
+        if h.contains_key(&nome) {
+            continue;
+        }
+        let valor = match &csp_propria {
+            Some(csp) if nome == header::X_FRAME_OPTIONS => match moldura_da_csp(csp) {
+                Some(v) => v,
+                None => continue,
+            },
+            _ => valor,
+        };
+        h.insert(nome, HeaderValue::from_static(valor));
+    }
+    if !h.contains_key(header::CACHE_CONTROL) {
+        h.insert(header::CACHE_CONTROL, HeaderValue::from_static(SEM_CACHE));
+    }
+}
+
+/// O middleware: UM ponto para a API do `servir` e para a ponte (`remoto.rs`), montado por
+/// FORA do portao do RBAC, para que o 401 e o 404 tambem saiam blindados.
+pub async fn blindar(req: Request, next: Next) -> Response {
+    let mut r = next.run(req).await;
+    blindar_cabecalhos(r.headers_mut());
+    r
+}
+
+/// A rota da politica da tela. Publica de proposito: a dissuasao vale antes do login.
+pub const ROTA_POLITICA: &str = "/ui/politica";
+
+/// `ui.bloquear_inspecao`, ligado por padrao. Config ilegivel tambem liga: a duvida cai no
+/// lado que o dono pediu.
+pub fn bloquear_inspecao() -> bool {
+    crate::config::booleano_de("ui.bloquear_inspecao").unwrap_or(true)
+}
+
+/// O que a tela pergunta ao abrir. O bloqueio de F12 e do menu de contexto no navegador e
+/// DISSUASAO, nao seguranca: o menu do navegador, o view-source e qualquer cliente HTTP
+/// alcancam o mesmo. A protecao de verdade e a CSP acima, o RBAC e o segredo fora do cliente.
+async fn politica() -> Response {
+    axum::Json(serde_json::json!({ "bloquear_inspecao": bloquear_inspecao() })).into_response()
+}
 
 /// A pasta da interface, ou `None` (e entao nenhuma rota de tela existe).
 pub fn pasta_da_interface() -> Option<PathBuf> {
@@ -70,12 +198,12 @@ fn servir_arquivo(pasta: &std::path::Path, rel: &str) -> Response {
                 axum::body::Body::from(b),
             )
                 .into_response();
-            // O service worker e a pagina tem de ser conferidos a cada visita: e assim
-            // que versao nova chega ao celular que ja instalou o aplicativo.
-            if rel == "sw.js" || rel == "index.html" {
-                r.headers_mut()
-                    .insert(header::CACHE_CONTROL, "no-cache".parse().expect("fixo"));
-            }
+            // Conferido a cada visita: e assim que versao nova chega ao celular que ja
+            // instalou o aplicativo (o service worker e a pagina), e e o que o arquivo sem
+            // validador ja recebia na pratica. Dito aqui para o `no-store` do dado, que o
+            // `blindar` poe em quem nao disse nada, nao alcancar a casca.
+            r.headers_mut()
+                .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
             r
         }
         None => StatusCode::NOT_FOUND.into_response(),
@@ -93,7 +221,7 @@ pub fn rotas<S: Clone + Send + Sync + 'static>() -> Router<S> {
         return Router::new();
     };
     let p = pasta.clone();
-    let mut r = Router::new().route(
+    let mut r = Router::new().route(ROTA_POLITICA, get(politica)).route(
         "/",
         get(move || {
             let p = p.clone();

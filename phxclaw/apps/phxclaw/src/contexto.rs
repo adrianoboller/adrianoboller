@@ -1,4 +1,5 @@
-//! Comandos de contexto e dados: `skills importar`, `indexar` e `projeto confiar|mostrar`.
+//! Comandos de contexto e dados: `skills importar`, `licenca conferir`, `indexar` e
+//! `projeto confiar|mostrar`.
 //! Cada um so chama a funcao do agente que a ferramenta e a montagem usam; nada de
 //! politica mora aqui.
 
@@ -14,18 +15,24 @@ fn solto(args: &[String], pula: usize) -> Option<String> {
         .map(|(_, a)| a.clone())
 }
 
-/// `skills importar DIR [--com-scripts] [--pasta DIR]`.
+const USO_SKILLS: &str = "uso: phxclaw skills importar DIR [--com-scripts] [--aceitar-licenca-desconhecida] [--pasta DIR]";
+
+/// `skills importar DIR [--com-scripts] [--aceitar-licenca-desconhecida] [--pasta DIR]`.
 pub fn skills(args: &[String]) -> Result<()> {
     if args.first().map(String::as_str) != Some("importar") {
-        bail!("uso: phxclaw skills importar DIR [--com-scripts] [--pasta DIR]");
+        bail!("{USO_SKILLS}");
     }
     let Some(origem) = solto(args, 1) else {
-        bail!("uso: phxclaw skills importar DIR [--com-scripts] [--pasta DIR]");
+        bail!("{USO_SKILLS}");
     };
     let raiz = super::pasta(args).join("tasks");
     let destino = phxclaw_agent::skills::pasta_do_ambiente(&raiz);
     let op = phxclaw_agent::importar_skills::Opcoes {
         com_scripts: args.iter().any(|a| a == "--com-scripts"),
+        limite_licenca: None,
+        aceitar_licenca_desconhecida: args
+            .iter()
+            .any(|a| a == phxclaw_agent::licenca::OPCAO_ACEITAR),
     };
     let r = phxclaw_agent::importar_skills::importar(&PathBuf::from(&origem), &destino, &op);
     let n = |f: fn(&phxclaw_agent::importar_skills::Importada) -> bool| {
@@ -55,10 +62,91 @@ cortada em {}; corpo cortado em {}",
     );
     let traducoes: usize = r.importadas.iter().flat_map(|i| i.traducoes.values()).sum();
     println!("  {traducoes} nomes de ferramenta traduzidos");
+    let aceitas = r
+        .importadas
+        .iter()
+        .filter(|i| {
+            i.licenca
+                .as_ref()
+                .is_some_and(|l| l.decisao_do_operador.is_some())
+        })
+        .count();
+    println!(
+        "  licenca: aviso em {} de {} importadas; {aceitas} de licenca desconhecida aceitas por {}",
+        phxclaw_agent::licenca::ARQUIVO_AVISO,
+        r.importadas.len(),
+        phxclaw_agent::licenca::OPCAO_ACEITAR
+    );
     for (p, e) in &r.recusadas {
         println!("  recusado {}: {e}", p.display());
     }
     if !r.recusadas.is_empty() {
+        std::process::exit(2);
+    }
+    Ok(())
+}
+
+const USO_LICENCA: &str =
+    "uso: phxclaw licenca conferir DIR [--json] [--aceitar-licenca-desconhecida] [--limite DIR]";
+
+/// `licenca conferir DIR [--json] [--aceitar-licenca-desconhecida] [--limite DIR]`: a mesma
+/// porta do `skills importar`, para quem copia conteudo de terceiro por outro caminho (o
+/// importador de papeis em Python). Sai 0 quando entra, 2 quando recusa.
+pub fn licenca(args: &[String]) -> Result<()> {
+    if args.first().map(String::as_str) != Some("conferir") {
+        bail!("{USO_LICENCA}");
+    }
+    let mut alvo = None;
+    let mut limite = None;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--limite" => {
+                let Some(v) = args.get(i + 1) else {
+                    bail!("{USO_LICENCA}");
+                };
+                limite = Some(PathBuf::from(v));
+                i += 1;
+            }
+            "--json" => {}
+            o if o == phxclaw_agent::licenca::OPCAO_ACEITAR => {}
+            o if o.starts_with("--") => bail!("opcao desconhecida {o}; {USO_LICENCA}"),
+            o => alvo = Some(PathBuf::from(o)),
+        }
+        i += 1;
+    }
+    let Some(alvo) = alvo else {
+        bail!("{USO_LICENCA}");
+    };
+    if !alvo.exists() {
+        bail!("{} nao existe", alvo.display());
+    }
+    let aceitar = args
+        .iter()
+        .any(|a| a == phxclaw_agent::licenca::OPCAO_ACEITAR);
+    let c = phxclaw_agent::licenca::conferir(&alvo, limite.as_deref(), vec![]);
+    let r = phxclaw_agent::licenca::relatorio_json(&c, aceitar);
+    let entra = r["entra"].as_bool() == Some(true);
+    if args.iter().any(|a| a == "--json") {
+        println!("{}", serde_json::to_string_pretty(&r)?);
+    } else {
+        println!(
+            "{}: {} ({}) -- {}",
+            c.alvo.display(),
+            c.classe.nome().to_uppercase(),
+            c.licencas().join(", "),
+            if entra { "entra" } else { "recusada" }
+        );
+        println!("  {}", c.motivo());
+        println!("  busca de {} ate {}", c.alvo.display(), c.limite.display());
+        for d in &c.declaracoes {
+            println!("  {:<14} {:<10} {}", d.licenca, d.como, d.onde);
+        }
+        for l in &c.copyright {
+            println!("  {l}");
+        }
+    }
+    if !entra {
         std::process::exit(2);
     }
     Ok(())

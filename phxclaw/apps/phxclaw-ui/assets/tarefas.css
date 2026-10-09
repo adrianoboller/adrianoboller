@@ -11,7 +11,7 @@
 .tarefa-objetivo{font-size:var(--fs-2);overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .tarefa-estado{font-size:var(--fs-1);letter-spacing:.12em;font-weight:700;color:var(--info)}
 .estado-completed .tarefa-estado,.tarefa-estado.estado-completed{color:var(--ok)}
-.estado-failed .tarefa-estado,.tarefa-estado.estado-failed,.estado-cancelled .tarefa-estado,.tarefa-estado.estado-cancelled{color:var(--vermelho)}
+.estado-failed .tarefa-estado,.tarefa-estado.estado-failed,.estado-cancelled .tarefa-estado,.tarefa-estado.estado-cancelled,.estado-budget_exceeded .tarefa-estado,.tarefa-estado.estado-budget_exceeded{color:var(--vermelho)}
 .estado-awaiting_input .tarefa-estado,.tarefa-estado.estado-awaiting_input,.estado-awaiting_approval .tarefa-estado,.tarefa-estado.estado-awaiting_approval{color:var(--aviso)}
 .tarefas-detalhe{overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:14px 16px}
 .tarefa-titulo{font-size:var(--fs-4);margin:6px 0 10px;font-weight:600;white-space:pre-wrap}

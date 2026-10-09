@@ -247,6 +247,9 @@ pub async fn revisar(llm: &dyn Llm, diff: &str, foco: Option<&str>) -> Result<Re
 /// `code_review` (capacidade `code.review`): revisa o diff do repositorio da pasta (git de
 /// verdade, no sandbox) ou um diff dado em texto (o `pr_diff` do GitHub/GitLab).
 pub struct CodeReviewTool {
+    /// O modelo da montagem, ja envolvido pelo `orcamento::LlmDaTarefa`: as ate duas
+    /// chamadas do `revisar` cobram a conta da tarefa. A CLI (`phxclaw revisar`) chama sem
+    /// tarefa nenhuma, e ali nao ha conta a cobrar.
     pub llm: Arc<dyn Llm>,
     /// Sem bwrap, so o diff em texto e aceito.
     pub bwrap: Option<PathBuf>,

@@ -3,7 +3,7 @@
 //! arquivos de teste nao terem duas bancas que divergem.
 #![allow(dead_code)]
 
-use phxclaw_agent::api::{AgentFactory, ApiState, Limite, router};
+use phxclaw_agent::api::{AgentFactory, ApiState, Limite};
 use phxclaw_agent::fluxos;
 use phxclaw_agent::gatilhos::Gatilhos;
 use phxclaw_agent::subfluxo::FluxoTool;
@@ -164,7 +164,12 @@ pub fn estado(raiz: &Path) -> ApiState {
 pub async fn servir(s: &ApiState, g: Gatilhos) -> String {
     let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", l.local_addr().unwrap());
-    let app = router(s.clone()).merge(phxclaw_agent::gatilhos::router(s.clone(), Arc::new(g)));
+    // O MESMO roteador final do `servir` (`api::servidor`): juntar os gatilhos depois da
+    // blindagem era o achado M5, e o teste que monta de outro jeito nao o veria.
+    let app = phxclaw_agent::api::servidor(
+        s.clone(),
+        [phxclaw_agent::gatilhos::router(s.clone(), Arc::new(g))],
+    );
     tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
     base
 }

@@ -28,6 +28,11 @@
 //!   crases no corpo e na lista `allowed-tools`. Trocar a palavra solta «Read» no meio
 //!   de uma frase seria reescrever a prosa de outra pessoa. O que nao tem par fica como
 //!   veio e vai listado como nao traduzido.
+//! - **Licenca pela porta unica (`licenca`)**, antes de qualquer gravacao: compativel com
+//!   Apache-2.0 entra com o aviso (`LICENCA.txt`, texto inteiro e copyright); copyleft e
+//!   recusado sempre; desconhecida so com `--aceitar-licenca-desconhecida`, e a decisao vai
+//!   para o `ORIGEM.json`. Sem ela, importar um checkout AGPL copiava o texto para dentro
+//!   de um produto Apache-2.0 sem aviso nenhum.
 
 use phxclaw_skill_runtime::{SKILL_DESCRIPTION_MAX_CHARS, SKILL_DOC_MAX_BYTES, SkillFolder};
 use serde::Serialize;
@@ -241,6 +246,11 @@ pub fn ler_cabecalho(cab: &str) -> BTreeMap<String, Valor> {
 pub struct Opcoes {
     /// Copia `scripts/` para a pasta da skill (desligado por padrao).
     pub com_scripts: bool,
+    /// Ate onde a porta de licenca sobe a partir da pasta de cada skill. `None`: a raiz do
+    /// repositorio (pasta com `.git`) que contem a origem, ou a propria origem.
+    pub limite_licenca: Option<PathBuf>,
+    /// Importa a skill de licenca desconhecida; a decisao fica no `ORIGEM.json`.
+    pub aceitar_licenca_desconhecida: bool,
 }
 
 /// A versao do `ORIGEM.json` que este codigo escreve. Entra no arquivo desde o comeco
@@ -267,6 +277,9 @@ pub struct Importada {
     pub nao_traduzidas: Vec<String>,
     pub scripts_desligados: Vec<String>,
     pub scripts_copiados: bool,
+    /// O que a porta de licenca achou e o que se copiou de aviso (e a decisao do operador,
+    /// quando a licenca era desconhecida). `None` so em `ORIGEM.json` de antes da porta.
+    pub licenca: Option<crate::licenca::Registro>,
 }
 
 #[derive(Debug, Default)]
@@ -395,6 +408,10 @@ pub fn importar(origem: &Path, destino: &SkillFolder, op: &Opcoes) -> Relatorio 
     let mut rel = Relatorio::default();
     let mut arquivos = Vec::new();
     skill_mds(origem, &mut arquivos);
+    let limite = op
+        .limite_licenca
+        .clone()
+        .unwrap_or_else(|| crate::licenca::limite_padrao(origem));
     rel.achados = arquivos.len();
     if let Err(e) = std::fs::create_dir_all(destino.root()) {
         rel.recusadas
@@ -420,7 +437,7 @@ pub fn importar(origem: &Path, destino: &SkillFolder, op: &Opcoes) -> Relatorio 
         }
     }
     for arq in arquivos {
-        match importar_um(&arq, destino, op, &mut ja) {
+        match importar_um(&arq, destino, op, &limite, &mut ja) {
             Ok(Some(i)) => rel.importadas.push(i),
             Ok(None) => rel.repetidas += 1,
             Err(e) => rel.recusadas.push((arq, e)),
@@ -433,6 +450,7 @@ fn importar_um(
     arq: &Path,
     destino: &SkillFolder,
     op: &Opcoes,
+    limite: &Path,
     ja: &mut BTreeMap<String, String>,
 ) -> Result<Option<Importada>, String> {
     let bytes = std::fs::read(arq).map_err(|e| e.to_string())?;
@@ -455,6 +473,18 @@ fn importar_um(
         _ => None,
     };
     let pasta_origem = arq.parent().unwrap_or(Path::new("."));
+    // A porta de licenca, antes de qualquer gravacao: recusada, nada da skill vai ao disco.
+    let onde = arq.display().to_string();
+    let extras = crate::licenca::declaracoes_do_documento(&texto, &licencas_do(&cab), &onde);
+    // A porta confere o que se COPIA: o SKILL.md e, com --com-scripts, cada subpasta de
+    // `scripts/` -- um `scripts/vendor/LICENSE` fala pelo que esta abaixo dele.
+    let mut copiados = vec![arq.to_path_buf()];
+    let scripts = pasta_origem.join("scripts");
+    if op.com_scripts && scripts.is_dir() {
+        copiados.extend(crate::licenca::com_subpastas(&scripts)?);
+    }
+    let conferencia = crate::licenca::conferir_copia(&copiados, limite, extras);
+    let decisao = crate::licenca::decidir(&conferencia, op.aceitar_licenca_desconhecida)?;
     let nome_da_pasta = pasta_origem
         .file_name()
         .map(|s| s.to_string_lossy().into_owned())
@@ -518,7 +548,6 @@ fn importar_um(
     permitidas.dedup();
 
     let mut corpo = traduzir_corpo(corpo.trim(), &mut imp.traducoes);
-    let scripts = pasta_origem.join("scripts");
     if scripts.is_dir() {
         let mut v = Vec::new();
         listar_relativo(&scripts, &scripts, &mut v)?;
@@ -568,6 +597,7 @@ it was cut at a heading. The full text is ORIGINAL.md in this skill's folder.",
         Ok(())
     };
     let r = gravar().and_then(|_| {
+        imp.licenca = Some(crate::licenca::guardar_aviso(&conferencia, decisao, &dir)?);
         if op.com_scripts && !imp.scripts_desligados.is_empty() {
             copiar_pasta(&scripts, &dir.join("scripts"))?;
             imp.scripts_copiados = true;
@@ -612,6 +642,16 @@ pub fn ler_origem(arq: &Path) -> Result<Option<serde_json::Value>, String> {
 }
 
 /// Lista `scripts/` sem seguir symlink (`symlink_metadata`): atalho e erro, nao entrada.
+/// Os valores do `license:` do cabecalho, texto ou lista: o que a porta de licenca le
+/// junto do SPDX do proprio documento (`licenca::declaracoes_do_documento`).
+pub(crate) fn licencas_do(cab: &BTreeMap<String, Valor>) -> Vec<String> {
+    match cab.get("license") {
+        Some(Valor::Texto(t)) => vec![t.clone()],
+        Some(Valor::Lista(l)) => l.clone(),
+        _ => vec![],
+    }
+}
+
 fn listar_relativo(raiz: &Path, d: &Path, v: &mut Vec<String>) -> Result<(), String> {
     let Ok(rd) = std::fs::read_dir(d) else {
         return Ok(());

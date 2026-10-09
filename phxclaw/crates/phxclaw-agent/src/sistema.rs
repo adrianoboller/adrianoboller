@@ -1898,33 +1898,38 @@ pub fn diagnosticos_do_cargo(stdout: &str) -> (Vec<Diagnostico>, Option<bool>, V
     (diags, sucesso, texto)
 }
 
-/// `cargo fmt --check --message-format json`: um vetor de arquivos com os trechos fora do
-/// formato. Cada trecho vira um diagnostico de nivel «fmt».
+/// `cargo fmt --check` em texto: cada `Diff in ARQ:LINHA:` abre um trecho fora do formato,
+/// e as linhas `+` que o seguem sao o esperado. Texto e nao `--message-format json` porque o
+/// rustfmt estavel recusa os dois juntos («cannot include --check arg when --message-format is
+/// set to json») e, sem `--check`, o `json` e emissao instavel: medido com o rustfmt 1.9.0 em
+/// 09/10/2026, o `fmt` desta ferramenta saia vermelho em TODO projeto, formatado ou nao.
 fn diagnosticos_do_fmt(stdout: &str, raiz: &str) -> Vec<Diagnostico> {
-    let mut v = Vec::new();
+    let mut v: Vec<Diagnostico> = Vec::new();
     for l in stdout.lines() {
-        let Ok(Value::Array(arqs)) = serde_json::from_str::<Value>(l) else {
-            continue;
-        };
-        for a in arqs {
-            let nome = a["name"].as_str().unwrap_or("");
-            let nome = nome
+        if let Some(resto) = l.strip_prefix("Diff in ") {
+            // `ARQ:LINHA:`; o arquivo pode ter `:` no nome, entao corta pela direita.
+            let resto = resto.trim_end().trim_end_matches(':');
+            let (arq, linha) = match resto.rsplit_once(':') {
+                Some((a, n)) if n.chars().all(|c| c.is_ascii_digit()) => {
+                    (a, n.parse().unwrap_or(0))
+                }
+                _ => (resto, 0),
+            };
+            let arq = arq
                 .strip_prefix(raiz)
                 .map(|n| n.trim_start_matches('/'))
-                .unwrap_or(nome);
-            for m in a["mismatches"].as_array().into_iter().flatten() {
-                v.push(Diagnostico {
-                    arquivo: nome.to_string(),
-                    linha: m["original_begin_line"].as_u64().unwrap_or(0),
-                    coluna: 0,
-                    nivel: "fmt".into(),
-                    mensagem: format!(
-                        "fora do formato; esperado:\n{}",
-                        m["expected"].as_str().unwrap_or("")
-                    ),
-                    codigo: None,
-                });
-            }
+                .unwrap_or(arq);
+            v.push(Diagnostico {
+                arquivo: arq.to_string(),
+                linha,
+                coluna: 0,
+                nivel: "fmt".into(),
+                mensagem: "fora do formato; esperado:\n".into(),
+                codigo: None,
+            });
+        } else if let (Some(d), Some(mais)) = (v.last_mut(), l.strip_prefix('+')) {
+            d.mensagem.push_str(mais);
+            d.mensagem.push('\n');
         }
     }
     v
@@ -2004,7 +2009,7 @@ diagnostics: file, line, column, level, message, code."
                 ("build", _) => "cargo build --offline --message-format=json",
                 ("test", _) => "cargo test --offline --message-format=json",
                 ("clippy", _) => "cargo clippy --offline --all-targets --message-format=json",
-                ("fmt", false) => "cargo fmt --check --message-format json",
+                ("fmt", false) => "cargo fmt --check -- --color never",
                 ("fmt", true) => "cargo fmt",
                 (outra, _) => {
                     return Err(ToolError::InvalidArguments(format!(
@@ -2072,6 +2077,22 @@ diagnostics: file, line, column, level, message, code."
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A saida de texto do `cargo fmt --check` do rustfmt 1.9 estavel, como ela sai.
+    #[test]
+    fn fmt_le_o_diff_em_texto_do_rustfmt_estavel() {
+        let saida = "Diff in /work/p/src/lib.rs:1:\n-pub fn a()->u32{1}\n+pub fn a() -> u32 {\n\
++    1\n+}\n \n pub fn b() -> u32 {\nDiff in /work/p/src/x:y.rs:5:\n-fn c()->u8{3}\n+fn c() -> u8 {\n";
+        let d = diagnosticos_do_fmt(saida, "/work/p");
+        assert_eq!(d.len(), 2, "{d:?}");
+        assert_eq!((d[0].arquivo.as_str(), d[0].linha), ("src/lib.rs", 1));
+        assert!(
+            d[0].mensagem.contains("pub fn a() -> u32 {\n    1\n}"),
+            "{d:?}"
+        );
+        assert_eq!((d[1].arquivo.as_str(), d[1].linha), ("src/x:y.rs", 5));
+        assert!(diagnosticos_do_fmt("", "/work/p").is_empty());
+    }
 
     #[test]
     fn unidade_recusa_shell_e_opcao() {

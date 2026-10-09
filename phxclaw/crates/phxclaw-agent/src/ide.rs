@@ -70,7 +70,7 @@ fn erro(code: StatusCode, msg: impl Into<String>) -> Erro {
 
 /// A pasta que o IDE abre: a do projeto do agente (`PHXCLAW_PROJETO` ou a pasta corrente),
 /// a mesma do historico de gravacoes e dos hooks.
-fn pasta_do_projeto() -> Result<PathBuf, String> {
+fn raiz_do_ide() -> Result<PathBuf, String> {
     crate::montagem::raiz_do_projeto()
         .filter(|p| p.is_dir())
         .ok_or_else(|| "pasta do projeto inexistente (PHXCLAW_PROJETO)".to_string())
@@ -248,7 +248,7 @@ async fn sessao(s: ApiState, mut sock: WebSocket, api: Option<String>) {
 }
 
 fn t_cwd() -> String {
-    pasta_do_projeto()
+    raiz_do_ide()
         .map(|p| p.display().to_string())
         .unwrap_or_default()
 }
@@ -267,8 +267,8 @@ fn abrir(
             "pelo navegador so o Helix abre; o terminal bash fica no aplicativo de mesa".into(),
         );
     }
-    let cwd = pasta_do_projeto()?;
-    let raizes = phxclaw_workspace::raizes(&cwd.join(".phxclaw"))?;
+    let cwd = raiz_do_ide()?;
+    let raizes = crate::workspace::raizes_do_projeto()?;
     let mut env = vec![];
     if !raizes.is_empty() {
         let lista = phxclaw_workspace::variavel(&raizes);
@@ -343,7 +343,7 @@ async fn simbolos(
             "nenhum servidor de linguagem neste hospedeiro (bwrap ou servidores ausentes)",
         ));
     };
-    let cwd = pasta_do_projeto().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    let cwd = raiz_do_ide().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
     let prazo = Duration::from_secs(q.prazo.unwrap_or(30).clamp(1, 120));
     let r = l
         .simbolos_do_arquivo(&cwd, &q.arquivo, prazo)
@@ -384,7 +384,7 @@ async fn arquivo(
     Query(q): Query<ConsultaDeArquivo>,
 ) -> Result<Json<Value>, Erro> {
     auth(&s, &h)?;
-    let cwd = pasta_do_projeto().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    let cwd = raiz_do_ide().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
     // Disco fora do laco assincrono: um disco lento (ou o que sobrar de espera no `open`)
     // prende uma thread do pool de bloqueio, nunca o worker que atende as outras rotas.
     let caminho = q.caminho.clone();
@@ -540,6 +540,78 @@ fn tetos() -> (u32, Duration) {
     )
 }
 
+/// O teto de tokens da completacao por hora, somadas todas (B6). A completacao nao roda sob
+/// tarefa nenhuma, e por isso nenhum `orcamento.*` a alcanca: sem este teto, o editor
+/// gastaria o modelo sem limite. Ausente: sem teto (o comportamento de antes, como toda
+/// guarda nova daqui, entra pedida). Valor que nao e inteiro >= 0 RECUSA a completacao: um
+/// teto escrito que deixa de valer calado e o pior dos tres.
+pub const CHAVE_TETO_HORA: &str = "ide.ia_teto_tokens_hora";
+
+fn teto_por_hora() -> Result<Option<u64>, String> {
+    match crate::config::valor(CHAVE_TETO_HORA)? {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_u64()
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+            .map(Some)
+            .ok_or_else(|| format!("{CHAVE_TETO_HORA}: {v} não é um inteiro >= 0")),
+    }
+}
+
+/// A janela de uma hora da completacao: o gasto dela mais o RESERVADO pelas completacoes
+/// em voo -- conferir sem reservar deixaria N pedidos simultaneos passarem juntos pelo
+/// mesmo resto (o M6 do orcamento, aqui).
+pub struct JanelaPorHora {
+    m: Mutex<(std::time::Instant, u64)>,
+}
+
+impl JanelaPorHora {
+    pub fn nova(agora: std::time::Instant) -> Self {
+        Self {
+            m: Mutex::new((agora, 0)),
+        }
+    }
+
+    /// Reserva `previsto` (a estimativa por cima da chamada) se cabe no teto; a hora que
+    /// passou recomeca do zero. Recusa dizendo o gasto e o teto.
+    pub fn reservar(
+        &self,
+        teto: Option<u64>,
+        previsto: u64,
+        agora: std::time::Instant,
+    ) -> Result<(), String> {
+        let mut g = self.m.lock().unwrap_or_else(|p| p.into_inner());
+        if agora.duration_since(g.0) >= Duration::from_secs(3600) {
+            *g = (agora, 0);
+        }
+        if let Some(t) = teto
+            && g.1.saturating_add(previsto) > t
+        {
+            return Err(format!(
+                "teto da completação por IA atingido: {} de {t} tokens nesta hora ({CHAVE_TETO_HORA}); esta pediria até {previsto}",
+                g.1
+            ));
+        }
+        g.1 = g.1.saturating_add(previsto);
+        Ok(())
+    }
+
+    /// Troca a reserva pelo gasto real (0 quando a chamada falhou).
+    pub fn acertar(&self, previsto: u64, real: u64) {
+        let mut g = self.m.lock().unwrap_or_else(|p| p.into_inner());
+        g.1 = g.1.saturating_sub(previsto).saturating_add(real);
+    }
+
+    pub fn gasto(&self) -> u64 {
+        self.m.lock().unwrap_or_else(|p| p.into_inner()).1
+    }
+}
+
+fn janela_do_processo() -> &'static JanelaPorHora {
+    static J: OnceLock<JanelaPorHora> = OnceLock::new();
+    J.get_or_init(|| JanelaPorHora::nova(std::time::Instant::now()))
+}
+
 /// Tira a cerca de codigo que alguns modelos poem mesmo quando se pede para nao por.
 pub fn sem_cerca(t: &str) -> String {
     let t = t.trim_matches('\n');
@@ -597,8 +669,27 @@ async fn completar(
         max_output_tokens: tokens,
         temperature: 0.1,
     };
-    let r = tokio::time::timeout(prazo, agente.llm.chat(&mensagens, &[], &opcoes))
-        .await
+    // Fora de qualquer tarefa e de qualquer orcamento: o teto e o da hora, conferido e
+    // RESERVADO antes de chamar, e o gasto conta no `/metrics` (B6).
+    let teto = teto_por_hora().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    let previsto =
+        crate::orcamento::estimar(&mensagens, &[], &opcoes, &agente.llm.provedores(), None).tokens;
+    let janela = janela_do_processo();
+    if let Err(m) = janela.reservar(teto, previsto, std::time::Instant::now()) {
+        crate::metricas::GLOBAL.completacao_recusada();
+        return Err(erro(StatusCode::TOO_MANY_REQUESTS, m));
+    }
+    let (r, diario) = crate::roteamento::com_diario(tokio::time::timeout(
+        prazo,
+        agente.llm.chat(&mensagens, &[], &opcoes),
+    ))
+    .await;
+    let real = match &r {
+        Ok(Ok(r)) => r.usage.input_tokens + r.usage.output_tokens,
+        _ => 0,
+    };
+    janela.acertar(previsto, real);
+    let r = r
         .map_err(|_| {
             erro(
                 StatusCode::GATEWAY_TIMEOUT,
@@ -606,6 +697,17 @@ async fn completar(
             )
         })?
         .map_err(|e| erro(StatusCode::BAD_GATEWAY, format!("modelo: {e}")))?;
+    crate::metricas::GLOBAL.completacao(real, || {
+        let modelo = diario
+            .last()
+            .and_then(|a| a.atendeu.clone())
+            .unwrap_or_else(|| agente.llm.id());
+        agente
+            .config
+            .precos
+            .as_deref()
+            .and_then(|p| p.chamada(&modelo, &r.usage).custo)
+    });
     Ok(Json(
         json!({"texto": sem_cerca(&r.content), "modelo": r.model}),
     ))
@@ -639,7 +741,7 @@ pub struct PedidoDeTestes {
 }
 
 fn contexto_do_ide() -> Result<phxclaw_agent_core::ToolContext, Erro> {
-    let cwd = pasta_do_projeto().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
+    let cwd = raiz_do_ide().map_err(|e| erro(StatusCode::SERVICE_UNAVAILABLE, e))?;
     Ok(crate::testes::contexto_da_cli(cwd, PRAZO_DOS_TESTES))
 }
 
@@ -751,6 +853,37 @@ async fn plugins_instalar(
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// B6: a completacao gasta fora de qualquer orcamento; o teto da hora recusa quem nao
+    /// cabe, CONTANDO o que esta em voo (reserva), e a hora seguinte recomeca.
+    ///
+    /// RED medido: em `JanelaPorHora::reservar`, `if let Some(t) = teto` trocado por
+    /// `if let Some(t) = None::<u64>` (`// REPOSTO`) -- a terceira completacao passou e o
+    /// `unwrap_err` caiu.
+    #[test]
+    fn a_completacao_tem_teto_por_hora_e_conta_o_que_esta_em_voo() {
+        let t0 = std::time::Instant::now();
+        let j = JanelaPorHora::nova(t0);
+        let teto = Some(1_000);
+        // Duas em voo (400 + 400 reservados): a terceira nao cabe, mesmo com 0 gasto real.
+        j.reservar(teto, 400, t0).unwrap();
+        j.reservar(teto, 400, t0).unwrap();
+        let e = j.reservar(teto, 400, t0).unwrap_err();
+        assert!(
+            e.contains("800 de 1000") && e.contains(CHAVE_TETO_HORA),
+            "{e}"
+        );
+        // A primeira acerta pelo real (100): a reserva sai, o gasto fica.
+        j.acertar(400, 100);
+        assert_eq!(j.gasto(), 500);
+        j.reservar(teto, 400, t0).unwrap();
+        // Uma hora depois, a janela recomeca.
+        let depois = t0 + Duration::from_secs(3600);
+        j.reservar(teto, 900, depois).unwrap();
+        assert_eq!(j.gasto(), 900);
+        // Sem teto: o comportamento de antes.
+        j.reservar(None, 10_000, depois).unwrap();
+    }
 
     #[test]
     fn a_cerca_sai_e_o_codigo_fica() {

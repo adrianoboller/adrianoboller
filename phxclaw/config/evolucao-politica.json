@@ -1,0 +1,58 @@
+{
+  "versao": 2,
+  "nota": "Politica da auto-evolucao (SP000015). Lida por um motor so: crates/phxclaw-agent/src/evolucao.rs. LISTA DE PERMISSAO, negado por padrao: o ciclo so toca o que casa 'permitidos' E o teto embutido no codigo (PERMISSAO_MAXIMA); permitido que nao cabe no teto recusa a politica inteira -- ela so aperta. Padrao: '*' casa um trecho sem '/', '/**' no fim casa tudo abaixo da pasta, literal e o arquivo exato. 'vetados' aperta mais dentro do permitido ('dir/' veta a pasta); os crates e testes de seguranca ja sao vetados no codigo (NUNCA).",
+  "backlog": "docs/absorcao/phxclaw.json",
+  "permitidos": [
+    "crates/*/tests/**",
+    "crates/phxclaw-agent/src/calculadora.rs"
+  ],
+  "vetados": [],
+  "itens_vetados": [
+    {
+      "item": "segredos_externos",
+      "motivo": "seguranca: segredos (vetado pelo dono)"
+    },
+    {
+      "item": "guardrails",
+      "motivo": "seguranca: varredura e guardas (vetado pelo dono)"
+    },
+    {
+      "item": "remoto_ssh_containers",
+      "motivo": "capacidade nova de acesso remoto (vetado pelo dono)"
+    },
+    {
+      "item": "instalacao_docker_k8s",
+      "motivo": "deploy/ e vetado"
+    },
+    {
+      "item": "canal_imessage",
+      "motivo": "depende de recurso (Mac) que o dono nao fornece"
+    },
+    {
+      "item": "ambientes_nuvem",
+      "motivo": "depende da VM do dono e e decisao de produto"
+    },
+    {
+      "item": "live_share",
+      "motivo": "limite declarado pelo dono (edicao simultanea)"
+    },
+    {
+      "item": "dobra_codigo",
+      "motivo": "fora por decisao do pesquisador"
+    },
+    {
+      "item": "telemetria_energia",
+      "motivo": "depende de maquina com RAPL"
+    },
+    {
+      "item": "voz_wake",
+      "motivo": "depende de microfone ao vivo"
+    }
+  ],
+  "portoes": [
+    "fmt",
+    "clippy",
+    "test"
+  ],
+  "revisao_bloqueia_em": "alta"
+}

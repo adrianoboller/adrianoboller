@@ -14,6 +14,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, existsSync, readFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { vigiarCsp } from './seguranca.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -80,6 +81,8 @@ try {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1366, height: 768 }, locale: 'pt-BR' });
   await ctx.addInitScript(t => { try { localStorage.setItem('phxclaw.token', t); } catch {} }, token);
+  // A CSP do agente (connect-src 'self') tem de deixar passar o websocket do terminal.
+  const vigia = await vigiarCsp(ctx);
   const page = await ctx.newPage();
   const erros = [];
   page.on('pageerror', e => erros.push(String(e)));
@@ -157,6 +160,8 @@ try {
   for (let i = 0; i < 40 && !/encerrado|ended/.test(fim); i++) { await esperar(250); fim = await page.textContent('#ideStatus'); }
   check('digitar :q encerra a sessao do Helix (status diz encerrado)', /encerrado|ended/.test(fim), fim);
   check('sem erro de JavaScript na pagina', erros.length === 0, erros.join(' | ').slice(0, 300));
+  const csp = await vigia.todas(ctx.pages());
+  check('zero violacao de CSP (websocket do terminal sob connect-src \'self\')', csp.length === 0, csp.slice(0, 3).join(' | '));
   await browser.close();
 } catch (e) {
   falhou = e;

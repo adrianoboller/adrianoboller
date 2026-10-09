@@ -14,6 +14,7 @@ import { createRequire } from 'node:module';
 import { readFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { cabecalhosDaUi, avisoDoCoopSemTls, ROTA_POLITICA, POLITICA_PADRAO } from './seguranca.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('/opt/node22/lib/node_modules/playwright');
@@ -31,11 +32,12 @@ const lerAsset = nome => JSON.parse(readFileSync(join(UI, 'assets', nome), 'utf8
 const grade = JSON.parse(readFileSync(join(AQUI, 'dados/grade_bash.json'), 'utf8'));
 
 // A API de tarefas falsa: um estado de cada, com a data FORA de ordem, para a grade provar
-// que ordena pela data (mais nova primeiro) e nao pela ordem em que a API entregou.
-const ESTADOS_T = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled'];
+// que ordena pela data (mais nova primeiro) e nao pela ordem em que a API entregou. A hora e
+// (i*3) % n: 3 primo com n da hora distinta a cada tarefa (com % 7 e 8 estados, t0 e t7 empatavam).
+const ESTADOS_T = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled', 'budget_exceeded'];
 const TAREFAS = ESTADOS_T.map((status, i) => ({
   id: `t${i}`, objective: `objetivo da tarefa ${i}`, status, model: 'falso', plan: [], steps: [], artifacts: [],
-  created_at: `2026-10-01T0${(i * 3) % 7}:00:00Z`, updated_at: '2026-10-01T09:00:00Z',
+  created_at: `2026-10-01T0${(i * 3) % ESTADOS_T.length}:00:00Z`, updated_at: '2026-10-01T09:00:00Z',
 }));
 
 // A tela Configuracao le a vista que saiu do motor real (a prova dela e o ui_config.mjs).
@@ -81,28 +83,34 @@ function stubTauri(grade) {
 }
 
 // A CSP do aplicativo de mesa sai do proprio tauri.conf.json: uma copia aqui envelheceria.
+// Os cabecalhos de seguranca do agente (pwa.rs), em TODA resposta: a tela se prova sob a CSP
+// que o servidor manda de verdade, e cada violacao vira erro de console (defeito).
+const CABECALHOS = cabecalhosDaUi();
+const violacoesCsp = [];
 const CSP_TAURI = JSON.parse(readFileSync(join(RAIZ, 'apps/phxclaw-desktop/src-tauri/tauri.conf.json'), 'utf8')).app.security.csp;
 
 async function abrirPagina(browser, { semEquipe = false, sem = [], csp = null } = {}) {
   const page = await browser.newPage({ viewport: { width: 1560, height: 960 } });
   const erros = [];
   page.on('pageerror', e => erros.push(String(e)));
-  page.on('console', m => { if (m.type() === 'error') erros.push(`${m.text()} @ ${m.location()?.url ?? ''}`); });
+  page.on('console', m => { if (m.type() === 'error' && !avisoDoCoopSemTls(m.text())) erros.push(`${m.text()} @ ${m.location()?.url ?? ''}`); });
+  page.on('console', m => { if (/Content Security Policy|Refused to/.test(m.text())) violacoesCsp.push(`${csp ? 'tauri' : 'servidor'}: ${m.text().slice(0, 200)}`); });
   await page.route(`${ORIGEM}/**`, route => {
+    if (new URL(route.request().url()).pathname === ROTA_POLITICA) return route.fulfill({ status: 200, contentType: 'application/json', headers: CABECALHOS, body: POLITICA_PADRAO });
     const caminho = decodeURIComponent(new URL(route.request().url()).pathname);
     if (caminho.startsWith('/v1/')) {
       const m = caminho.match(/^\/v1\/tasks\/(t\d)$/);
       // A tela Fluxos pede a lista ao abrir: pasta vazia (o editor e provado no ui_fluxos.mjs).
       const corpo = m ? TAREFAS.find(t => t.id === m[1]) : caminho === '/v1/tasks' ? TAREFAS : caminho === '/v1/config' ? VISTA_CONFIG
         : caminho === '/v1/fluxos' ? { fluxos: [], invalidos: [] } : null;
-      return route.fulfill({ status: corpo ? 200 : 404, contentType: 'application/json', body: JSON.stringify(corpo ?? { error: 'nao existe' }) });
+      return route.fulfill({ status: corpo ? 200 : 404, contentType: 'application/json', headers: CABECALHOS, body: JSON.stringify(corpo ?? { error: 'nao existe' }) });
     }
     const arq = join(UI, caminho === '/' ? 'index.html' : caminho);
     if ((semEquipe && caminho.endsWith('/equipe.json')) || sem.some(n => caminho.endsWith(`/${n}`)) || !arq.startsWith(UI) || !existsSync(arq)) {
-      return route.fulfill({ status: 404, body: 'nao existe' });
+      return route.fulfill({ status: 404, headers: CABECALHOS, body: 'nao existe' });
     }
     return route.fulfill({ status: 200, body: readFileSync(arq), contentType: TIPOS[extname(arq)] || 'application/octet-stream',
-      headers: csp && extname(arq) === '.html' ? { 'content-security-policy': csp } : {} });
+      headers: csp && extname(arq) === '.html' ? { ...CABECALHOS, 'content-security-policy': csp } : CABECALHOS });
   });
   await page.addInitScript(stubTauri, grade);
   await page.addInitScript(() => { try { localStorage.setItem('phxclaw.token', 'token-de-teste'); } catch { /* sem armazenamento */ } });
@@ -619,10 +627,11 @@ try {
   check('sem os tres JSON: Visao geral mostra travessao e quatro avisos, sem barra', vazio.nums.every(n => n === '—') && vazio.avisos === 4 && vazio.barra, JSON.stringify(vazio));
   await p3.screenshot({ path: join(OUT, 'ui_geral_sem_json.png') });
 
-  // Sob a CSP do Tauri (script-src 'self', style-src 'self', sem 'unsafe-inline'): a grade
-  // tem de funcionar inteira. O phx-grid poe alguns style="" no HTML que monta (recuo de
-  // grupo aninhado, recuo de linha do cubo); a CSP os descarta, e isso e cosmetico -- o
-  // numero de violacoes vai no detalhe. Script bloqueado e que seria defeito.
+  // Sob a CSP do Tauri (a do servidor + o canal ipc:, teste Rust
+  // a_csp_do_desktop_e_a_do_servidor_e_o_inspetor_fica_fora): a grade tem de funcionar
+  // inteira e sem violacao nenhuma. Ate 09/10/2026 o desktop tinha style-src 'self' e o
+  // phx-grid perdia calado os style="" que monta (recuo de grupo, linha do cubo); a CSP de
+  // agora aceita estilo em linha (pwa.rs diz o preco) e continua sem script em linha.
   const { page: p4, erros: e4 } = await abrirPagina(browser, { csp: CSP_TAURI });
   await p4.evaluate(() => { window.__csp = []; document.addEventListener('securitypolicyviolation', e => window.__csp.push(e.effectiveDirective)); });
   await p4.click('.nav[data-tela="agentes"]');
@@ -636,9 +645,10 @@ try {
     violacoes: window.__csp,
   }));
   const scripts = sobCsp.violacoes.filter(v => v.startsWith('script'));
-  check('sob a CSP do Tauri: a grade de agentes e o cubo desenham, sem script bloqueado',
-    sobCsp.agentes === equipe.total && sobCsp.cubo > Object.keys(absorcao).length && scripts.length === 0 && !e4.some(x => /Refused to (execute|load) script/.test(x)),
+  check('sob a CSP do Tauri: a grade de agentes e o cubo desenham, zero violacao',
+    sobCsp.agentes === equipe.total && sobCsp.cubo > Object.keys(absorcao).length && scripts.length === 0 && sobCsp.violacoes.length === 0 && !e4.some(x => /Refused to/.test(x)),
     `${sobCsp.agentes} linhas, cubo ${sobCsp.cubo} linhas, violacoes: ${JSON.stringify(sobCsp.violacoes.reduce((a, v) => ({ ...a, [v]: (a[v] || 0) + 1 }), {}))}`);
+  check('zero violacao de CSP em todas as paginas (servidor e Tauri)', violacoesCsp.length === 0, violacoesCsp.slice(0, 5).join(' | '));
 } catch (e) {
   check('roteiro', false, String(e).slice(0, 300));
 } finally {

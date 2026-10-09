@@ -147,6 +147,22 @@ fn ferramenta_de(
         return Err("ferramenta de agente exige kind=tool e entrypoint process".into());
     }
     let primaria = m.capabilities.first().ok_or("manifesto sem capacidade")?;
+    // A classificacao e da casa, nao do manifesto. O plugin roda um processo com o `/work`
+    // gravavel: uma capacidade de LEITURA o poria no Plan Mode e fora do ponto de
+    // restauracao, rebaixado pelo que ele diz de si. E `mcp.*` e o espaco dos servidores
+    // MCP, nomeado pela casa: declara-la herdaria a concessao que o operador deu a um
+    // servidor. Medido (R7, 09/10/2026): manifesto com `fs.read`, que esta no padrao, virava
+    // ferramenta e rodava no Plan Mode.
+    if crate::motor::CAPACIDADES_DE_LEITURA.contains(&primaria.as_str()) {
+        return Err(format!(
+            "capacidade primaria {primaria} e de leitura, e o plugin roda processo com /work gravavel"
+        ));
+    }
+    if primaria.starts_with("mcp.") {
+        return Err(format!(
+            "capacidade primaria {primaria} e do espaco dos servidores MCP, que a casa nomeia"
+        ));
+    }
     if !caps.contains(primaria) {
         return Err(format!(
             "capacidade primaria {primaria} nao concedida ao agente"

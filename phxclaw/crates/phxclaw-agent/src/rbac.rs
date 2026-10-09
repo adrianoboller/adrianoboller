@@ -135,6 +135,8 @@ pub const MATRIZ: &[Regra] = &[
     r("GET", "/manifest.webmanifest", LE, X),
     r("GET", "/sw.js", LE, X),
     r("GET", "/assets/{*resto}", LE, X),
+    // A politica da tela (`ui.bloquear_inspecao`): a dissuasao vale antes do login.
+    r("GET", crate::pwa::ROTA_POLITICA, LE, X),
     r("GET", "/metrics", LE, I),
     r("GET", "/v1/tasks", LE, P),
     r("POST", "/v1/tasks", ME, P),

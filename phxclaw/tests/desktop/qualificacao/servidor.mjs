@@ -2,12 +2,16 @@
 import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, extname } from 'node:path';
+import { cabecalhosDaUi, ROTA_POLITICA, POLITICA_PADRAO } from '../seguranca.mjs';
+
+// Os cabecalhos de seguranca do agente (pwa.rs) em toda resposta, como o `servir` manda.
+const CABECALHOS = cabecalhosDaUi();
 
 const TIPOS = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
 export function subir(raiz, dados) {
   const modo = { tarefas: 'normal', config: 'normal', semjson: false, semtextos: false, atraso: 0 };
-  const ESTADOS = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled'];
+  const ESTADOS = ['pending', 'awaiting_approval', 'awaiting_input', 'running', 'completed', 'failed', 'cancelled', 'budget_exceeded'];
   const TAREFAS = ESTADOS.map((status, i) => ({
     id: `t${i}`, objective: `Objetivo da tarefa ${i}: revisar o relatório de Blumenau e consolidar números`, status, model: 'falso',
     plan: status === 'awaiting_approval' ? [{ descricao: 'passo 1' }, { descricao: 'passo 2' }] : [],
@@ -23,6 +27,8 @@ export function subir(raiz, dados) {
   const srv = createServer(async (req, res) => {
     const u = new URL(req.url, 'http://x');
     const p = decodeURIComponent(u.pathname);
+    for (const [k, v] of Object.entries(CABECALHOS)) res.setHeader(k, v);
+    if (p === ROTA_POLITICA) { res.writeHead(200, { 'content-type': 'application/json' }); res.end(POLITICA_PADRAO); return; }
     if (p === '/__modo') { for (const [k, v] of u.searchParams) modo[k] = v === 'true' ? true : v === 'false' ? false : (isNaN(+v) ? v : +v); res.end(JSON.stringify(modo)); return; }
     if (modo.atraso) await new Promise(r => setTimeout(r, modo.atraso));
     const json = (st, b) => { res.writeHead(st, { 'content-type': 'application/json' }); res.end(JSON.stringify(b)); };

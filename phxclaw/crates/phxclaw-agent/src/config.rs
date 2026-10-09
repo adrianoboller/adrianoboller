@@ -90,6 +90,17 @@ pub fn projeto(pasta: &Path) -> Projeto {
     }
 }
 
+/// O texto de um arquivo da `.phxclaw/` ignorado por falta de confianca, com o comando que
+/// o libera. Um texto so para a vista da configuracao, o `servir` (gatilhos) e a montagem
+/// (hooks, comandos, estilos, workspace): quem le o aviso de um aprende o dos outros.
+pub fn ignorado_por_confianca(arquivo: &Path, raiz: &Path) -> String {
+    format!(
+        "{} ignorado: projeto nao confiado (phxclaw projeto confiar {})",
+        arquivo.display(),
+        raiz.display()
+    )
+}
+
 /// A configuracao efetiva da pasta (ambiente > projeto confiado > perfil ativo > pasta >
 /// padrao).
 pub fn carregar(pasta: &Path) -> Result<Configuracao, Vec<Erro>> {
@@ -326,6 +337,7 @@ pub fn vista(pasta: &Path) -> Result<Value, Vec<Erro>> {
                 },
             );
             m.insert("origem".into(), json!(origem));
+            m.insert("so_do_operador".into(), json!(c.so_do_operador().is_some()));
             m.insert(
                 "segredo_presente".into(),
                 json!(c.segredo() && segredo_presente(pasta, c)),
@@ -338,14 +350,9 @@ pub fn vista(pasta: &Path) -> Result<Value, Vec<Erro>> {
         .collect();
     let (arq_projeto, ignorado) = match &p {
         Projeto::Confiado(a) => (json!(a.display().to_string()), Value::Null),
-        Projeto::NaoConfiado { arquivo, raiz } if arquivo.exists() => (
-            Value::Null,
-            json!(format!(
-                "{} ignorado: projeto nao confiado (phxclaw projeto confiar {})",
-                arquivo.display(),
-                raiz.display()
-            )),
-        ),
+        Projeto::NaoConfiado { arquivo, raiz } if arquivo.exists() => {
+            (Value::Null, json!(ignorado_por_confianca(arquivo, raiz)))
+        }
         _ => (Value::Null, Value::Null),
     };
     Ok(json!({
@@ -354,6 +361,10 @@ pub fn vista(pasta: &Path) -> Result<Value, Vec<Erro>> {
             "pasta": arquivo_da_pasta(pasta).display().to_string(),
             "projeto": arq_projeto,
             "projeto_ignorado": ignorado,
+            // Chaves que o projeto declarou e que so valem do operador (o catalogo decide).
+            "projeto_chaves_ignoradas": cfg.ignoradas_do_projeto.iter()
+                .map(|e| json!({"chave": e.chave, "motivo": e.motivo}))
+                .collect::<Vec<_>>(),
         },
         "perfis": perfis_de(&cfg),
         "chaves": chaves,

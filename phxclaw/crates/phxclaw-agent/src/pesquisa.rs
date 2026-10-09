@@ -186,6 +186,9 @@ pub fn limpar_marcadores(resposta: &str, conferidas: &BTreeSet<usize>) -> (Strin
 }
 
 pub struct DeepResearchTool {
+    /// O modelo da montagem, ja envolvido pelo `orcamento::LlmDaTarefa`: cada uma das
+    /// chamadas por dentro (planejar, sintetizar; ~9 mil tokens por uso, medido) cobra a
+    /// conta da tarefa. Montada fora da `Montagem`, envolva-o, senao gasta fora da conta.
     pub llm: Arc<dyn Llm>,
     pub busca: Arc<dyn SearchBackend>,
     pub leitor: Arc<dyn LeitorDePaginas>,

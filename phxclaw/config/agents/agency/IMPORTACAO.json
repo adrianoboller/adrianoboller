@@ -1,0 +1,295 @@
+{
+  "origem": "https://github.com/msitarzewski/agency-agents",
+  "commit": "f99f6aa910a442b0197b768ce0ea7751e35e2060",
+  "licenca": "MIT, Copyright (c) 2025 AgentLand Contributors",
+  "divisoes": [
+    "academic",
+    "design",
+    "engineering",
+    "finance",
+    "game-development",
+    "gis",
+    "healthcare",
+    "marketing",
+    "paid-media",
+    "product",
+    "project-management",
+    "research",
+    "sales",
+    "security",
+    "spatial-computing",
+    "specialized",
+    "support",
+    "testing",
+    "strategy"
+  ],
+  "achados": 282,
+  "importados": 280,
+  "recusados": [
+    {
+      "arquivo": "design/design-whimsy-injector.md",
+      "motivo": "varredura anti-injecao recusou o papel (credential_request)"
+    },
+    {
+      "arquivo": "engineering/engineering-prompt-engineer.md",
+      "motivo": "varredura anti-injecao recusou o papel (prompt_injection)"
+    }
+  ],
+  "pedidos_de_concessao": [
+    {
+      "arquivo": "marketing/marketing-content-creator.md",
+      "papel": "Content Creator",
+      "uuid": "01a11df5-a400-7a91-8243-fbada6ce54ce",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "marketing/marketing-growth-hacker.md",
+      "papel": "Growth Hacker",
+      "uuid": "01a11df5-a400-7635-bfe9-6396dee25620",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "marketing/marketing-seo-specialist.md",
+      "papel": "SEO Specialist",
+      "uuid": "01a11df5-a400-7ca5-b382-4ac6262c606b",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "marketing/marketing-social-media-strategist.md",
+      "papel": "Social Media Strategist",
+      "uuid": "01a11df5-a400-72d2-bf73-3b208eafd0f5",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-auditor.md",
+      "papel": "Paid Media Auditor",
+      "uuid": "01a11df5-a400-7f80-a571-f647370dde4a",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-creative-strategist.md",
+      "papel": "Ad Creative Strategist",
+      "uuid": "01a11df5-a400-7366-93d8-0094b7f61df6",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-paid-social-strategist.md",
+      "papel": "Paid Social Strategist",
+      "uuid": "01a11df5-a400-7f9d-97f3-927d99b6da73",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-ppc-strategist.md",
+      "papel": "PPC Campaign Strategist",
+      "uuid": "01a11df5-a400-7aff-bba0-6234182811a7",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-programmatic-buyer.md",
+      "papel": "Programmatic & Display Buyer",
+      "uuid": "01a11df5-a400-7dc1-867f-b619914a1e89",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-search-query-analyst.md",
+      "papel": "Search Query Analyst",
+      "uuid": "01a11df5-a400-78a3-b0d2-f38be73646a2",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "paid-media/paid-media-tracking-specialist.md",
+      "papel": "Tracking & Measurement Specialist",
+      "uuid": "01a11df5-a400-7d45-a8fc-ef480e483dbb",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "shell.exec",
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "product/product-feedback-synthesizer.md",
+      "papel": "Feedback Synthesizer",
+      "uuid": "01a11df5-a400-73a7-bedf-6bb3bb3c7c95",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "product/product-manager.md",
+      "papel": "Product Manager",
+      "uuid": "01a11df5-a400-74d8-8d5e-c2a250c50921",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "product/product-sprint-prioritizer.md",
+      "papel": "Sprint Prioritizer",
+      "uuid": "01a11df5-a400-73c7-bfdb-7a43c7bdd7b6",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "product/product-trend-researcher.md",
+      "papel": "Trend Researcher",
+      "uuid": "01a11df5-a400-7ef0-bc0e-9922139588fe",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    },
+    {
+      "arquivo": "specialized/specialized-pricing-analyst.md",
+      "papel": "Pricing Analyst",
+      "uuid": "01a11df5-a400-72a6-af28-796224881403",
+      "pedidas": [
+        "fs.read",
+        "fs.write",
+        "web.browse",
+        "web.search"
+      ],
+      "sob_concessao": [
+        "web.browse",
+        "web.search"
+      ]
+    }
+  ],
+  "avisos": []
+}
