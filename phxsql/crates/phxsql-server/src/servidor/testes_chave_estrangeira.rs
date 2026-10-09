@@ -12,7 +12,14 @@ fn pedido(txt: &str) -> Json {
 }
 
 fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
-    let c = Config {
+    servidor_com_protecao(dir, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767):
+/// desligado so onde a prova e de um comando da lista de perigo pedido pela
+/// sessao de servico, que nao tem login para liberar.
+fn servidor_com_protecao(dir: &std::path::Path, protecao: bool) -> Arc<Servidor> {
+    let mut c = Config {
         base: dir.to_path_buf(),
         log_acessos: dir.join("acessos.log"),
         blacklist: dir.join("blacklist.json"),
@@ -20,6 +27,7 @@ fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
         token: "t".into(),
         ..Config::default()
     };
+    c.protecao.ligada = protecao;
     let s = Servidor::novo(c).unwrap();
     s.executar(
         "criar_database",
@@ -743,7 +751,8 @@ fn declarar_fk_sem_tabela_ref_recusa_em_vez_de_apontar_para_si() {
 #[test]
 fn excluir_fk_tira_a_declaracao_e_nada_mais() {
     let guarda = dir_temp("tira");
-    let s = servidor(&guarda);
+    // `excluir_fk` e da lista de perigo; a prova e do que a remocao tira.
+    let s = servidor_com_protecao(&guarda, false);
     com_fk(&s, "").unwrap();
     // Com a chave declarada -- e conferida, que e o padrao -- a gravacao
     // para, porque `clientes` nao existe. Este passo era um `unwrap()` que

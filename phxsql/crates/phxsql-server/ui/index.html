@@ -2148,6 +2148,11 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
     <button class="tema" id="btTema"
             aria-label="Alternar tema claro e escuro" data-txt-al="tela.tema_dica">🌓</button>
     <span class="eu" id="eu"></span>
+    <!-- O `sudo -k` da senha de execucao (pedido 767): tranca de novo os
+         comandos perigosos desta sessao. Sempre a mao, porque trancar nunca
+         e perigoso e e idempotente. -->
+    <button class="botao secundario" id="btTrancar" hidden data-txt="tela.bt_trancar_execucao"
+            data-txt-al="tela.dica_trancar_execucao" aria-label="Tranca de novo os comandos perigosos nesta sessão">Trancar</button>
     <button class="botao secundario" id="btSair" data-txt="tela.sair">Sair</button>
   </div>
 
@@ -2243,7 +2248,7 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
               // O assistente do pivot sobrevive a ir e voltar entre os passos.
               pivot:null };
 
-async function api(op, params = {}) {
+async function api(op, params = {}, jaPediuASenha = false) {
   if (est.demo) return demo(op, params);
   const r = await fetch("/api", {
     method:"POST",
@@ -2261,6 +2266,24 @@ async function api(op, params = {}) {
     const e = new Error(j.erro || "falha");
     e.nome = j.nome || "";
     e.codigo = j.codigo || 0;
+    // O resto do envelope do erro viaja junto, e nao so a frase: `repetir`
+    // diz se adianta tentar de novo, `classe` e `sprint` dizem de que familia
+    // e quem responde por ela. Quem chama decide pelo campo, nunca pela
+    // redacao.
+    e.repetir = !!j.repetir;
+    e.classe = j.classe || "";
+    e.sprint = j.sprint || "";
+    // SENHA_DE_EXECUCAO_EXIGIDA (4009): o comando e da lista de perigo e esta
+    // sessao nao esta liberada (pedidos 765/767). E o FUNIL UNICO: toda tela
+    // -- esta, o aquario, a telemetria, a Claude -- chama esta `api()`, entao
+    // o dialogo da PAGINA abre aqui e, liberada a sessao, o MESMO pedido se
+    // refaz uma vez, sem a pessoa redigitar nada. Pelo nome, e nunca pela
+    // frase: a frase muda com o idioma.
+    if (e.nome === "SENHA_DE_EXECUCAO_EXIGIDA" && !jaPediuASenha
+        && op !== "liberar_execucao" && op !== "senha_execucao_definir"
+        && await dialogoSenhaDeExecucao(e.message)) {
+      return api(op, params, true);
+    }
     throw e;
   }
   return j.resultado;
@@ -2793,6 +2816,12 @@ async function abrirApp() {
   $("#eu").title = quemSou;
   const p = await api("ping");
   est.porta = p.porta_dados;               // a porta REAL, para os textos que a citam
+  // A liberacao pela senha de execucao e do SERVIDOR (pedido 767): a janela
+  // que reabre numa sessao ja liberada mostra o «Trancar» desde o comeco.
+  if (!est.demo) {
+    api("quem_sou").then(q => marcarExecucaoLiberada(!!(q && q.execucao_liberada)))
+      .catch(() => {});
+  }
   // «papel isolado» sai do titulo: servidor sozinho e o caso comum, e dizer
   // isso na barra o tempo todo e ruido que ocupa o lugar do que importa. Mas
   // `source` e `replica` FICAM -- essas mudam o que a tela deixa fazer
@@ -9783,6 +9812,115 @@ function perguntarTexto({ titulo, sub = "", rotulo, legenda = "", valorInicial =
   });
 }
 
+/* ======================================= a senha de execucao (pedido 767)
+   O dialogo da PAGINA que libera a sessao para os comandos perigosos -- nunca
+   `prompt()`: o campo e de senha, e o `prompt()` nativo mostra o que se
+   digita e e descartado em silencio por qualquer automacao (ver o comentario
+   do `perguntarTexto`, acima).
+
+   Uma vez informada, a senha libera a SESSAO ate o «Trancar», o «Sair» ou a
+   sessao vencer -- precisao do dono. O servidor gira o id da sessao ao
+   liberar, e o `api()` ja guarda o novo do campo `sessao` da resposta.
+
+   Quem ainda nao tem a senha de execucao cadastra no mesmo dialogo: a senha
+   de LOGIN prova que e a pessoa, e a nova tem de ser diferente dela. A senha
+   nunca fica em `est`, em `localStorage` nem em lugar nenhum da pagina: sai
+   do campo direto para o pedido, e o dialogo morre com ela. */
+
+/** O estado da liberacao na barra: o «Trancar» so aparece com a sessao
+ *  liberada, e e o servidor quem diz (`quem_sou.execucao_liberada`). */
+function marcarExecucaoLiberada(liberada) {
+  const b = document.querySelector("#btTrancar");
+  if (b) b.hidden = !liberada;
+}
+
+/** Pede a senha de execucao e libera a sessao. `true` quando liberou. */
+function dialogoSenhaDeExecucao(motivo) {
+  return new Promise(resolve => {
+    const fundo = document.createElement("div");
+    fundo.className = "sobre";
+    const titulo = esc(txt("tela.tt_senha_execucao", "Senha de execução"));
+    fundo.innerHTML = `
+      <div class="caixa" role="dialog" aria-modal="true" aria-label="${titulo}" id="dlgSenhaExecucao">
+        <h3>${titulo}</h3>
+        <div class="sub">${esc(txt("tela.sub_senha_execucao",
+          "Este comando é perigoso e só executa com a senha de execução — a segunda senha, que não é a de login. Uma vez informada, vale para esta sessão até você trancar ou sair."))}</div>
+        <div class="aviso">${esc(motivo || "")}</div>
+        <div id="seLiberarBloco">
+          <label class="cmp"><span>${esc(txt("tela.rot_senha_execucao", "Senha de execução"))}</span>
+            <input id="seSenha" class="campo" type="password" autocomplete="off"></label>
+        </div>
+        <div id="seCadastroBloco" hidden>
+          <label class="cmp"><span>${esc(txt("tela.rot_senha_login", "Senha de login (prova que é você)"))}</span>
+            <input id="seLogin" class="campo" type="password" autocomplete="current-password"></label>
+          <label class="cmp"><span>${esc(txt("tela.rot_nova_senha_execucao", "Nova senha de execução (8 ou mais, diferente da de login)"))}</span>
+            <input id="seNova" class="campo" type="password" autocomplete="new-password"></label>
+          <label class="cmp"><span>${esc(txt("tela.rot_confirmar_senha", "Repita a nova senha"))}</span>
+            <input id="seConfirma" class="campo" type="password" autocomplete="new-password"></label>
+        </div>
+        <div id="seRecado"></div>
+        <div class="acoes">
+          <button class="botao secundario" id="seCadastrar">${esc(txt("tela.bt_cadastrar_senha_execucao", "Ainda não tenho: cadastrar"))}</button>
+          <button class="botao secundario" id="seNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
+          <button class="botao alterar" id="seSim">${esc(txt("tela.bt_liberar_execucao", "Liberar"))}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(fundo);
+    const $d = s => fundo.querySelector(s);
+    let cadastrando = false;
+    const fechar = valor => {
+      document.removeEventListener("keydown", fuga);
+      fundo.remove();
+      resolve(valor);
+    };
+    function fuga(ev) { if (ev.key === "Escape") fechar(false); }
+    document.addEventListener("keydown", fuga);
+    fundo.onclick = ev => { if (ev.target === fundo) fechar(false); };
+    const recado = texto => {
+      $d("#seRecado").innerHTML = `<div class="aviso mal">${esc(String(texto))}</div>`;
+    };
+    $d("#seNao").onclick = ev => { ev.preventDefault(); fechar(false); };
+    $d("#seCadastrar").onclick = ev => {
+      ev.preventDefault();
+      cadastrando = !cadastrando;
+      $d("#seCadastroBloco").hidden = !cadastrando;
+      $d("#seLiberarBloco").hidden = cadastrando;
+      $d("#seSim").textContent = cadastrando
+        ? txt("tela.bt_cadastrar_e_liberar", "Cadastrar e liberar")
+        : txt("tela.bt_liberar_execucao", "Liberar");
+      // Foco NA HORA, e nao num `setTimeout`: o foco atrasado chegava no
+      // meio da digitacao do campo seguinte e a mandava para o campo de
+      // cima -- medido pela bateria (a nova senha caindo no fim da de login).
+      (cadastrando ? $d("#seLogin") : $d("#seSenha")).focus();
+    };
+    const liberar = async senha => {
+      await api("liberar_execucao", { senha });
+      // A senha sai do DOM antes de o dialogo morrer (a licao do 339).
+      fundo.querySelectorAll("input").forEach(i => { i.value = ""; });
+      marcarExecucaoLiberada(true);
+      avisar(txt("tela.g_execucao_liberada", "sessão liberada para comandos perigosos"));
+      fechar(true);
+    };
+    const confirmar = async ev => {
+      if (ev) ev.preventDefault();
+      try {
+        if (!cadastrando) return await liberar($d("#seSenha").value);
+        const nova = $d("#seNova").value;
+        if (nova !== $d("#seConfirma").value)
+          return recado(txt("tela.g_senhas_nao_conferem", "as senhas não conferem"));
+        await api("senha_execucao_definir",
+          { senha: $d("#seLogin").value, nova_senha_execucao: nova });
+        await liberar(nova);
+      } catch (err) { recado(err && err.message || err); }
+    };
+    $d("#seSim").onclick = confirmar;
+    fundo.querySelectorAll("input").forEach(i => {
+      i.onkeydown = ev => { if (ev.key === "Enter") confirmar(ev); };
+    });
+    $d("#seSenha").focus();
+  });
+}
+
 /** Restaura uma linha marcada. */
 async function restaurarLinha(db, tab, rowid, aoTerminar) {
   const motivo = await perguntarTexto({
@@ -16418,6 +16556,15 @@ aplicarIdioma(idiomaEscolhido());
 $("#btEntrar").onclick = entrar;
 $("#s").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
 $("#t").addEventListener("keydown", e => { if (e.key === "Enter") entrar(); });
+$("#btTrancar").onclick = async () => {
+  if (est.demo) return;
+  try {
+    await api("trancar_execucao");
+    marcarExecucaoLiberada(false);
+    avisar(txt("tela.g_execucao_trancada",
+      "sessão trancada: comandos perigosos voltam a pedir a senha de execução"));
+  } catch (e) { avisar(String(e && e.message || e), true); }
+};
 $("#btSair").onclick = async () => {
   if (!est.demo && est.sessao) { try { await api("sair"); } catch {} }
   location.reload();

@@ -264,6 +264,20 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "acceso denegado: {detalhe}",
         ],
     },
+    // Pedidos 765/767: a recusa da camada de protecao. A frase diz as duas
+    // coisas que o cliente precisa para agir -- que o comando e perigoso e
+    // que o que falta e a senha de EXECUCAO, nao a de login.
+    MensagemFabrica {
+        nome: "erro.senha_de_execucao_exigida",
+        textos: [
+            "comando perigoso: exige a senha de execucao, e sem ela nao executa: {detalhe}",
+            "commande dangereuse : elle exige le mot de passe d'exécution, et sans lui elle ne s'exécute pas : {detalhe}",
+            "dangerous command: it requires the execution password, and without it it does not run: {detalhe}",
+            "comando pericoloso: richiede la password di esecuzione, e senza di essa non viene eseguito: {detalhe}",
+            "gefährlicher Befehl: er erfordert das Ausführungspasswort und wird ohne es nicht ausgeführt: {detalhe}",
+            "comando peligroso: exige la contraseña de ejecución, y sin ella no se ejecuta: {detalhe}",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.em_carga",
         textos: [
@@ -1328,6 +1342,7 @@ pub fn decompor(e: &PhxError) -> (&'static str, String) {
         PhxError::Integridade(m) => ("erro.integridade", m.clone()),
         PhxError::Conflito(m) => ("erro.conflito", m.clone()),
         PhxError::Autorizacao(m) => ("erro.acesso_negado", m.clone()),
+        PhxError::SenhaDeExecucaoExigida(m) => ("erro.senha_de_execucao_exigida", m.clone()),
         PhxError::EmCarga(m) => ("erro.em_carga", m.clone()),
         PhxError::EmTransacao(m) => ("erro.em_transacao", m.clone()),
         PhxError::EmMigracao(m) => ("erro.em_migracao", m.clone()),

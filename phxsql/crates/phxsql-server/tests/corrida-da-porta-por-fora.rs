@@ -177,11 +177,15 @@ fn config_minima(dir: &std::path::Path, bind: &str) -> Config {
 #[test]
 fn vermelho_com_o_servidor_de_verdade_a_janela_derruba_o_arranque() {
     let dir = DirTemp::novo("corrida-401-vermelho");
-    let porta = porta_livre_antiga();
     // O ocupante toma exatamente o numero que o `config.json` vai pedir --
     // a mesma janela do primeiro teste deste arquivo, so que agora o alvo e
-    // o `bind` que `Servidor::escutar()` faz de verdade.
-    let ocupante = TcpListener::bind(("127.0.0.1", porta)).unwrap();
+    // o `bind` que `Servidor::escutar()` faz de verdade. Ele liga PRIMEIRO e
+    // so entao o numero vai ao config: escolher pela `porta_livre_antiga()` e
+    // ligar depois abria a propria janela que este arquivo mede, e outro
+    // processo da suite tomou o numero no meio (AddrInUse no ocupante,
+    // 09/10/2026, com a suite inteira rodando ao lado de outra frente).
+    let ocupante = TcpListener::bind("127.0.0.1:0").unwrap();
+    let porta = ocupante.local_addr().unwrap().port();
 
     let c = config_minima(&dir, &format!("127.0.0.1:{porta}"));
     let s = Servidor::novo(c).unwrap();

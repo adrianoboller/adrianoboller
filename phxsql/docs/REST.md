@@ -309,6 +309,7 @@ Derivados da faixa do código de erro do PhxSql, e não de uma lista por variant
 | `ESQUEMA_INVALIDO`, `TIPO_INVALIDO` | 2000 | 400 |
 | token que esta porta não aceita | — | **401** |
 | `ACESSO_NEGADO` | 4001 | 403 |
+| `SENHA_DE_EXECUCAO_EXIGIDA` (comando da lista de perigo, sessão não liberada — pedidos 765/767) | 4009 | 403 |
 | `NAO_ENCONTRADO` (inclusive a tabela que o REST não expõe) | 3001 | 404 |
 | `DUPLICADO`, `CONFLITO` | 3002/3004 | 409 |
 | `REDIRECIONA` (escreveu na réplica) | 4003 | **421** |

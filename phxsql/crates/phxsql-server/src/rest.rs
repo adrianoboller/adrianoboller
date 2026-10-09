@@ -241,6 +241,10 @@ pub fn status_do_erro(e: &PhxError) -> u16 {
         // cliente tem de ir a outro servidor, e 421 e exatamente isso.
         PhxError::Redireciona(_) => 421,
         PhxError::Autorizacao(_) => 403,
+        // 403 e nao o 401 da RFC 9470: o 401 manda o cliente HTTP refazer o
+        // login, e a credencial de login e justamente a que NAO serve aqui --
+        // a senha de execucao e uma segunda senha (pedido 767).
+        PhxError::SenhaDeExecucaoExigida(_) => 403,
         // 503 pelo mesmo motivo do `EmCarga`: o recurso existe e esta
         // temporariamente indisponivel -- nao e erro do pedido.
         PhxError::EmCarga(_)

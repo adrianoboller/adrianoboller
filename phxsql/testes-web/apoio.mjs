@@ -39,7 +39,7 @@ export function contem(texto, pedaco, oQue) {
  * supervisor) cria o usuario restrito pela API, como o supervisor, e chama
  * `entrar` de novo com `{ usuario, senha, token }` dele -- numa aba nova,
  * porque a sessao do supervisor nao pode ser a mesma que testa a restricao. */
-export async function entrar(page, url, credenciais = CREDENCIAL) {
+export async function entrar(page, url, credenciais = CREDENCIAL, { liberar = true } = {}) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#btEntrar');
   // Sem servidor a pagina cai em «modo demonstracao» com dados embutidos, e
@@ -71,7 +71,30 @@ export async function entrar(page, url, credenciais = CREDENCIAL) {
   // ela e o que a pessoa faz sem pensar: ninguem clica no menu 30 ms depois
   // de a tela abrir.
   await page.waitForSelector('#app.ativo[data-pronto="1"]', { timeout: 20000 });
+  // E LIBERA A SESSAO COM A SENHA DE EXECUCAO (pedido 767). Desde a P1, todo
+  // comando da lista de perigo -- DROP, esvaziar a lixeira, ALTER em tabela
+  // grande, cadastro de administrador -- pede a segunda senha, e os casos
+  // daqui provam OUTRA coisa com esses botoes. Entrar liberado e o que faz a
+  // pessoa que tem a senha; quem prova o dialogo e a recusa e o caso
+  // `senha-de-execucao`, que entra com `{ liberar: false }`. A primeira
+  // entrada de cada usuario cadastra a senha, provando-se com a de login, e
+  // tudo passa pela `api()` da pagina -- e assim que o id girado pelo
+  // servidor chega ao `est.sessao`.
+  if (liberar) {
+    await page.evaluate(async ([senhaLogin, senhaExec]) => {
+      try { await api('liberar_execucao', { senha: senhaExec }, true); }
+      catch {
+        await api('senha_execucao_definir',
+          { senha: senhaLogin, nova_senha_execucao: senhaExec }, true);
+        await api('liberar_execucao', { senha: senhaExec }, true);
+      }
+    }, [credenciais.senha ?? credenciais.SENHA, SENHA_EXECUCAO]);
+  }
 }
+
+/** A senha de execucao de quem a bateria faz entrar. Diferente de toda senha
+ *  de login daqui, como o servidor exige. */
+export const SENHA_EXECUCAO = 'execucao-da-bateria-767';
 
 /** Chama uma operacao do protocolo pela MESMA `api()` da pagina.
  *

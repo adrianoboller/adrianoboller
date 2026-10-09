@@ -241,6 +241,41 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "liberar_execucao",
+        apelidos: &[],
+        resumo: "Libera a SESSÃO para os comandos perigosos com a senha de execução \
+                 -- a segunda senha, que não é a de login. Vale até a sessão acabar \
+                 ou até o trancar_execucao. Em SQL: UNLOCK EXECUTION IDENTIFIED BY '...'.",
+        parametros: &[obr("senha", "string", "a senha de execução desta identidade")],
+        exemplo: r#"{"op":"liberar_execucao","senha":"a-senha-de-execucao"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "senha_execucao_definir",
+        apelidos: &[],
+        resumo: "Cadastra ou troca a senha de execução. A primeira vez pede a senha de \
+                 login; a troca pede a de execução atual; o administrador com a sessão \
+                 liberada redefine a de outro usuário.",
+        parametros: &[
+            obr("nova_senha_execucao", "string", "a senha de execução nova, 8 bytes ou mais, diferente da de login"),
+            opc("login", "string", "de quem; vazio = desta sessão"),
+            opc("senha", "string", "a senha de LOGIN, no primeiro cadastro"),
+            opc("senha_execucao", "string", "a senha de execução atual, na troca"),
+        ],
+        exemplo: r#"{"op":"senha_execucao_definir","senha":"a-senha-de-login","nova_senha_execucao":"outra-senha-longa"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "trancar_execucao",
+        apelidos: &[],
+        resumo: "Tranca de novo a sessão liberada pela senha de execução, como o \
+                 `sudo -k`: o próximo comando perigoso volta a ser recusado. Não \
+                 pede senha e pode ser repetido. Em SQL: LOCK EXECUTION.",
+        parametros: &[],
+        exemplo: r#"{"op":"trancar_execucao"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "quem_sou",
         apelidos: &[],
         resumo: "Diz quem é o usuário desta sessão, ou que ela entrou pelo \

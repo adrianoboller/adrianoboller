@@ -100,6 +100,30 @@ impl Comando {
     }
 }
 
+/// O texto e `LOCK EXECUTION` -- o `trancar_execucao` do protocolo escrito
+/// em SQL (pedido 767)?
+///
+/// Mora aqui porque e comando de SESSAO, como os de transacao: nao tem
+/// tabela, nao produz linha, e o que ele muda e a conexao. O portao vem antes
+/// do trabalho: texto que nem tem as letras de `LOCK` nao paga o lexico.
+/// `;` no fim e aceito, como em todo comando desta camada.
+pub fn e_trancar_execucao(texto: &str) -> bool {
+    let t = texto.trim_start();
+    if t.len() < 4 || !t.as_bytes()[..4].eq_ignore_ascii_case(b"LOCK") {
+        return false;
+    }
+    let Ok(simbolos) = lexico::analisar(texto) else {
+        return false;
+    };
+    let mut resto: Vec<&Token> = simbolos.iter().map(|x| &x.token).collect();
+    if matches!(resto.last(), Some(Token::PontoEVirgula)) {
+        resto.pop();
+    }
+    resto.len() == 2
+        && resto[0].palavra_chave().as_deref() == Some("LOCK")
+        && resto[1].palavra_chave().as_deref() == Some("EXECUTION")
+}
+
 /// Reconhece um comando de transacao. `None` quando o texto e outra coisa.
 pub fn comando(texto: &str) -> Result<Option<Comando>> {
     // Texto que nem passa pelo lexico NAO e assunto deste modulo, e o erro
@@ -510,6 +534,23 @@ impl Passo<'_> {
 
 #[cfg(test)]
 mod testes {
+    #[test]
+    fn lock_execution_e_o_trancar_e_so_ele() {
+        for sim in ["LOCK EXECUTION", "lock execution;", "  Lock  Execution ;"] {
+            assert!(e_trancar_execucao(sim), "{sim}");
+        }
+        for nao in [
+            "LOCK",
+            "LOCK EXECUTION AGORA",
+            "LOCK TABLE x",
+            "SELECT 1",
+            "\"LOCK\" EXECUTION",
+            "BEGIN LOCK TIMEOUT 5s",
+        ] {
+            assert!(!e_trancar_execucao(nao), "{nao}");
+        }
+    }
+
     use super::*;
 
     fn ok(sql: &str) -> Comando {

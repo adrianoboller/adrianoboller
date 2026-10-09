@@ -43,6 +43,11 @@ fn subir(base: &Path) -> (Arc<Servidor>, u16) {
 /// O [`subir`] com cadastro de usuarios (pedido 619). `usuarios` vazio e o
 /// servidor sem cadastro de sempre.
 fn subir_com_usuarios(base: &Path, usuarios: &str) -> (Arc<Servidor>, u16) {
+    subir_com_protecao(base, usuarios, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn subir_com_protecao(base: &Path, usuarios: &str, protecao: bool) -> (Arc<Servidor>, u16) {
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
@@ -55,7 +60,8 @@ fn subir_com_usuarios(base: &Path, usuarios: &str) -> (Arc<Servidor>, u16) {
         bl = base.join("blacklist.json").display().to_string(),
         dbl = base.join("dblink.json").display().to_string(),
     );
-    let c = Config::de_json(&Json::analisar(&texto).unwrap()).unwrap();
+    let mut c = Config::de_json(&Json::analisar(&texto).unwrap()).unwrap();
+    c.protecao.ligada = protecao;
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
@@ -308,7 +314,9 @@ const DECLARA: &str = r#""op":"redeclarar_indices_texto","database":"loja","tabe
 #[test]
 fn o_indice_de_texto_se_redeclara_numa_tabela_que_ja_existe() {
     let d = DirTemp::novo("364-redeclarar");
-    let (_s, porta) = subir(&d);
+    // Redeclarar tirando o indice que existe e o DROP INDEX daqui, da lista
+    // de perigo (765/767); a prova e da reconstrucao do `.fts`.
+    let (_s, porta) = subir_com_protecao(&d, "", false);
     let mut c = Ligacao::nova(porta);
     produtos(&mut c);
     assert!(
@@ -360,7 +368,9 @@ fn o_indice_de_texto_se_redeclara_numa_tabela_que_ja_existe() {
 #[test]
 fn o_fts_orfao_e_reconstruido_e_nao_reaproveitado() {
     let d = DirTemp::novo("364-orfao");
-    let (_s, porta) = subir(&d);
+    // Redeclarar tirando o indice que existe e o DROP INDEX daqui, da lista
+    // de perigo (765/767); a prova e da reconstrucao do `.fts`.
+    let (_s, porta) = subir_com_protecao(&d, "", false);
     let mut c = Ligacao::nova(porta);
     produtos(&mut c);
     ok(c.pedir(DECLARA));

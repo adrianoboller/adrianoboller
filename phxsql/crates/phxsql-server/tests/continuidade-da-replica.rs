@@ -64,7 +64,13 @@ fn subir(c: Config) -> (Arc<Servidor>, u16) {
 }
 
 fn subir_source(base: &std::path::Path) -> (Arc<Servidor>, u16) {
+    subir_source_com(base, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn subir_source_com(base: &std::path::Path, protecao: bool) -> (Arc<Servidor>, u16) {
     let mut c = config_base(base);
+    c.protecao.ligada = protecao;
     c.replicacao.papel = Papel::Source;
     c.replicacao.id_servidor = "source-do-teste".into();
     c.replicacao.imagem_da_linha = true;
@@ -271,7 +277,9 @@ fn a_ruptura_da_continuidade_vira_pedra_no_sedimento() {
     let pedras_antes = pedras_de_continuidade();
     let base_s = pasta("source-pedra");
     let base_r = pasta("replica-pedra");
-    let (_source, porta_s) = subir_source(&base_s);
+    // O mesmo motivo do irmao de baixo: o `excluir_tabela` e da lista de
+    // perigo (765/767), e esta prova e do que a replica faz DEPOIS dele.
+    let (_source, porta_s) = subir_source_com(&base_s, false);
     exigir(porta_s, r#""op":"criar_database","database":"loja""#);
     criar_clientes(porta_s);
     inserir(porta_s, 1..=3);
@@ -303,7 +311,10 @@ fn a_ruptura_da_continuidade_vira_pedra_no_sedimento() {
 fn tabela_apagada_e_recriada_no_source_e_acusada_e_nao_aplicada() {
     let base_s = pasta("source-recria");
     let base_r = pasta("replica-recria");
-    let (_source, porta_s) = subir_source(&base_s);
+    // O `excluir_tabela` no source e da lista de perigo (765/767), e sem a
+    // senha de execucao (P14) nenhum cliente o executa: esta prova e do que
+    // a replica faz DEPOIS dele, entao o source sobe com a camada desligada.
+    let (_source, porta_s) = subir_source_com(&base_s, false);
     exigir(porta_s, r#""op":"criar_database","database":"loja""#);
     criar_clientes(porta_s);
     inserir(porta_s, 1..=3);

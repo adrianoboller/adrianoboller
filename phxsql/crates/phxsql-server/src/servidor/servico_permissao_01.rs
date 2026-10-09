@@ -104,6 +104,11 @@ impl Servidor {
         pedido: &Json,
         sessao: &Sessao,
     ) -> Result<Json> {
+        // A camada de protecao (765/767, P1), antes de tudo: o comando da
+        // lista de perigo, sem a sessao liberada pela senha de execucao, nao
+        // chega nem a contar como escrita local. Mora AQUI pelo motivo do
+        // observador logo abaixo -- os tres irmaos passam por este ponto.
+        let liberado = self.protecao_do_pedido(op, pedido, sessao)?;
         // O observador de injecao (495, F3) mora AQUI porque aqui passam os
         // tres irmaos -- a rede, a op `sql` derivada e o job -- e porque so
         // aqui se ve o desfecho dos dois lados. O portao e o `bool`, antes
@@ -143,7 +148,382 @@ impl Servidor {
         if let Some(vez) = vez {
             self.acusar_injecao(vez.fechar(), pedido);
         }
+        // O perigoso que a sessao liberada deixou passar, e que EXECUTOU, vai
+        // a trilha. So com `Ok`: o que falhou nao executou, e o erro ja vai ao
+        // `acessos.log` como todo erro.
+        if let (Some(escopo), true) = (liberado, r.is_ok()) {
+            self.registrar_na_trilha("protecao.executou", &escopo, sessao);
+        }
         r
+    }
+
+    /// A camada de protecao para um pedido -- ver `crate::protecao`.
+    ///
+    /// O portao e o `match` da lista: op fora dela volta sem alocar nada, e e
+    /// esse o caso de quase todo pedido. So as de reescrita medem a tabela.
+    ///
+    /// Devolve o escopo quando o comando e perigoso e a sessao esta liberada
+    /// -- quem executa o leva a trilha depois, se der certo --, `None` quando
+    /// nao e da lista, e o erro quando bloqueia.
+    pub(super) fn protecao_do_pedido(
+        &self,
+        op: &str,
+        pedido: &Json,
+        sessao: &Sessao,
+    ) -> Result<Option<crate::protecao::Escopo>> {
+        use crate::protecao::{self as pr, Classe};
+        let classe = pr::classe(op, pedido);
+        if classe == Classe::Livre || !self.config.protecao.ligada {
+            return Ok(None);
+        }
+        let veredito = match classe {
+            Classe::Perigosa(categoria) => pr::da_op_perigosa(op, pedido, categoria),
+            Classe::SeGrande => self.medir_para_a_protecao(op, pedido, sessao)?,
+            Classe::Livre => return Ok(None),
+        };
+        self.julgar(veredito, sessao)
+    }
+
+    /// O veredito contra a sessao, e o REGISTRO dele -- num lugar so, para os
+    /// dois pontos (o pedido e o plano). Bloqueado vira ocorrencia pelo
+    /// produtor unico (`ComandoBloqueado`, a bolha vermelha da tarefa no
+    /// aquario); liberado devolve o escopo para quem executa registrar.
+    fn julgar(
+        &self,
+        veredito: crate::protecao::Veredito,
+        sessao: &Sessao,
+    ) -> Result<Option<crate::protecao::Escopo>> {
+        use crate::protecao::Veredito;
+        let Veredito::ExigeSenhaDeExecucao { escopo } = &veredito else {
+            return veredito.em_resultado().map(|_| None);
+        };
+        let escopo = escopo.clone();
+        match veredito.para_a_sessao(sessao.execucao_liberada()) {
+            Veredito::Livre => Ok(Some(escopo)),
+            bloqueado => {
+                // `op`, `database` e `tabela` sao os campos que a camada de
+                // ocorrencias mantem ao redigir; o MOTIVO e o proprio alarme.
+                let dados = Json::objeto(vec![
+                    ("op", Json::texto_de(&escopo.op)),
+                    ("database", Json::texto_de(&escopo.database)),
+                    ("tabela", Json::texto_de(&escopo.tabela)),
+                ]);
+                crate::telemetria::sinal(
+                    crate::aquario::Alarme::ComandoBloqueado,
+                    &dados.escrever(),
+                );
+                bloqueado.em_resultado().map(|_| None)
+            }
+        }
+    }
+
+    /// Uma linha da camada de protecao na trilha administrativa -- o
+    /// `diretivas.log`, o mesmo escritor de toda mudanca de administracao
+    /// (`crate::diretivas`): quem, de onde, o que e onde.
+    pub(super) fn registrar_na_trilha(
+        &self,
+        recurso: &str,
+        escopo: &crate::protecao::Escopo,
+        sessao: &Sessao,
+    ) {
+        let mut pares = vec![
+            ("op", Json::texto_de(&escopo.op)),
+            ("tabela", Json::texto_de(&escopo.tabela)),
+            ("categoria", Json::texto_de(escopo.categoria.nome())),
+        ];
+        if let Some((linhas, vivas)) = escopo.linhas {
+            pares.push(("linhas", Json::de_u64(linhas)));
+            pares.push(("vivas", Json::de_u64(vivas)));
+        }
+        self.anotar_no_diario(
+            sessao,
+            &escopo.database,
+            recurso,
+            Json::Nulo,
+            Json::objeto(pares),
+            &escopo.descrever(),
+        );
+    }
+
+    /// A camada de protecao para um PLANO que a F8 achou largo: o `DELETE` e
+    /// o `UPDATE` por faixa e a cascata do `ao_alterar`. O tamanho so existe
+    /// onde o plano fecha, e por isso este e o segundo ponto da mesma
+    /// decisao, e nao uma segunda decisao.
+    pub(super) fn protecao_do_plano(
+        &self,
+        rotulo: &str,
+        database: &str,
+        tabela: &str,
+        (linhas, vivas): (u64, u64),
+        sessao: &Sessao,
+    ) -> Result<()> {
+        if !self.config.protecao.ligada {
+            return Ok(());
+        }
+        let veredito = crate::protecao::do_plano(rotulo, database, tabela, linhas, vivas);
+        // O plano liberado vai a trilha AQUI, na decisao, e nao depois do
+        // laco: a cascata se aplica la dentro do `alterar`, e o laco da faixa
+        // pode parar numa linha -- o que se registra e que a sessao liberada
+        // mandou executar este plano.
+        if let Some(escopo) = self.julgar(veredito, sessao)? {
+            self.registrar_na_trilha("protecao.executou", &escopo, sessao);
+        }
+        Ok(())
+    }
+
+    /// A medida das ops que so sao perigosas em tabela grande: os slots (o
+    /// que a reescrita paga) e, no indice de texto, se a lista nova tira um
+    /// que existe -- que e o DROP INDEX daqui, perigoso em qualquer tamanho.
+    ///
+    /// # Pelo `esquema`, e nao abrindo a tabela aqui
+    ///
+    /// Abrir a tabela com a trava na mao e uma secao critica NOVA que alcanca
+    /// `fsync` (a abertura pode recuperar), e a catraca `alcancam-fsync-3` do
+    /// mapa da trava a reprovou. O `esquema` ja abre a tabela e ja devolve os
+    /// dois numeros: perguntar a ele e reusar a secao que existe.
+    ///
+    /// A tabela que nao abre volta `Livre`: a propria op vai recusar com o
+    /// erro dela, que diz o que falta melhor do que a camada diria.
+    fn medir_para_a_protecao(
+        &self,
+        op: &str,
+        pedido: &Json,
+        sessao: &Sessao,
+    ) -> Result<crate::protecao::Veredito> {
+        let alvo = Json::objeto(vec![
+            ("database", Json::texto_de(pedido.texto_ou("database", ""))),
+            ("tabela", Json::texto_de(pedido.texto_ou("tabela", ""))),
+        ]);
+        let Ok(esquema) = self.executar("esquema", &alvo, sessao) else {
+            return Ok(crate::protecao::Veredito::Livre);
+        };
+        let nomes = |j: Option<&Json>| -> Vec<String> {
+            j.and_then(Json::lista)
+                .unwrap_or(&[])
+                .iter()
+                .map(|it| it.texto_ou("nome", "").trim().to_string())
+                .collect()
+        };
+        let tira_indice = op == "redeclarar_indices_texto" && {
+            let novos = nomes(
+                pedido
+                    .campo("indices_texto")
+                    .or_else(|| pedido.campo("indices_de_texto")),
+            );
+            nomes(esquema.campo("indices_texto"))
+                .iter()
+                .any(|velho| !novos.contains(velho))
+        };
+        let slots = esquema.inteiro_ou("slots", 0).max(0) as u64;
+        Ok(crate::protecao::da_medida(op, pedido, slots, tira_indice))
+    }
+
+    // ------------------------------------------- a senha de execucao (767)
+
+    /// `liberar_execucao`: confere a senha de execucao e libera a SESSAO.
+    ///
+    /// # O que libera, e por quanto tempo
+    ///
+    /// Precisao do dono: «uma vez informada, a senha fica na sessao; nao e
+    /// necessaria para cada comando». A liberacao guarda a identidade e o IP
+    /// (`LiberacaoDeExecucao`) e morre com a sessao -- `sair`, novo `login`,
+    /// queda da conexao, a sessao web que vence -- ou no `trancar_execucao`.
+    /// Na web o id da sessao GIRA ao liberar (`acertar_sessao`).
+    ///
+    /// # A senha de login nunca libera
+    ///
+    /// O cadastro ja recusa a de execucao igual a de login. Mas a de LOGIN
+    /// pode mudar depois, pelo `usuario_alterar`, e passar a ser igual -- e
+    /// ai a segunda senha deixaria de ser segunda. Por isso a conferencia
+    /// tambem pergunta, depois do acerto, se o que veio abre o login: se
+    /// abre, recusa e pede para trocar uma das duas.
+    ///
+    /// # A falha conta, e aparece
+    ///
+    /// Cada falha soma no bloqueio por tentativas PROPRIO (5 seguidas, 15
+    /// min -- `crate::senha_de_execucao`) e vira a ocorrencia
+    /// `SenhaDeExecucaoRecusada`. A senha nunca entra em mensagem, trilha ou
+    /// ocorrencia: so a identidade e o que aconteceu.
+    pub(super) fn op_liberar_execucao(&self, p: &Json, sessao: &mut Sessao) -> Result<Json> {
+        if self.ainda_anonima(sessao) {
+            return Err(PhxError::Autorizacao(self.msg("erro.faca_login", &[])));
+        }
+        let quem = sessao.identidade_de_execucao().to_string();
+        let senha = p.texto_ou("senha", "");
+        if senha.is_empty() {
+            return Err(PhxError::Esquema(
+                "informe \"senha\" com a senha de execucao".into(),
+            ));
+        }
+        phxsql_core::senha::caber_no_teto(senha)?;
+        let agora = crate::agora_ms();
+        use crate::senha_de_execucao::Conferencia;
+        match self.senhas_de_execucao.conferir(&quem, senha, agora)? {
+            Conferencia::Confere if self.e_a_senha_de_login(&quem, senha) => {
+                self.senha_de_execucao_recusada(&quem);
+                Err(PhxError::Autorizacao(format!(
+                    "{quem}: a senha de execucao ficou igual a de login -- e ai ela deixa de \
+                     ser uma segunda senha. Troque uma das duas (senha_execucao_definir)"
+                )))
+            }
+            Conferencia::Confere => {
+                sessao.execucao_liberada = Some(LiberacaoDeExecucao {
+                    login: quem.clone(),
+                    ip: sessao.ip.clone(),
+                });
+                self.registrar_na_trilha(
+                    "protecao.liberou",
+                    &escopo_da_senha("liberar_execucao", &quem),
+                    sessao,
+                );
+                Ok(Json::objeto(vec![
+                    ("liberada", Json::Bool(true)),
+                    ("login", Json::texto_de(&quem)),
+                    (
+                        "aviso",
+                        Json::texto_de(
+                            "vale ate a sessao acabar ou ate o trancar_execucao, e so deste IP",
+                        ),
+                    ),
+                ]))
+            }
+            outra => {
+                self.senha_de_execucao_recusada(&quem);
+                Err(recusa_da_senha(&quem, &outra))
+            }
+        }
+    }
+
+    /// `senha_execucao_definir`: cadastra ou troca a senha de execucao.
+    ///
+    /// # Quem pode, e por que (decisao da P14)
+    ///
+    /// * **o primeiro cadastro, pelo proprio, com a senha de LOGIN.** Sem
+    ///   isso o produto trava: ninguem libera nada. A sessao sozinha nao
+    ///   basta -- o id de uma sessao roubada cadastraria a segunda senha do
+    ///   dono --, entao a senha de login prova que e ele. No servidor sem
+    ///   cadastro, a identidade do servico ja provou o token no portao 1.
+    /// * **a troca, pelo proprio, com a senha de execucao ATUAL**, e NAO com a
+    ///   de login. A segunda senha existe para o dia em que a de login vazou;
+    ///   se a de login bastasse para troca-la, as duas cairiam juntas. A falha
+    ///   conta no bloqueio, como no liberar.
+    /// * **a redefinicao de OUTRO usuario, pelo administrador com a propria
+    ///   sessao liberada.** E a saida de quem esqueceu a dele. Pedir a sessao
+    ///   liberada e pedir que o administrador tenha provado a SEGUNDA senha
+    ///   dele: a sessao roubada de um administrador nao redefine a de
+    ///   ninguem.
+    ///
+    /// Em todos os casos a nova tem 8 bytes ou mais e e recusada se abrir o
+    /// login do dono -- conferida contra o hash da senha de login, sem a
+    /// senha de login precisar viajar.
+    pub(super) fn op_senha_execucao_definir(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        use crate::senha_de_execucao::{Conferencia, TAMANHO_MINIMO};
+        if self.ainda_anonima(sessao) {
+            return Err(PhxError::Autorizacao(self.msg("erro.faca_login", &[])));
+        }
+        let eu = sessao.identidade_de_execucao().to_string();
+        let alvo = match p.texto_ou("login", "").trim() {
+            "" => eu.clone(),
+            outro => outro.to_string(),
+        };
+        let nova = p.texto_ou("nova_senha_execucao", "");
+        phxsql_core::senha::caber_no_teto(nova)?;
+        if nova.len() < TAMANHO_MINIMO {
+            return Err(PhxError::Esquema(format!(
+                "a senha de execucao nova tem de ter {TAMANHO_MINIMO} bytes ou mais \
+                 (\"nova_senha_execucao\")"
+            )));
+        }
+        let agora = crate::agora_ms();
+        if alvo == eu {
+            if self.senhas_de_execucao.tem(&eu)? {
+                let atual = p.texto_ou("senha_execucao", "");
+                match self.senhas_de_execucao.conferir(&eu, atual, agora)? {
+                    Conferencia::Confere => {}
+                    outra => {
+                        self.senha_de_execucao_recusada(&eu);
+                        return Err(recusa_da_senha(&eu, &outra));
+                    }
+                }
+            } else if eu != crate::senha_de_execucao::IDENTIDADE_DO_SERVICO
+                && !self.e_a_senha_de_login(&eu, p.texto_ou("senha", ""))
+            {
+                return Err(PhxError::Autorizacao(format!(
+                    "{eu}: o primeiro cadastro da senha de execucao pede a senha de LOGIN \
+                     em \"senha\" -- a sessao sozinha nao prova quem voce e"
+                )));
+            }
+        } else {
+            let administra = sessao
+                .usuario
+                .as_ref()
+                .is_some_and(|u| u.pode_em("", "", Atividade::Administrar));
+            if !administra {
+                return Err(PhxError::Autorizacao(format!(
+                    "{eu}: so quem administra o servidor redefine a senha de execucao de \
+                     outro usuario"
+                )));
+            }
+            if !sessao.execucao_liberada() {
+                return Err(PhxError::SenhaDeExecucaoExigida(
+                    escopo_da_senha("senha_execucao_definir", &alvo).descrever(),
+                ));
+            }
+            if self.cadastro().por_login(&alvo).is_none() {
+                return Err(PhxError::NaoEncontrado(format!(
+                    "nao ha usuario com o login {alvo:?}"
+                )));
+            }
+        }
+        if self.e_a_senha_de_login(&alvo, nova) {
+            return Err(PhxError::Esquema(format!(
+                "{alvo}: a senha de execucao nao pode ser a mesma de login -- ela e uma \
+                 SEGUNDA senha"
+            )));
+        }
+        self.senhas_de_execucao
+            .definir(&alvo, phxsql_core::senha::cifrar(nova), &eu, agora)?;
+        self.registrar_na_trilha(
+            "protecao.definiu",
+            &escopo_da_senha("senha_execucao_definir", &alvo),
+            sessao,
+        );
+        Ok(Json::objeto(vec![
+            ("definida", Json::Bool(true)),
+            ("login", Json::texto_de(&alvo)),
+        ]))
+    }
+
+    /// A senha abre o LOGIN desta identidade? Para a do servico, o token.
+    /// O que nao se acha (usuario que sumiu) responde que nao.
+    fn e_a_senha_de_login(&self, quem: &str, senha: &str) -> bool {
+        if senha.is_empty() {
+            return false;
+        }
+        if quem == crate::senha_de_execucao::IDENTIDADE_DO_SERVICO {
+            return phxsql_core::hash::iguais_em_tempo_constante(
+                senha.as_bytes(),
+                self.config.token.as_bytes(),
+            );
+        }
+        let hash = match self.cadastro().por_login(quem) {
+            Some(u) => u.senha_hash.clone(),
+            None => return false,
+        };
+        phxsql_core::senha::conferir(senha, &hash)
+    }
+
+    /// A ocorrencia da senha de execucao recusada, pelo produtor unico. So a
+    /// identidade -- nunca o que foi digitado.
+    fn senha_de_execucao_recusada(&self, quem: &str) {
+        let dados = Json::objeto(vec![
+            ("op", Json::texto_de("liberar_execucao")),
+            ("login", Json::texto_de(quem)),
+        ]);
+        crate::telemetria::sinal(
+            crate::aquario::Alarme::SenhaDeExecucaoRecusada,
+            &dados.escrever(),
+        );
     }
 
     /// A ocorrencia do pedido que tem a forma de uma injecao. Nao muda a
@@ -1179,4 +1559,39 @@ impl Servidor {
             .map(|c| c.texto_ou("nome", "").to_string())
             .collect())
     }
+}
+
+/// O escopo de uma linha de trilha da senha de execucao: a op e de quem.
+fn escopo_da_senha(op: &str, quem: &str) -> crate::protecao::Escopo {
+    crate::protecao::Escopo {
+        op: op.to_string(),
+        database: String::new(),
+        tabela: quem.to_string(),
+        categoria: crate::protecao::Categoria::Acesso,
+        linhas: None,
+    }
+}
+
+/// A recusa da conferencia, sem nada do que foi digitado.
+fn recusa_da_senha(quem: &str, c: &crate::senha_de_execucao::Conferencia) -> PhxError {
+    use crate::senha_de_execucao::{Conferencia, BLOQUEIO_MS};
+    PhxError::Autorizacao(match c {
+        Conferencia::NaoCadastrada => format!(
+            "{quem}: nao ha senha de execucao cadastrada -- cadastre pela \
+             senha_execucao_definir, com a senha de login"
+        ),
+        Conferencia::Bloqueada { ate_ms } => format!(
+            "{quem}: a senha de execucao esta bloqueada por tentativas ate {}",
+            phxsql_core::datahora::instante_iso(*ate_ms)
+        ),
+        Conferencia::NaoConfere { restantes: 0 } => format!(
+            "{quem}: a senha de execucao nao confere, e a conta ficou bloqueada por {} min",
+            BLOQUEIO_MS / 60_000
+        ),
+        Conferencia::NaoConfere { restantes } => format!(
+            "{quem}: a senha de execucao nao confere; restam {restantes} tentativa(s) antes \
+             do bloqueio"
+        ),
+        Conferencia::Confere => format!("{quem}: a senha de execucao foi recusada"),
+    })
 }

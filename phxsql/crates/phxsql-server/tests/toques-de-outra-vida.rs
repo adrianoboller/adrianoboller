@@ -292,6 +292,9 @@ fn cenario(rotulo: &str, vida: VidaNova) -> (String, Json) {
 
     let comporta = Comporta::para(a.porta);
     let mut cb = config(&base_b, "vida-b");
+    // A vida nova de B comeca por `excluir_tabela`, da lista de perigo
+    // (765/767); a prova e do mapa de toques depois dela.
+    cb.protecao.ligada = false;
     cb.replicacao.origens = vec![Origem {
         nome: "a".into(),
         host: "127.0.0.1".into(),

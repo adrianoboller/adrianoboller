@@ -199,12 +199,21 @@ pub enum Alarme {
     /// lista de servidor: o plano e de um pedido. Amarelo, porque so observa:
     /// nada foi recusado e a resposta nao muda.
     PlanoLargo,
+    /// Pedidos 765/767: a camada de protecao recusou um comando da lista de
+    /// perigo porque a sessao nao estava liberada pela senha de execucao. De
+    /// TAREFA e vermelho: a bolha mostra que o comando foi BLOQUEADO, e o
+    /// motivo e esta chave.
+    ComandoBloqueado,
+    /// Pedido 767: a senha de execucao nao conferiu (errada, a de login no
+    /// lugar dela, ou a conta bloqueada por tentativas). Vermelho e de
+    /// TAREFA: e a tentativa de liberar comando perigoso que falhou.
+    SenhaDeExecucaoRecusada,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 24] = [
+    pub const TODOS: [Alarme; 26] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -229,6 +238,8 @@ impl Alarme {
         Alarme::ReplicaAtrasada,
         Alarme::InjecaoSuspeita,
         Alarme::PlanoLargo,
+        Alarme::ComandoBloqueado,
+        Alarme::SenhaDeExecucaoRecusada,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -262,6 +273,8 @@ impl Alarme {
             Alarme::ReplicaAtrasada => "aquario.motivo.replica_atrasada",
             Alarme::InjecaoSuspeita => "aquario.motivo.injecao_suspeita",
             Alarme::PlanoLargo => "aquario.motivo.plano_largo",
+            Alarme::ComandoBloqueado => "aquario.motivo.comando_bloqueado",
+            Alarme::SenhaDeExecucaoRecusada => "aquario.motivo.senha_de_execucao_recusada",
         }
     }
 
@@ -304,9 +317,11 @@ impl Alarme {
             | Alarme::ContinuidadeRompida
             | Alarme::OrigemInalcancavel
             | Alarme::ReplicaAtrasada => Grupo::Replica,
-            Alarme::ForcaBruta | Alarme::SenhaEmClaro | Alarme::FirewallBloqueou => {
-                Grupo::Seguranca
-            }
+            Alarme::ForcaBruta
+            | Alarme::SenhaEmClaro
+            | Alarme::FirewallBloqueou
+            | Alarme::ComandoBloqueado
+            | Alarme::SenhaDeExecucaoRecusada => Grupo::Seguranca,
             Alarme::PrazoEstourado | Alarme::ForaDoHabitual | Alarme::ForaDoHabitualReincidente => {
                 Grupo::Prazo
             }
@@ -347,6 +362,8 @@ impl Alarme {
             Alarme::IntegridadeRecusada => 10,
             Alarme::InjecaoSuspeita => 11,
             Alarme::PlanoLargo => 12,
+            Alarme::ComandoBloqueado => 13,
+            Alarme::SenhaDeExecucaoRecusada => 14,
             Alarme::FechoRecusado
             | Alarme::FsyncRecusadoAntes
             | Alarme::MarcaNaoResolvida

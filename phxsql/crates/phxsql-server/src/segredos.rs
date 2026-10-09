@@ -52,6 +52,11 @@ pub const SEGREDOS: &[&str] = &[
     "senha_b64",
     "senha_hash",
     "nova_senha",
+    // A SEGUNDA senha (pedido 767): a de execucao atual, na troca, e a nova.
+    // Achadas pela varredura dos bytes do `tests/senha-de-execucao.rs`: o
+    // `perfil.txt` gravava as duas em claro, porque a lista e por nome exato.
+    "senha_execucao",
+    "nova_senha_execucao",
     // A senha do BANCO, quando ela passar a entrar pelo login.
     //
     // Ela entra na lista ANTES do caminho que a usa, e nao depois, e o motivo

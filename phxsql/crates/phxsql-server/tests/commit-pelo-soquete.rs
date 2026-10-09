@@ -61,6 +61,11 @@ const TOKEN: &str = "commit-pelo-soquete";
 /// escolher um numero por fora, solta-lo e so depois ligar deixava uma janela
 /// para outro teste em paralelo tomar o mesmo numero.
 fn subir(base: &Path) -> (Arc<Servidor>, u16) {
+    subir_com_protecao(base, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn subir_com_protecao(base: &Path, protecao: bool) -> (Arc<Servidor>, u16) {
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
@@ -72,7 +77,8 @@ fn subir(base: &Path) -> (Arc<Servidor>, u16) {
         bl = base.join("blacklist.json").display().to_string(),
         dbl = base.join("dblink.json").display().to_string(),
     );
-    let c = Config::de_json(&Json::analisar(&texto).unwrap()).unwrap();
+    let mut c = Config::de_json(&Json::analisar(&texto).unwrap()).unwrap();
+    c.protecao.ligada = protecao;
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
@@ -437,7 +443,9 @@ fn corrida_contra_reescrita(pedido: &'static str, rotulo: &str) -> (Retrato, Jso
     // do `porta-do-psch-v10.rs`, medido la.
     const LINHAS: i64 = 100_000;
     let base = DirTemp::novo(rotulo);
-    let (_s, porta) = subir(&base);
+    // A reescrita (`acrescentar_coluna`, `migrar_esquema`) de 100.000 linhas e
+    // da lista de perigo (765/767); a prova e de quem cede a quem na trava.
+    let (_s, porta) = subir_com_protecao(&base, false);
     let mut b = Ligacao::nova(porta);
     preparar(&mut b, &base, LINHAS);
 

@@ -36,7 +36,14 @@ export const caso = {
 
     // «Carga da tabela» semeia o que falta. A prova e a ficha «semeados»
     // fechar: depois da carga nao pode faltar texto nenhum.
+    // A ficha de ANTES do clique tem de sair primeiro. No segundo tema a
+    // tabela ja foi semeada pelo primeiro, e a tela velha ja dizia «nada a
+    // semear»: a espera de baixo passava na hora, pela tela velha, e a
+    // leitura seguinte pegava a nova ainda vazia, no meio do `abrirAdmin`
+    // -- «as fichas dizem «»», em 2 de 4 corridas isoladas (09/10/2026).
+    const fichaVelha = await page.$('#painel .ficha');
     await page.click('#btIdiCarga');
+    if (fichaVelha) await fichaVelha.waitForElementState('hidden', { timeout: 30000 }).catch(() => {});
     await esperar(page, '#btIdiCarga');
     // ESPERA PELO EFEITO, nao por 600 ms: semear ~1.900 mensagens leva mais que
     // isso com a maquina ocupada (flocou na corrida inteira de 02/10/2026, com

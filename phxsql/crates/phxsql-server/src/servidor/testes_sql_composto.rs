@@ -20,7 +20,16 @@ fn pedido(txt: &str) -> Json {
 }
 
 fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) {
-    let c = Config {
+    servidor_com_protecao(d, cadastro, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn servidor_com_protecao(
+    d: &std::path::Path,
+    cadastro: Cadastro,
+    protecao: bool,
+) -> (Arc<Servidor>, Sessao) {
+    let mut c = Config {
         base: d.to_path_buf(),
         log_acessos: d.join("acessos.log"),
         blacklist: d.join("blacklist.json"),
@@ -30,6 +39,7 @@ fn servidor(d: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao) 
         max_linhas: 10_000,
         ..Config::default()
     };
+    c.protecao.ligada = protecao;
     let s = Servidor::novo(c).unwrap();
     let ses = Sessao::default();
     s.executar("criar_database", &pedido(r#"{"database":"b"}"#), &ses)
@@ -302,7 +312,10 @@ fn o_parametro_entra_no_lexico_e_nao_no_texto() {
 #[test]
 fn o_create_view_pelo_sql_e_o_from_dela() {
     let d = dir("view");
-    let (s, _) = servidor(&d, Cadastro::default());
+    // O DROP VIEW e da lista de perigo, e a sessao de servico deste teste
+    // nao tem login para liberar; a recusa dele e provada em
+    // `testes_da_protecao`.
+    let (s, _) = servidor_com_protecao(&d, Cadastro::default(), false);
     sql(&s, "CREATE VIEW v_todos AS SELECT * FROM clientes").expect("o CREATE VIEW nao rodou");
     let r = sql(&s, "SELECT nome FROM v_todos ORDER BY id DESC").unwrap();
     let l = linhas(&r);

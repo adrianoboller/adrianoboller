@@ -365,6 +365,7 @@ impl Servidor {
             ha_proibidos_por_base: AtomicBool::new(!proibidos_por_base.is_empty()),
             proibidos_por_base: Mutex::new(proibidos_por_base),
             diario: crate::diretivas::Diario::ao_lado_de(&log_diretivas),
+            senhas_de_execucao: crate::senha_de_execucao::Cofre::ao_lado_de(&log_diretivas),
             estado_replicacao: Mutex::new(HashMap::new()),
             dono_do_database: Mutex::new(HashMap::new()),
             ha_varias_origens: AtomicBool::new(false),
@@ -1212,7 +1213,13 @@ impl Servidor {
         let plano = t.planejar_cascata_da_alteracao(antes, crua, Some(&prefixo))?;
         // Pedido 496, F8: o irmao do `alterar_solto` -- empilhar nao grava,
         // e o COMMIT e a primeira escrita.
-        crate::plano_largo::observar_a_cascata(database, &plano);
+        // O irmao da recusa do `alterar_solto` (765/767): a mesma pergunta,
+        // antes do COMMIT, que e a primeira escrita.
+        if let Some((filha, linhas, vivas)) =
+            crate::plano_largo::observar_a_cascata(database, &plano)
+        {
+            self.protecao_do_plano("cascata", database, &filha, (linhas, vivas), sessao)?;
+        }
         Ok(plano)
     }
 

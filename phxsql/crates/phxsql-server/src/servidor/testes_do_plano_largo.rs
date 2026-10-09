@@ -9,8 +9,18 @@ use crate::aquario::Alarme;
 use crate::ocorrencias::Carta;
 
 fn servidor(rotulo: &str) -> (Arc<Servidor>, DirTemp) {
+    servidor_com_protecao(rotulo, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+/// Desde 09/10/2026 o plano largo e da lista de perigo e, com a camada
+/// ligada, recusa. Os testes daqui que EXECUTAM um plano largo provam a
+/// MEDIDA e o AVISO da F8, que nao mudaram, e a sessao de servico deles nao
+/// tem login para liberar -- por isso desligam. A recusa esta provada em
+/// `testes_da_protecao::o_delete_largo_e_recusado_antes_da_primeira_linha`.
+fn servidor_com_protecao(rotulo: &str, protecao: bool) -> (Arc<Servidor>, DirTemp) {
     let dir = DirTemp::novo(&format!("plano-largo-{rotulo}"));
-    let c = Config {
+    let mut c = Config {
         base: dir.to_path_buf(),
         log_acessos: dir.join("acessos.log"),
         blacklist: dir.join("blacklist.json"),
@@ -18,6 +28,7 @@ fn servidor(rotulo: &str) -> (Arc<Servidor>, DirTemp) {
         token: "t".into(),
         ..Config::default()
     };
+    c.protecao.ligada = protecao;
     (Servidor::novo(c).unwrap(), dir)
 }
 
@@ -115,7 +126,7 @@ fn planos_largos(s: &Arc<Servidor>) -> Vec<crate::ocorrencias::Ocorrencia> {
 /// tabela nomeada -- e o UPDATE acontece inteiro, porque so se observa.
 #[test]
 fn update_por_faixa_em_toda_a_tabela_gera_uma_ocorrencia() {
-    let (s, _dir) = servidor("toda");
+    let (s, _dir) = servidor_com_protecao("toda", false);
     com_nums(&s, &[1; 2000]);
     let (r, mascara) = pedido_amarrado(&s, |s| sql(s, "UPDATE nums SET valor = 7 WHERE id > 0"));
     assert_eq!(r.unwrap().inteiro_ou("afetadas", -1), 2000);
@@ -150,9 +161,9 @@ fn update_por_faixa_estreita_nao_gera_nada() {
 #[test]
 fn a_resposta_ao_cliente_nao_muda_com_o_alarme() {
     let texto = "UPDATE nums SET valor = 9 WHERE valor > 0";
-    let (com, _d1) = servidor("resposta-com");
+    let (com, _d1) = servidor_com_protecao("resposta-com", false);
     com_nums(&com, &[1; 1000]);
-    let (sem, _d2) = servidor("resposta-sem");
+    let (sem, _d2) = servidor_com_protecao("resposta-sem", false);
     let mut valores = vec![1; 1000];
     valores.extend(std::iter::repeat_n(0, 1001));
     com_nums(&sem, &valores);
@@ -248,7 +259,7 @@ fn com_cascata(s: &Arc<Servidor>, filhas: i64) {
 /// varrida, e nao a mae que o pedido nomeia.
 #[test]
 fn cascata_que_leva_a_filha_inteira_gera_ocorrencia() {
-    let (s, _dir) = servidor("cascata");
+    let (s, _dir) = servidor_com_protecao("cascata", false);
     com_cascata(&s, 1000);
     let (r, mascara) = pedido_amarrado(&s, |s| sql(s, "UPDATE mae SET id = 2 WHERE id = 1"));
     assert_eq!(r.unwrap().inteiro_ou("afetadas", -1), 1);
@@ -266,7 +277,7 @@ fn cascata_que_leva_a_filha_inteira_gera_ocorrencia() {
 /// `empilhar`, antes do COMMIT -- que e a primeira escrita.
 #[test]
 fn cascata_larga_empilhada_alarma_antes_do_commit() {
-    let (s, _dir) = servidor("cascata-tx");
+    let (s, _dir) = servidor_com_protecao("cascata-tx", false);
     com_cascata(&s, 1000);
     s.executar("begin", &pedido(r#"{"database":"b"}"#), &sessao())
         .unwrap();

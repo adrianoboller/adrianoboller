@@ -95,6 +95,7 @@
 #btTest2
 #btTestar
 #btTodas
+#btTrancar
 #btVerEstr
 #btVerLixo
 #btVerMotivos
@@ -183,6 +184,9 @@
 #rzIr2
 #rzSair
 #rzVolta
+#seCadastrar
+#seNao
+#seSim
 #tabAddCol
 #tabConteudo
 #tabEstrutura
@@ -350,8 +354,8 @@
 [data-i="8"]
 [data-i="9"]
 [data-i]
-[data-id="1791553835832000"]
-[data-id="1791553835832001"]
+[data-id="1791567839639003"]
+[data-id="1791567839639007"]
 [data-id]
 [data-idi="Frances"]
 [data-idi]
@@ -369,8 +373,8 @@
 [data-kill="20"]
 [data-kill="4"]
 [data-kill]
-[data-killweb="0fe9ee17"]
-[data-killweb="910e578c"]
+[data-killweb="0734a7fc"]
+[data-killweb="81f6ecf0"]
 [data-killweb]
 [data-login="fichausuc"]
 [data-login="fichausue"]
@@ -400,6 +404,7 @@
 [data-op="1"]
 [data-op="10"]
 [data-op="12"]
+[data-op="13"]
 [data-op="2"]
 [data-op="3"]
 [data-op="5"]
@@ -407,7 +412,7 @@
 [data-op="7"]
 [data-op="8"]
 [data-op]
-[data-origem="/tmp/phx-bateria-5YHplp/backups"]
+[data-origem="/tmp/phx-bateria-pMher8/backups"]
 [data-origem]
 [data-p="1"]
 [data-p="2"]
@@ -449,8 +454,8 @@
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
-[data-uuid="01a120f2-9722-7714-9eef-6a7602a6136f"]
-[data-uuid="01a120f6-b352-75fb-9cbd-d789cea30b34"]
+[data-uuid="01a121c8-b1f8-70a2-afb3-eee07769e4a8"]
+[data-uuid="01a121cd-f24e-77bf-83a1-167034562ebc"]
 [data-uuid]
 [data-x="0"]
 [data-x="1"]

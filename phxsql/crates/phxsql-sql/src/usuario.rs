@@ -414,6 +414,65 @@ fn constante_em_valor(simbolos: &[lexico::Simbolo], i: usize) -> bool {
     }
 }
 
+/// `UNLOCK EXECUTION IDENTIFIED BY 'senha'` -- a op `liberar_execucao` do
+/// protocolo escrita em SQL (pedido 767). Devolve a senha; `None` quando o
+/// texto e outra coisa.
+///
+/// # Por que mora aqui, e nao ao lado do `LOCK EXECUTION`
+///
+/// Porque carrega SENHA, e e este modulo que sabe onde a senha esta num
+/// texto SQL: as letras `IDENTIFIED` ja abrem a redacao do Profiler e da
+/// resposta ([`menciona_senha`], [`sem_a_senha`]) -- a guarda
+/// `senha-depois-de-identified`. Um segundo analisador em outro arquivo seria
+/// a copia que um dia redige diferente.
+///
+/// A senha so entra entre aspas SIMPLES, e nenhuma recusa cita o que veio:
+/// o que veio ali e a senha, ou quase ela (a regra do [`Passo::exigir_senha`]).
+pub fn liberar_execucao(texto: &str) -> Result<Option<String>> {
+    // O portao antes do trabalho: sem as letras de UNLOCK no comeco, nem o
+    // lexico roda.
+    let t = texto.trim_start();
+    if t.len() < 6 || !t.as_bytes()[..6].eq_ignore_ascii_case(b"UNLOCK") {
+        return Ok(None);
+    }
+    let Ok(simbolos) = lexico::analisar(texto) else {
+        return Ok(None);
+    };
+    let mut p = Passo { s: &simbolos, i: 0 };
+    let pos = simbolos.first().map(|x| x.posicao).unwrap_or(0);
+    if p.palavra() != "UNLOCK" {
+        return Ok(None);
+    }
+    p.i += 1;
+    if p.palavra() != "EXECUTION" {
+        return Ok(None);
+    }
+    p.i += 1;
+    for esperada in ["IDENTIFIED", "BY"] {
+        if p.palavra() != esperada {
+            return Err(lexico::erro(
+                pos,
+                "UNLOCK EXECUTION exige IDENTIFIED BY 'a senha de execucao'",
+            ));
+        }
+        p.i += 1;
+    }
+    let senha = match p.s.get(p.i).map(|x| &x.token) {
+        Some(Token::Texto(t)) => {
+            p.i += 1;
+            t.clone()
+        }
+        _ => {
+            return Err(lexico::erro(
+                pos,
+                "UNLOCK EXECUTION: a senha vai entre aspas simples -- IDENTIFIED BY 'a senha'",
+            ))
+        }
+    };
+    p.fim("UNLOCK EXECUTION")?;
+    Ok(Some(senha))
+}
+
 struct Passo<'a> {
     s: &'a [lexico::Simbolo],
     i: usize,
@@ -516,6 +575,36 @@ impl Passo<'_> {
 #[cfg(test)]
 mod testes {
     use super::*;
+
+    /// Pedido 767: `UNLOCK EXECUTION IDENTIFIED BY '...'` devolve a senha, e
+    /// a redacao de sempre a tapa -- o mesmo motor da senha do `CREATE USER`.
+    #[test]
+    fn unlock_execution_devolve_a_senha_e_sai_redigido() {
+        let s = liberar_execucao("UNLOCK EXECUTION IDENTIFIED BY 'segredo-de-execucao';").unwrap();
+        assert_eq!(s.as_deref(), Some("segredo-de-execucao"));
+        assert_eq!(
+            liberar_execucao("  unlock execution identified by 'a''b'")
+                .unwrap()
+                .as_deref(),
+            Some("a'b")
+        );
+        for nao in ["SELECT 1", "LOCK EXECUTION", "UNLOCK TABLES"] {
+            assert_eq!(liberar_execucao(nao).unwrap(), None, "{nao}");
+        }
+        for torto in [
+            "UNLOCK EXECUTION",
+            "UNLOCK EXECUTION IDENTIFIED BY segredo-cru",
+            "UNLOCK EXECUTION IDENTIFIED BY 'x' sobra-secreta",
+        ] {
+            let e = liberar_execucao(torto).unwrap_err().to_string();
+            assert!(!e.contains("segredo") && !e.contains("secreta"), "{e}");
+        }
+        let texto = "UNLOCK EXECUTION IDENTIFIED BY 'segredo-de-execucao'";
+        assert!(menciona_senha(texto));
+        let redigido = sem_a_senha(texto);
+        assert!(!redigido.contains("segredo"), "{redigido}");
+        assert!(!normalizado(texto).contains("segredo"));
+    }
 
     /// **Pedido 560:** a diretiva que nomeia um campo sigiloso nao tem
     /// `PASSWORD` nenhum, e saia crua no perfil e no anel. O nome da lista

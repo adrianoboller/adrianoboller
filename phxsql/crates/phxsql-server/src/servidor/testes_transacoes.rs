@@ -14,7 +14,12 @@ fn dir_temp(rotulo: &str) -> DirTemp {
 }
 
 fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
-    let c = Config {
+    servidor_com_protecao(dir, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn servidor_com_protecao(dir: &std::path::Path, protecao: bool) -> Arc<Servidor> {
+    let mut c = Config {
         base: dir.to_path_buf(),
         log_acessos: dir.join("acessos.log"),
         blacklist: dir.join("blacklist.json"),
@@ -22,6 +27,7 @@ fn servidor(dir: &std::path::Path) -> Arc<Servidor> {
         token: "t".into(),
         ..Config::default()
     };
+    c.protecao.ligada = protecao;
     Servidor::novo(c).unwrap()
 }
 
@@ -2199,7 +2205,10 @@ fn o_sql_abre_com_escopo_e_prazos() {
 #[test]
 fn o_ddl_recusa_em_vez_de_confirmar_pelas_costas() {
     let dir = dir_temp("ddl");
-    let s = servidor(&dir);
+    // A prova e da recusa do DDL DENTRO da transacao, que e outra guarda:
+    // com a camada de protecao ligada, a recusa do `excluir_tabela` seria a
+    // dela (4009), antes de a transacao ser consultada.
+    let s = servidor_com_protecao(&dir, false);
     let ses = sessao(7);
     base(&s, &ses);
     pede(&s, &ses, r#""op":"begin""#).unwrap();

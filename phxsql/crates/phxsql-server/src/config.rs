@@ -4483,6 +4483,70 @@ impl Default for ExpurgoDoDiario {
     }
 }
 
+/// A camada unica de protecao (pedidos 765 e 767, fatia P1). Ver
+/// `crate::protecao`.
+///
+/// # Um campo so, e ele so desliga em TESTE
+///
+/// Decisao do dono, 09/10/2026: sem a senha de execucao, o comando da lista
+/// de perigo NAO executa, «em modo nenhum». O interruptor existe para a
+/// suite da casa -- os testes que provam `excluir_tabela`, `esvaziar_lixeira`
+/// e o DELETE largo precisam executa-los, e cada um que o desliga diz por
+/// que. Num binario de producao (sem `debug_assertions`) o `false` do
+/// arquivo e IGNORADO com um aviso no arranque: um campo que bastasse editar
+/// para desligar a guarda seria a guarda desligada do primeiro invasor que
+/// alcancasse o `config.json`. E ele fica fora de `CAMPOS_EDITAVEIS`: a tela
+/// e o `config_gravar` nao o alcancam em build nenhum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Protecao {
+    /// Liga a camada. Padrao `true`.
+    pub ligada: bool,
+}
+
+impl Default for Protecao {
+    fn default() -> Protecao {
+        Protecao { ligada: true }
+    }
+}
+
+impl Protecao {
+    /// Le a secao `protecao`. Ausente = ligada.
+    fn de_json(j: &Json, avisos: &mut Vec<String>) -> Protecao {
+        let pedida = j
+            .campo("protecao")
+            .map(|c| c.booleano_ou("ligada", true))
+            .unwrap_or(true);
+        Protecao {
+            ligada: Self::efetiva(pedida, cfg!(debug_assertions), avisos),
+        }
+    }
+
+    /// O valor que vale, dado o que o arquivo pediu e o tipo do binario.
+    /// Separado do `de_json` para o lado de producao se provar dentro da
+    /// suite, que roda sempre com `debug_assertions`.
+    fn efetiva(pedida: bool, binario_de_teste: bool, avisos: &mut Vec<String>) -> bool {
+        if pedida {
+            return true;
+        }
+        if binario_de_teste {
+            avisos.push(
+                "protecao.ligada = false: a camada de protecao esta DESLIGADA e o                  comando perigoso executa sem a senha de execucao. So para teste"
+                    .to_string(),
+            );
+            return false;
+        }
+        avisos.push(
+            "protecao.ligada = false ignorado: neste binario a camada de protecao              nao se desliga -- o comando perigoso continua exigindo a senha de execucao"
+                .to_string(),
+        );
+        true
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![("ligada", Json::Bool(self.ligada))])
+    }
+}
+
 /// Teto do prazo do diario, em dias: cem anos. Nao e politica, e a conta em
 /// milissegundos caber folgada num `i64`.
 pub const PRAZO_DO_DIARIO_MAX: i64 = 36_500;
@@ -4921,6 +4985,8 @@ pub struct Config {
     pub lgpd: Lgpd,
     /// O expurgo do diario. Ver [`ExpurgoDoDiario`].
     pub diario: ExpurgoDoDiario,
+    /// A camada de protecao. Ver [`Protecao`].
+    pub protecao: Protecao,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
     pub telemetria: Painel,
     /// O rodizio do `.txt` do Profiler. Ver [`PerfilEmDisco`].
@@ -4994,6 +5060,7 @@ impl std::fmt::Debug for Config {
             desafio,
             lgpd,
             diario,
+            protecao,
             telemetria,
             profiler,
             acessos,
@@ -5033,6 +5100,7 @@ impl std::fmt::Debug for Config {
             .field("desafio", desafio)
             .field("lgpd", lgpd)
             .field("diario", diario)
+            .field("protecao", protecao)
             .field("telemetria", telemetria)
             .field("profiler", profiler)
             .field("acessos", acessos)
@@ -5054,7 +5122,7 @@ impl std::fmt::Debug for Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 35] = [
+const CAMPOS_CONHECIDOS: [&str; 36] = [
     "bind",
     "tls",
     "tls_certificado",
@@ -5090,6 +5158,7 @@ const CAMPOS_CONHECIDOS: [&str; 35] = [
     "profiler",
     "acessos",
     "diretivas",
+    "protecao",
 ];
 
 /// O que cada secao conhecida aceita por dentro.
@@ -5101,7 +5170,7 @@ const CAMPOS_CONHECIDOS: [&str; 35] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 18] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 19] = [
     (
         "recursos",
         &[
@@ -5266,6 +5335,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 18] = [
             "volume_dias",
         ],
     ),
+    ("protecao", &["ligada"]),
     (
         "diario",
         &[
@@ -5370,6 +5440,7 @@ impl Default for Config {
             desafio: Desafio::default(),
             lgpd: Lgpd::default(),
             diario: ExpurgoDoDiario::default(),
+            protecao: Protecao::default(),
             telemetria: Painel::default(),
             profiler: PerfilEmDisco::default(),
             acessos: PerfilEmDisco::default(),
@@ -5623,6 +5694,7 @@ impl Config {
             desafio: Desafio::de_json(j),
             lgpd: Lgpd::de_json(j)?,
             diario: ExpurgoDoDiario::de_json(j)?,
+            protecao: Protecao::de_json(j, &mut avisos),
             telemetria: Painel::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
             acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::default()),
@@ -6472,6 +6544,7 @@ impl Config {
             ("cifra_fio", self.cifra_fio.para_json()),
             ("lgpd", self.lgpd.para_json()),
             ("diario", self.diario.para_json()),
+            ("protecao", self.protecao.para_json()),
             // As cores VAO para a tela por aqui -- o mesmo caminho de todo o
             // resto da configuracao. A tela de configuracao nao le arquivo, e
             // o painel de bolhas as recebe na propria resposta da telemetria,
@@ -11258,5 +11331,37 @@ mod testes_tls {
         porta("tls-web-certificado.pem", "tls-web-chave.pem")
             .identidade("web", &["localhost"], Some(&config))
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod testes_da_protecao {
+    use super::*;
+
+    /// Os quatro casos, e o de producao e o que importa: `false` num binario
+    /// sem `debug_assertions` NAO desliga, e diz isso no arranque.
+    #[test]
+    fn a_protecao_so_desliga_em_binario_de_teste() {
+        let mut avisos = Vec::new();
+        assert!(Protecao::efetiva(true, false, &mut avisos));
+        assert!(Protecao::efetiva(true, true, &mut avisos));
+        assert!(avisos.is_empty(), "ligada nao avisa nada: {avisos:?}");
+        assert!(
+            Protecao::efetiva(false, false, &mut avisos),
+            "producao desligou"
+        );
+        assert!(avisos[0].contains("ignorado"), "{avisos:?}");
+        assert!(!Protecao::efetiva(false, true, &mut avisos));
+        assert!(avisos[1].contains("DESLIGADA"), "{avisos:?}");
+    }
+
+    /// Ausente e ligada; e o campo nao e editavel pela tela.
+    #[test]
+    fn ausente_e_ligada_e_a_tela_nao_alcanca() {
+        let mut avisos = Vec::new();
+        let j = Json::analisar(r#"{"token":"t"}"#).unwrap();
+        assert!(Protecao::de_json(&j, &mut avisos).ligada);
+        assert!(Config::default().protecao.ligada);
+        assert!(!CAMPOS_EDITAVEIS.iter().any(|c| c.0.starts_with("protecao")));
     }
 }

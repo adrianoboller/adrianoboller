@@ -151,6 +151,8 @@ fn servidor(dir: &std::path::Path, cadastro: Cadastro) -> (Arc<Servidor>, Sessao
 fn pede(s: &Arc<Servidor>, sessao: &Sessao, corpo: &str) -> Result<Json> {
     let mut ses = Sessao {
         usuario: sessao.usuario.clone(),
+        // A liberacao da senha de execucao (765/767) acompanha a sessao.
+        execucao_liberada: sessao.execucao_liberada.clone(),
         ..Sessao::default()
     };
     let (_, _, r) = s.despachar(
@@ -681,6 +683,9 @@ fn a_marca_dagua_da_particao_negada_nao_sai_pela_administracao() {
         ))
     };
     let (s, ana) = servidor_com_particao_por_letra(&dir, negando("cidade"));
+    // `acrescentar_coluna` numa tabela de 1.002 linhas e da lista de perigo
+    // (765/767); a prova e da peneira, entao a sessao entra liberada.
+    let ana = ana.liberada_para_teste();
 
     let mut vazou = Vec::new();
     let mut olhar = |porta: &str, corpo: &str| {
@@ -723,6 +728,7 @@ fn a_marca_dagua_da_particao_negada_nao_sai_pela_administracao() {
     // CONTROLE: a regra numa coluna que NAO particiona nao muda nada.
     let dir2 = dir_temp("marca-dagua-600-controle");
     let (s2, ana2) = servidor_com_particao_por_letra(&dir2, negando("id"));
+    let ana2 = ana2.liberada_para_teste();
     let v = pede(
         &s2,
         &ana2,

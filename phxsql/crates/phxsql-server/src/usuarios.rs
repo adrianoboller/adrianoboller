@@ -112,7 +112,20 @@ impl Atividade {
             // operacoes ja esta no MANUAL. O que ele mostra e filtrado pelo
             // poder de quem perguntou, entao a resposta nunca promete mais do
             // que aquela sessao consegue chamar.
-            "ping" | "login" | "desafio" | "quem_sou" | "sair" | "catalogo" => return None,
+            // `trancar_execucao` tambem: tirar da sessao a liberacao da senha
+            // de execucao so diminui poder (pedido 767).
+            // E as duas da senha de execucao (pedido 767) conferem a
+            // identidade por dentro: a de cada um e de cada um, e a de outro
+            // pede administrar com a sessao liberada.
+            "ping"
+            | "login"
+            | "desafio"
+            | "quem_sou"
+            | "sair"
+            | "catalogo"
+            | "trancar_execucao"
+            | "liberar_execucao"
+            | "senha_execucao_definir" => return None,
             "bancos" | "tabelas" | "esquema" | "ler" | "varrer" | "coletar_rowids" | "buscar" => {
                 Atividade::Ler
             }
@@ -1778,6 +1791,34 @@ const CAMPOS_DO_USUARIO: &[&str] = &[
     "chave_publica",
 ];
 
+/// O pedido de `usuario_criar` cria um ADMINISTRADOR? Pedidos 765/767: e a
+/// linha «CREATE USER de administrador» da lista de perigo da camada de
+/// protecao (`crate::protecao`).
+///
+/// Mora aqui, e nao na camada, porque o que faz alguem administrador e regra
+/// do cadastro: `supervisor`, o `nivel` admin, ou `administrar` numa base ou
+/// numa tabela -- as tres formas que o `de_json` daqui le. Uma copia da
+/// regra na camada seria a que envelhece no dia em que entrar a quarta.
+///
+/// O `nivel` torto conta como administrador: a op o recusaria de qualquer
+/// jeito, e na duvida a guarda pede a senha em vez de deixar passar.
+pub fn pedido_faz_administrador(p: &Json) -> bool {
+    if p.booleano_ou("supervisor", false) {
+        return true;
+    }
+    if Nivel::de_texto(p.texto_ou("nivel", "")).map_or(true, |n| n >= Nivel::Admin) {
+        return true;
+    }
+    let Some(Json::Objeto(bases)) = p.campo("bases") else {
+        return false;
+    };
+    bases.iter().any(|(_, perm)| {
+        Permissoes::de_json(perm).administrar
+            || matches!(perm.campo("tabelas"), Some(Json::Objeto(t))
+                if t.iter().any(|(_, r)| Permissoes::de_json(r).administrar))
+    })
+}
+
 /// Muda a lista `usuarios` da arvore do `config.json`.
 ///
 /// Devolve o login alcancado. Nao grava nada: quem grava e
@@ -1984,6 +2025,9 @@ mod tests {
             "rollback_to_savepoint",
             "sair",
             "savepoint",
+            "trancar_execucao",
+            "liberar_execucao",
+            "senha_execucao_definir",
             "start_transaction",
             "transacao",
         ];

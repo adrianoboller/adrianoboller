@@ -1360,6 +1360,15 @@ impl Servidor {
                             .por_login(&login)
                             .filter(|u| u.ativo)
                             .cloned();
+                        // A liberacao da senha de execucao vem junto, para o
+                        // mesmo login e o MESMO IP -- o veredito confere os
+                        // dois (`Sessao::execucao_liberada`).
+                        if let Some(ip_liberado) = vivas.execucao_liberada_em(id_pedido) {
+                            sessao.execucao_liberada = Some(LiberacaoDeExecucao {
+                                login: login.clone(),
+                                ip: ip_liberado,
+                            });
+                        }
                     }
                 }
             }
@@ -1369,9 +1378,10 @@ impl Servidor {
 
     /// Acerta a sessao web depois de um despacho que deu certo.
     ///
-    /// Tres operacoes mexem nela e nenhuma outra: o `desafio` cria a sessao
+    /// Quatro operacoes mexem nela e nenhuma outra: o `desafio` cria a sessao
     /// anonima que carrega o nonce, o `login` a troca por uma NOVA com nome
-    /// (pedido 719 -- ver `girar_sessao`), e o `sair` a encerra. Esta funcao e chamada pelos DOIS caminhos HTTP -- ver
+    /// (pedido 719 -- ver `girar_sessao`), o `sair` a encerra e o
+    /// `trancar_execucao` tira a liberacao da senha de execucao (767). Esta funcao e chamada pelos DOIS caminhos HTTP -- ver
     /// `sessao_do_cabecalho` para o motivo de nao haver duas copias.
     fn acertar_sessao(&self, op: &str, sessao: &Sessao, id_sessao: &mut String, agora: i64) {
         let duracao = self.config.web.sessao_ms();
@@ -1387,6 +1397,20 @@ impl Servidor {
                 }
             }
             "login" => self.girar_sessao(id_sessao, sessao.login(), agora),
+            // A senha de execucao liberou a sessao (pedido 767): o id GIRA,
+            // como no login (719). O id velho cruzou o fio antes da prova; se
+            // alguem o levou, leva uma sessao que nunca foi liberada.
+            "liberar_execucao" => {
+                self.girar_sessao(id_sessao, sessao.login(), agora);
+                if let Ok(mut vivas) = self.sessoes.lock() {
+                    vivas.liberar_execucao(id_sessao, &sessao.ip);
+                }
+            }
+            "trancar_execucao" => {
+                if let Ok(mut vivas) = self.sessoes.lock() {
+                    vivas.trancar_execucao(id_sessao);
+                }
+            }
             "sair" => {
                 if let Ok(mut vivas) = self.sessoes.lock() {
                     vivas.encerrar(id_sessao);

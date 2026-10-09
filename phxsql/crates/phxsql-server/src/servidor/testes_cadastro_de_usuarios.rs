@@ -789,7 +789,10 @@ fn o_root_nao_se_mexe_por_aqui() {
 #[test]
 fn os_tres_comandos_sql_valem_e_o_texto_de_volta_nao_traz_a_senha() {
     let (s, _c, _g) = servidor_com_cadastro("sql");
-    let sessao = como_ana(&s);
+    // ALTER USER e DROP USER sao da lista de perigo (765/767): a prova e
+    // da redacao da senha, entao a sessao entra liberada, como a de quem
+    // tem a senha de execucao.
+    let sessao = como_ana(&s).liberada_para_teste();
 
     let r = s
         .executar(

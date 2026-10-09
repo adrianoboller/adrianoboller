@@ -131,6 +131,8 @@ window.PhxAquario = (function () {
     "aquario.motivo.replica_atrasada": () => txt("tela.aq_m_replica_atrasada", "uma tabela da réplica está ficando para trás da origem"),
     "aquario.motivo.injecao_suspeita": () => txt("tela.aq_m_injecao_suspeita", "pedido com forma de injeção de SQL"),
     "aquario.motivo.plano_largo": () => txt("tela.aq_m_plano_largo", "o plano alcança metade da tabela ou mais"),
+    "aquario.motivo.comando_bloqueado": () => txt("tela.aq_m_comando_bloqueado", "comando perigoso bloqueado: faltou a senha de execução"),
+    "aquario.motivo.senha_de_execucao_recusada": () => txt("tela.aq_m_senha_de_execucao_recusada", "a senha de execução não conferiu"),
   };
   /* Chave que esta versao da tela nao conhece (servidor mais novo): sai a
    * chave crua, que e honesta — inventar uma frase seria pior. */

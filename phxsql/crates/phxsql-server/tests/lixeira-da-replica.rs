@@ -153,6 +153,9 @@ fn a_replica_esvazia_a_propria_lixeira() {
     c.replicacao.papel = Papel::Source;
     c.replicacao.id_servidor = "source-da-lixeira".into();
     c.replicacao.imagem_da_linha = true;
+    // O source tambem esvazia a propria lixeira nesta prova: mesmo motivo
+    // da replica, logo abaixo.
+    c.protecao.ligada = false;
     let (_source, porta_s) = subir(c);
     exigir(porta_s, r#""op":"criar_database","database":"loja""#);
     exigir(
@@ -192,6 +195,9 @@ fn a_replica_esvazia_a_propria_lixeira() {
         pino_tls: String::new(),
         espelho: false,
     }];
+    // O esvaziar da replica e pedido de cliente, e da lista de perigo
+    // (765/767): a prova e do que ele apaga, nao da camada.
+    c.protecao.ligada = false;
     let (_replica, porta_r) = subir(c);
     esperar_eventos(porta_r, 3);
 
@@ -304,7 +310,11 @@ impl Conexao {
 /// Um servidor sozinho com `loja.clientes`, quatro linhas e a de rowid 2 ja
 /// apagada de vez -- uma linha na lixeira.
 fn com_uma_na_lixeira(base: &std::path::Path) -> (Arc<Servidor>, u16) {
-    let (s, porta) = subir(config_base(base));
+    // O `esvaziar_lixeira` e da lista de perigo (765/767), e e ele o assunto
+    // de todo teste que usa este servidor.
+    let mut c = config_base(base);
+    c.protecao.ligada = false;
+    let (s, porta) = subir(c);
     exigir(porta, r#""op":"criar_database","database":"loja""#);
     exigir(
         porta,

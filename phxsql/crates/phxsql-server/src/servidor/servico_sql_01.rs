@@ -330,10 +330,23 @@ impl Servidor {
             Ok(None) => return None,
             Err(e) => return Some(Err(e)),
         };
-        let bruto = match self.executar(&c.op, &c.pedido(), sessao) {
+        // Este caminho chama o `executar` direto, sem os irmaos -- e por isso
+        // pergunta a camada de protecao por conta propria: sem esta linha o
+        // `DROP USER` pela op `sql` seria a porta dos fundos da lista de
+        // perigo (765/767). O `CREATE USER` daqui nunca cria administrador
+        // (o SQL so leva login e senha), e o `ALTER USER` e da lista.
+        let pedido = c.pedido();
+        let liberado = match self.protecao_do_pedido(&c.op, &pedido, sessao) {
+            Ok(l) => l,
+            Err(e) => return Some(Err(e)),
+        };
+        let bruto = match self.executar(&c.op, &pedido, sessao) {
             Ok(j) => j,
             Err(e) => return Some(Err(e)),
         };
+        if let Some(escopo) = liberado {
+            self.registrar_na_trilha("protecao.executou", &escopo, sessao);
+        }
         Some(Ok(Json::objeto(vec![
             (
                 "sql",
@@ -567,17 +580,21 @@ impl Servidor {
         // nada foi gravado. Depois do laco seria o recibo do dano, e a
         // primeira linha que recusasse calaria o aviso de vez. So observa:
         // nada abaixo muda por causa disto.
-        crate::plano_largo::observar_a_faixa(
-            if atribuicoes.is_some() {
-                "atualizar_por_faixa"
-            } else {
-                "excluir_por_faixa"
-            },
-            &database,
-            &tabela,
+        let rotulo = if atribuicoes.is_some() {
+            "atualizar_por_faixa"
+        } else {
+            "excluir_por_faixa"
+        };
+        let medida = (
             rowids.len() as u64,
             colhido.inteiro_ou("examinadas", 0).max(0) as u64,
         );
+        // E o plano largo e da lista de perigo (765/767): sem a sessao
+        // liberada, recusa AQUI, com nada gravado -- a primeira linha do laco
+        // ja seria dano.
+        if crate::plano_largo::observar_a_faixa(rotulo, &database, &tabela, medida.0, medida.1) {
+            self.protecao_do_plano(rotulo, &database, &tabela, medida, sessao)?;
+        }
 
         // Passo 2: por rowid, `ler` a linha e a versao, e gravar com a versao
         // LIDA. Os MESMOS `pedido_de_atualizar`/`pedido_de_excluir` do caminho

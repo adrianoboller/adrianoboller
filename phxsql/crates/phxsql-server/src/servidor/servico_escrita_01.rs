@@ -928,7 +928,13 @@ impl Servidor {
         // Pedido 496, F8: o plano inteiro, antes da marca e de toda escrita.
         // O irmao e o `planejar_cascata_empilhada`, a mesma pergunta dentro
         // da transacao.
-        crate::plano_largo::observar_a_cascata(database, &plano);
+        // A cascata larga e da lista de perigo (765/767): recusa antes da
+        // marca, com nada gravado, se a sessao nao esta liberada.
+        if let Some((filha, linhas, vivas)) =
+            crate::plano_largo::observar_a_cascata(database, &plano)
+        {
+            self.protecao_do_plano("cascata", database, &filha, (linhas, vivas), sessao)?;
+        }
         // E as filhas que a cascata grava sem que o pedido as nomeie (561,
         // a-c): antes da marca, com nada gravado.
         self.linhas_barradas_para_o_solto(

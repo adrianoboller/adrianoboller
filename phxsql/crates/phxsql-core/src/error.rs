@@ -89,6 +89,19 @@ pub enum PhxError {
     InstanciaOcupada(String),
     /// Credencial invalida ou poder insuficiente.
     Autorizacao(String),
+    /// O comando e da lista de perigo da camada de protecao (pedidos 765 e
+    /// 767) e so executa com a SENHA DE EXECUCAO -- a segunda senha, que nao
+    /// e a de login.
+    ///
+    /// # Por que uma familia so dela, e nao `Autorizacao`
+    ///
+    /// Porque quem recebe tem de fazer outra coisa. `ACESSO_NEGADO` diz «voce
+    /// nao pode isso», e repetir com a mesma conta nao muda nada; esta diz
+    /// «voce pode, mas so com a senha de execucao», e o cliente que trata por
+    /// codigo pede a segunda senha em vez de mostrar «sem permissao». E a
+    /// distincao do `insufficient_user_authentication` da RFC 9470. O texto
+    /// e so o escopo: a op, a base, a tabela e a categoria do perigo.
+    SenhaDeExecucaoExigida(String),
     /// Valor excede o limite fisico do formato.
     LimiteExcedido(String),
     /// Alguem mandou encerrar esta atividade e ela chegou num ponto seguro.
@@ -214,6 +227,7 @@ impl PhxError {
             PhxError::EmMigracao(_) => 4006,
             PhxError::Nascendo(_) => 4007,
             PhxError::InstanciaOcupada(_) => 4008,
+            PhxError::SenhaDeExecucaoExigida(_) => 4009,
             PhxError::Io(_) => 5001,
             // Familia SISTEMA: o problema esta no ESTADO do sistema de
             // arquivos (duas fontes de configuracao presentes), nao no
@@ -248,6 +262,7 @@ impl PhxError {
             PhxError::EmMigracao(_) => "EM_MIGRACAO",
             PhxError::Nascendo(_) => "NASCENDO",
             PhxError::InstanciaOcupada(_) => "INSTANCIA_OCUPADA",
+            PhxError::SenhaDeExecucaoExigida(_) => "SENHA_DE_EXECUCAO_EXIGIDA",
             PhxError::Io(_) => "ERRO_DE_ES",
             PhxError::Cancelado(_) => "CANCELADO",
             PhxError::TransacaoAbortada(_) => "TRANSACAO_ABORTADA",
@@ -326,6 +341,9 @@ impl PhxError {
             PhxError::Sinal { .. } => "SP000021",
             PhxError::Integridade(_) => "SP000008",
             PhxError::Autorizacao(_) => "SP000025",
+            // A guarda do comando perigoso e identidade e autorizacao: quem a
+            // mudaria e a mesma sprint do `Autorizacao`.
+            PhxError::SenhaDeExecucaoExigida(_) => "SP000025",
             // Reserva de tabela para carga e governanca de recurso.
             PhxError::EmCarga(_) => "SP000012",
             // Quem manda escrever no master e a topologia de replicacao.
@@ -429,6 +447,9 @@ impl PhxError {
             PhxError::Integridade(m) => format!("integridade referencial: {m}"),
             PhxError::Conflito(m) => format!("conflito de escrita: {m}"),
             PhxError::Autorizacao(m) => format!("acesso negado: {m}"),
+            PhxError::SenhaDeExecucaoExigida(m) => format!(
+                "comando perigoso: exige a senha de execucao, e sem ela nao executa: {m}"
+            ),
             PhxError::EmCarga(m) => format!("tabela em carga: {m}"),
             PhxError::EmTransacao(m) => format!("tabela em transacao: {m}"),
             PhxError::EmMigracao(m) => format!("tabela em reescrita: {m}"),
@@ -577,6 +598,7 @@ mod testes_codigo {
             PhxError::InstanciaOcupada(String::new()),
             PhxError::TransacaoAbortada(String::new()),
             PhxError::Autorizacao(String::new()),
+            PhxError::SenhaDeExecucaoExigida(String::new()),
             PhxError::Redireciona(String::new()),
             PhxError::SpareEmEspera(String::new()),
             PhxError::Io(std::io::Error::other("x")),
@@ -608,6 +630,7 @@ mod testes_codigo {
             PhxError::Nascendo(_) => "Nascendo",
             PhxError::InstanciaOcupada(_) => "InstanciaOcupada",
             PhxError::Autorizacao(_) => "Autorizacao",
+            PhxError::SenhaDeExecucaoExigida(_) => "SenhaDeExecucaoExigida",
             PhxError::LimiteExcedido(_) => "LimiteExcedido",
             PhxError::SpareEmEspera(_) => "SpareEmEspera",
             PhxError::Redireciona(_) => "Redireciona",
@@ -641,7 +664,9 @@ mod testes_codigo {
         // que nasce com a trava na mao, agora com prazo -- pedido 629.
         // 22 -> 23 em 01/10/2026: a `InstanciaOcupada` (4008), a pasta que
         // outro processo grava -- pedido 635.
-        assert_eq!(quantas, 23, "entrou ou saiu variante: {nomes:?}");
+        // 23 -> 24 em 09/10/2026: a `SenhaDeExecucaoExigida` (4009), o
+        // comando da lista de perigo sem a segunda senha -- pedidos 765/767.
+        assert_eq!(quantas, 24, "entrou ou saiu variante: {nomes:?}");
     }
 
     /// **A sprint citada tem de EXISTIR no roteiro.**
@@ -799,6 +824,19 @@ mod testes_codigo {
     #[test]
     fn cancelado_nao_pede_nova_tentativa() {
         assert!(!PhxError::Cancelado(String::new()).adianta_repetir());
+    }
+
+    /// A recusa da camada de protecao e ACESSO, e repetir o mesmo pedido sem a
+    /// senha de execucao da a mesma recusa: o cliente que repetisse em laco
+    /// nunca chegaria a pedir a segunda senha.
+    #[test]
+    fn a_senha_de_execucao_exigida_tem_codigo_proprio_e_nao_pede_repeticao() {
+        let e = PhxError::SenhaDeExecucaoExigida("excluir_tabela em loja.c".into());
+        assert_eq!(e.codigo(), 4009);
+        assert_eq!(e.nome(), "SENHA_DE_EXECUCAO_EXIGIDA");
+        assert_eq!(e.classe(), "acesso");
+        assert!(!e.adianta_repetir());
+        assert_ne!(e.codigo(), PhxError::Autorizacao(String::new()).codigo());
     }
 
     /// Repetir so adianta no que pode ter mudado sozinho. Sao dois, e o nome

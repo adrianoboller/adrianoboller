@@ -268,7 +268,12 @@ fn o_pino_errado_recusa_dizendo_o_que_o_servidor_mostrou_e_o_certo_atende() {
 fn com_amarra_exigida_o_login_pelo_tls_amarra_ao_vinculo_e_entra() {
     let d = DirTemp::novo("fio-tls-amarra");
     let certo = par_tls(&d);
-    let (_s, porta) = subir_so(&d, r#", "cifra_fio": { "exigir_amarra": true }"#);
+    // O `usuario_criar` de administrador e da lista de perigo (765/767); a
+    // prova e da amarra do login ao vinculo do TLS.
+    let (_s, porta) = subir_so(
+        &d,
+        r#", "cifra_fio": { "exigir_amarra": true }, "protecao": { "ligada": false }"#,
+    );
     const SENHA: &str = "Senha-Do-Teste-572-T6b2";
 
     let mut admin = Cliente::conectar("127.0.0.1", porta, TOKEN, SILENCIO_DO_PBKDF2).unwrap();

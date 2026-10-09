@@ -96,7 +96,10 @@ fn replica_em_dia_com_o_mestre_gravando_nao_gera_ocorrencia() {
 fn a_tabela_apagada_na_origem_some_do_atraso() {
     let base_s = DirTemp::novo("atraso-apagada-source");
     let base_r = DirTemp::novo("atraso-apagada-replica");
-    let (_source, porta_s) = subir_source(&base_s);
+    // O `excluir_tabela` no source e da lista de perigo (765/767), e sem a
+    // senha de execucao (P14) nenhum cliente o executa: esta prova e do que
+    // a replica faz DEPOIS dele, entao o source sobe com a camada desligada.
+    let (_source, porta_s) = subir_source_com(&base_s, false);
     preparar_source(porta_s);
     inserir(porta_s, 1);
     let (_replica, porta_r) = subir_replica(&base_r, porta_s);

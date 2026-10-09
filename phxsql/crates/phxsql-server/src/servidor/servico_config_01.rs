@@ -429,7 +429,7 @@ impl Servidor {
     /// aconteceu e ja esta no `config.json`; o que se perde e a linha, e a
     /// perda vai para o erro padrao, que e onde o resto das queixas do
     /// arranque ja mora.
-    fn anotar_no_diario(
+    pub(super) fn anotar_no_diario(
         &self,
         sessao: &Sessao,
         banco: &str,

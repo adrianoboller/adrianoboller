@@ -3,6 +3,16 @@
 use super::*;
 
 fn servidor_com(dir: &std::path::Path, retencao_anos: u32, somente_leitura: bool) -> Arc<Servidor> {
+    servidor_com_protecao(dir, retencao_anos, somente_leitura, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn servidor_com_protecao(
+    dir: &std::path::Path,
+    retencao_anos: u32,
+    somente_leitura: bool,
+    protecao: bool,
+) -> Arc<Servidor> {
     let mut c = Config {
         base: dir.to_path_buf(),
         log_acessos: dir.join("acessos.log"),
@@ -13,6 +23,7 @@ fn servidor_com(dir: &std::path::Path, retencao_anos: u32, somente_leitura: bool
         ..Config::default()
     };
     c.lgpd.retencao_anos = retencao_anos;
+    c.protecao.ligada = protecao;
     Servidor::novo(c).unwrap()
 }
 
@@ -251,7 +262,10 @@ fn o_expurgo_pede_administrar_e_roda_no_servidor_somente_leitura() {
     }
     // Pelo `despachar`, que e a porta com os portoes -- o `executar` dos
     // outros testes pula o do somente-leitura.
-    let s = servidor_com(&dir, 5, true);
+    // `expurgar_trilha` e da lista de perigo, e a sessao de servico deste
+    // teste nao tem login para liberar: a prova e do portao do
+    // somente-leitura e do `administrar`, nao da camada.
+    let s = servidor_com_protecao(&dir, 5, true, false);
     let mut sessao = Sessao::default();
     let (_, _, controle) = s.despachar(
         r#"{"token":"t","op":"restaurar","database":"b","tabela":"c","rowid":1}"#,

@@ -633,6 +633,12 @@ pub struct Sessao {
     pub desde_ms: i64,
     /// Desafio em aberto: (usuario, nonce do servidor, quando expira).
     pub desafio: Option<(String, String, i64)>,
+    /// O IP de onde a senha de execucao liberou esta sessao (pedidos
+    /// 765/767). A sessao web e reconstruida a cada clique, entao a
+    /// liberacao tem de morar AQUI, ao lado do login, e morre com a sessao:
+    /// `sair`, novo `login` (que gira o id), inatividade. Quem a preenche e a
+    /// P14; o `trancar_execucao` a tira.
+    pub execucao_liberada_em: Option<String>,
 }
 
 /// As sessoes vivas, por identificador.
@@ -652,6 +658,7 @@ impl Sessoes {
                 expira_ms: agora_ms + duracao_ms,
                 desde_ms: agora_ms,
                 desafio: None,
+                execucao_liberada_em: None,
             },
         );
         id
@@ -676,6 +683,33 @@ impl Sessoes {
                 true
             }
             None => false,
+        }
+    }
+
+    /// Libera a sessao pela senha de execucao, a partir de `ip`. E a porta
+    /// da P14, que confere a segunda senha antes de chamar isto.
+    pub fn liberar_execucao(&mut self, id: &str, ip: &str) -> bool {
+        match self.dentro.get_mut(id) {
+            Some(s) => {
+                s.execucao_liberada_em = Some(ip.to_string());
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// O IP de onde a sessao foi liberada, se foi. Quem pergunta confere que
+    /// e o IP do pedido -- a liberacao nao passa para outro IP.
+    pub fn execucao_liberada_em(&self, id: &str) -> Option<String> {
+        self.dentro
+            .get(id)
+            .and_then(|s| s.execucao_liberada_em.clone())
+    }
+
+    /// O `trancar_execucao` da sessao web. Idempotente.
+    pub fn trancar_execucao(&mut self, id: &str) {
+        if let Some(s) = self.dentro.get_mut(id) {
+            s.execucao_liberada_em = None;
         }
     }
 
@@ -704,6 +738,7 @@ impl Sessoes {
                 expira_ms: agora_ms + 3_600_000,
                 desde_ms: agora_ms,
                 desafio: None,
+                execucao_liberada_em: None,
             },
         );
     }

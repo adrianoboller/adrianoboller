@@ -57,7 +57,13 @@ fn subir(c: Config) -> (Arc<Servidor>, u16) {
 }
 
 pub fn subir_source(base: &std::path::Path) -> (Arc<Servidor>, u16) {
+    subir_source_com(base, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+pub fn subir_source_com(base: &std::path::Path, protecao: bool) -> (Arc<Servidor>, u16) {
     let mut c = config_base(base);
+    c.protecao.ligada = protecao;
     c.replicacao.papel = Papel::Source;
     c.replicacao.id_servidor = "source-do-atraso".into();
     c.replicacao.imagem_da_linha = true;

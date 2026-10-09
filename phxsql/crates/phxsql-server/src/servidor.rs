@@ -315,6 +315,7 @@ pub(crate) const OPS_NO_SPARE: &[&str] = &[
     "desafio",
     "login",
     "sair",
+    "trancar_execucao",
     "quem_sou",
     "catalogo",
     // Administracao e monitoramento.
@@ -510,9 +511,61 @@ struct Sessao {
     /// conexao TLS da porta de dados contava como «em claro» para o dado
     /// pessoal, e a da web so contava cifrada com `exigir` ligado.
     fio_tls: bool,
+    /// A sessao liberada pela SENHA DE EXECUCAO (pedidos 765/767).
+    ///
+    /// Precisao do dono: «uma vez informada, a senha fica na sessao; nao e
+    /// necessaria para cada comando». A liberacao vale ate a sessao terminar
+    /// -- `sair`, novo `login`, queda da conexao, a sessao web que vence por
+    /// inatividade -- ou ate o `trancar_execucao`. Guarda o login e o IP de
+    /// quando foi dada, e so vale enquanto os dois sao os desta sessao: ela
+    /// nao passa para outra pessoa nem para outro IP.
+    ///
+    /// Nesta fatia (P1) nada a preenche fora dos testes: quem libera e a P14,
+    /// a da segunda senha. Sem liberacao, o comando perigoso recusa.
+    execucao_liberada: Option<LiberacaoDeExecucao>,
+}
+
+/// O que a senha de execucao liberou: para quem e de onde. Ver
+/// `Sessao::execucao_liberada`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LiberacaoDeExecucao {
+    login: String,
+    ip: String,
 }
 
 impl Sessao {
+    /// A sessao esta liberada pela senha de execucao? So para a mesma
+    /// identidade e o mesmo IP de quando foi liberada.
+    fn execucao_liberada(&self) -> bool {
+        self.execucao_liberada
+            .as_ref()
+            .is_some_and(|l| l.login == self.identidade_de_execucao() && l.ip == self.ip)
+    }
+
+    /// De quem e a senha de execucao desta sessao: o login, ou -- no
+    /// servidor sem cadastro, onde a sessao e a do token -- a identidade do
+    /// servico. A sessao ANONIMA de um servidor com cadastro tambem cai aqui,
+    /// e por isso quem libera confere `ainda_anonima` antes.
+    fn identidade_de_execucao(&self) -> &str {
+        match self.login() {
+            "" => crate::senha_de_execucao::IDENTIDADE_DO_SERVICO,
+            login => login,
+        }
+    }
+
+    /// So em teste: a sessao liberada A MAO, no ponto que a P14 vai
+    /// preencher pela senha de execucao. E o que um teste da casa que executa
+    /// um comando perigoso com usuario logado usa, em vez de desligar a
+    /// camada: prova o caminho de quem tem a senha.
+    #[cfg(test)]
+    fn liberada_para_teste(mut self) -> Sessao {
+        self.execucao_liberada = Some(LiberacaoDeExecucao {
+            login: self.identidade_de_execucao().to_string(),
+            ip: self.ip.clone(),
+        });
+        self
+    }
+
     fn login(&self) -> &str {
         self.usuario
             .as_ref()
@@ -990,6 +1043,9 @@ pub struct Servidor {
     ha_proibidos_por_base: AtomicBool,
     /// O diario administrativo: quem mudou qual diretiva, quando e por que.
     diario: crate::diretivas::Diario,
+    /// O cadastro das senhas de execucao (pedido 767, P14). Ver
+    /// `crate::senha_de_execucao`.
+    senhas_de_execucao: crate::senha_de_execucao::Cofre,
     /// O que cada laco de replica conta, por nome de origem, para a operacao
     /// `replicacao_estado` -- posicao, ultimo erro, recusas.
     estado_replicacao: Mutex<HashMap<String, EstadoOrigem>>,
@@ -1388,6 +1444,39 @@ impl Servidor {
         } else {
             op
         };
+        // `LOCK EXECUTION` e o `trancar_execucao` escrito em SQL -- um motor
+        // so. Traduz aqui, e nao no `op_sql`, porque trancar MUDA a sessao, e
+        // o `op_sql` so a recebe para ler.
+        let op = if op == "sql"
+            && phxsql_sql::transacao::e_trancar_execucao(
+                pedido.texto_ou("texto", pedido.texto_ou("sql", "")),
+            ) {
+            "trancar_execucao".to_string()
+        } else {
+            op
+        };
+        // E o `UNLOCK EXECUTION IDENTIFIED BY '...'` e o `liberar_execucao`
+        // (pedido 767), traduzido AQUI pelo mesmo motivo: liberar muda a
+        // sessao. O pedido traduzido leva so o token e a senha; o texto
+        // original, com a senha, ja foi redigido pelo Profiler na chegada, e
+        // nao volta em resposta nenhuma.
+        let (op, pedido) = if op == "sql" {
+            match phxsql_sql::usuario::liberar_execucao(
+                pedido.texto_ou("texto", pedido.texto_ou("sql", "")),
+            ) {
+                Ok(Some(senha)) => (
+                    "liberar_execucao".to_string(),
+                    Json::objeto(vec![
+                        ("token", Json::texto_de(pedido.texto_ou("token", ""))),
+                        ("senha", Json::texto_de(&senha)),
+                    ]),
+                ),
+                Ok(None) => (op, pedido),
+                Err(e) => return (op, false, Err(e)),
+            }
+        } else {
+            (op, pedido)
+        };
         #[cfg(test)]
         self.armar_panico_de_teste(&op);
         let base = pedido.texto_ou("database", "").to_string();
@@ -1493,6 +1582,9 @@ impl Servidor {
             return (op, true, r);
         }
         if op == "login" {
+            // Identidade nova, liberacao nenhuma: a senha de execucao de quem
+            // estava antes nesta conexao nao passa para quem entra agora.
+            sessao.execucao_liberada = None;
             let r = self.op_login(&pedido, sessao);
             if r.is_err() {
                 self.violacao_leve(ip, "login", "credencial invalida");
@@ -1503,7 +1595,37 @@ impl Servidor {
         if op == "sair" {
             sessao.usuario = None;
             sessao.desafio = None;
+            sessao.execucao_liberada = None;
             return (op, true, Ok(Json::objeto(vec![("saiu", Json::Bool(true))])));
+        }
+        // O `sudo -k` da senha de execucao (pedido 767): tranca de novo a
+        // sessao liberada. Nao pede senha nem poder -- tirar o proprio poder
+        // nunca e perigoso --, e idempotente, e vai a trilha pelo
+        // `acessos.log`, como todo pedido. Fica ANTES do portao do login pelo
+        // mesmo motivo do `sair`: a sessao anonima tambem pode pedir, e a
+        // resposta e a mesma.
+        if op == "trancar_execucao" {
+            let estava = sessao.execucao_liberada();
+            sessao.execucao_liberada = None;
+            self.registrar_na_trilha(
+                "protecao.trancou",
+                &crate::protecao::Escopo {
+                    op: op.clone(),
+                    database: String::new(),
+                    tabela: String::new(),
+                    categoria: crate::protecao::Categoria::Acesso,
+                    linhas: None,
+                },
+                sessao,
+            );
+            return (
+                op,
+                true,
+                Ok(Json::objeto(vec![
+                    ("trancada", Json::Bool(true)),
+                    ("estava_liberada", Json::Bool(estava)),
+                ])),
+            );
         }
         // A ficha da conexao acompanha o cadastro VIVO.
         //
@@ -1519,6 +1641,13 @@ impl Servidor {
                 true,
                 Err(PhxError::Autorizacao(self.msg("erro.faca_login", &[]))),
             );
+        }
+        // A senha de execucao libera a SESSAO (pedido 767) -- e por isso mora
+        // aqui, com a sessao na mao, e nao no `executar`. Depois do portao do
+        // login e do cadastro vivo: quem foi excluido nao libera nada.
+        if op == "liberar_execucao" {
+            let r = self.op_liberar_execucao(&pedido, sessao);
+            return (op, true, r);
         }
 
         // Portoes 2b, 3 e 4 -- ver `portoes_do_pedido`.
@@ -1985,13 +2114,24 @@ impl Servidor {
             "diretiva_gravar" => self.op_diretiva_gravar(p, sessao),
             "catalogo" => Ok(self.op_catalogo(p, sessao)),
             "sql" => self.op_sql(p, sessao),
-            "quem_sou" => Ok(match &sessao.usuario {
-                Some(u) => u.ficha(),
-                None => Json::objeto(vec![
-                    ("usuario", Json::Nulo),
-                    ("via", Json::texto_de("token de servico")),
-                ]),
-            }),
+            "quem_sou" => {
+                let mut ficha = match &sessao.usuario {
+                    Some(u) => u.ficha(),
+                    None => Json::objeto(vec![
+                        ("usuario", Json::Nulo),
+                        ("via", Json::texto_de("token de servico")),
+                    ]),
+                };
+                // Pedido 767: a tela le daqui se a sessao esta liberada pela
+                // senha de execucao -- e o que acende o selo e o «Trancar».
+                if let Json::Objeto(pares) = &mut ficha {
+                    pares.push((
+                        "execucao_liberada".to_string(),
+                        Json::Bool(sessao.execucao_liberada()),
+                    ));
+                }
+                Ok(ficha)
+            }
             "usuarios" => Ok(self.cadastro().fichas()),
             "usuario_criar" => self.op_usuario(crate::usuarios::Acao::Criar, p, sessao),
             "usuario_alterar" => self.op_usuario(crate::usuarios::Acao::Alterar, p, sessao),
@@ -2028,6 +2168,7 @@ impl Servidor {
             "servico_parar" => self.op_servico_parar(),
             "servico_subir" => self.op_servico_subir(p),
             "jobs" | "job_listar" => self.op_jobs(p),
+            "senha_execucao_definir" => self.op_senha_execucao_definir(p, sessao),
             "job_salvar" => self.op_job_salvar(p),
             "job_excluir" => self.op_job_excluir(p),
             "job_rodar" => self.op_job_rodar(p),
@@ -2589,6 +2730,7 @@ fontes_do_servidor! {
     "servidor/testes_da_ficha_compartilhada.rs",
     "servidor/testes_da_linhagem_na_replica.rs",
     "servidor/testes_da_previsao.rs",
+    "servidor/testes_da_protecao.rs",
     "servidor/testes_da_recusa_por_unicidade.rs",
     "servidor/testes_da_saude_do_disco.rs",
     "servidor/testes_da_sonda_de_rede.rs",
@@ -2963,6 +3105,9 @@ mod testes_do_aquario;
 
 #[cfg(test)]
 mod testes_da_previsao;
+
+#[cfg(test)]
+mod testes_da_protecao;
 
 #[cfg(test)]
 mod testes_do_plano_largo;

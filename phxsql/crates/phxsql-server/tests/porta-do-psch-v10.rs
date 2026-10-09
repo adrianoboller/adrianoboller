@@ -56,6 +56,16 @@ fn subir(base: &Path, com_cadastro: bool) -> (Arc<Servidor>, u16) {
 /// operacional em toda gravacao de qualquer modo, que e' o que o retrato do
 /// volume enxerga.
 fn subir_com(base: &Path, com_cadastro: bool, durabilidade: &str) -> (Arc<Servidor>, u16) {
+    subir_com_protecao(base, com_cadastro, durabilidade, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn subir_com_protecao(
+    base: &Path,
+    com_cadastro: bool,
+    durabilidade: &str,
+    protecao: bool,
+) -> (Arc<Servidor>, u16) {
     // Uma iteracao so: a senha real nao interessa aqui, e 210.000 por login
     // fariam a bateria levar segundos por nada.
     let h = phxsql_core::senha::cifrar_com(SENHA, 1);
@@ -95,7 +105,8 @@ fn subir_com(base: &Path, com_cadastro: bool, durabilidade: &str) -> (Arc<Servid
         bl = base.join("blacklist.json").display().to_string(),
         dbl = base.join("dblink.json").display().to_string(),
     );
-    let c = Config::de_json(&Json::analisar(&texto).unwrap()).unwrap();
+    let mut c = Config::de_json(&Json::analisar(&texto).unwrap()).unwrap();
+    c.protecao.ligada = protecao;
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);
     std::thread::spawn(move || {
@@ -526,7 +537,9 @@ fn escrita_confirmada_durante_a_migracao_sobrevive_a_troca() {
     const LINHAS: i64 = 100_000;
 
     let base = DirTemp::novo("v10-trava");
-    let (_s, porta) = subir_com(&base, false, "sistema");
+    // A migracao de 100.002 linhas e da lista de perigo (765/767); a prova e
+    // da escrita que atravessa a troca.
+    let (_s, porta) = subir_com_protecao(&base, false, "sistema", false);
     let mut c = Ligacao::nova(porta);
     ok(c.pedir(r#""op":"criar_database","database":"loja""#));
     criar_v9(&base, "loja", "grande", LINHAS);

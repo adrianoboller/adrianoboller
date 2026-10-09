@@ -319,12 +319,22 @@ const SENHA_DA_ANA: &str = "segredo-da-ana";
 /// `usuario_excluir` gravam o cadastro no `config.json`, e sem arquivo eles
 /// recusam antes de a prova comecar.
 fn subir_de_arquivo(base: &std::path::Path, usuarios: &str) -> (Arc<Servidor>, u16) {
+    subir_de_arquivo_com(base, usuarios, true)
+}
+
+/// `protecao` e o interruptor de teste da camada de protecao (765/767).
+fn subir_de_arquivo_com(
+    base: &std::path::Path,
+    usuarios: &str,
+    protecao: bool,
+) -> (Arc<Servidor>, u16) {
     let caminho = base.join("config.json");
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:0", "base": {b:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?}, "usuarios": [{usuarios}],
               "timeout_s": 60,
+              "protecao": {{ "ligada": {protecao} }},
               "cifra_fio": {{ "exigir": false }},
               "web": {{ "ligado": false }} }}"#,
         b = base.join("base").display().to_string(),
@@ -388,13 +398,16 @@ fn recusada_pelo_teto_do_anonimo(d: &std::path::Path, r: &Json, quem: &str) {
 #[test]
 fn o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte() {
     let d = pasta("excluido");
-    let (_s, porta) = subir_de_arquivo(
+    // `usuario_excluir` e o `usuario_criar` de administrador sao da lista de
+    // perigo (765/767); a prova e do teto da linha de quem perde o cadastro.
+    let (_s, porta) = subir_de_arquivo_com(
         &d,
         &format!(
             "{}, {}",
             ficha("root", SENHA, true),
             ficha("ana", SENHA_DA_ANA, false)
         ),
+        false,
     );
     let mut ana = Ligacao::nova(porta);
     let r = ana.mandar(&format!(
@@ -426,7 +439,9 @@ fn o_usuario_excluido_com_a_conexao_aberta_perde_o_teto_na_linha_seguinte() {
 #[test]
 fn a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce() {
     let d = pasta("primeiro-cadastro");
-    let (_s, porta) = subir_de_arquivo(&d, "");
+    // `usuario_excluir` e o `usuario_criar` de administrador sao da lista de
+    // perigo (765/767); a prova e do teto da linha de quem perde o cadastro.
+    let (_s, porta) = subir_de_arquivo_com(&d, "", false);
     let mut antiga = Ligacao::nova(porta);
     let r = antiga.mandar(&format!(r#"{{"token":"{TOKEN}","op":"ping"}}"#));
     assert!(r.booleano_ou("ok", false), "ping: {}", r.escrever());
@@ -465,13 +480,16 @@ fn a_conexao_aberta_antes_do_primeiro_cadastro_perde_o_teto_quando_ele_nasce() {
 #[test]
 fn quem_e_excluido_enquanto_o_proprio_pedido_espera_perde_o_teto_na_linha_seguinte() {
     let d = pasta("excluido-na-espera");
-    let (_s, porta) = subir_de_arquivo(
+    // `usuario_excluir` e o `usuario_criar` de administrador sao da lista de
+    // perigo (765/767); a prova e do teto da linha de quem perde o cadastro.
+    let (_s, porta) = subir_de_arquivo_com(
         &d,
         &format!(
             "{}, {}",
             ficha("root", SENHA, true),
             ficha("ana", SENHA_DA_ANA, true)
         ),
+        false,
     );
     let mut root = Ligacao::entrar(porta);
     let pede = |c: &mut Ligacao, corpo: &str| {

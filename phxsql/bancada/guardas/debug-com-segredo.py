@@ -176,6 +176,10 @@ ISENTOS = (
     ("TlsPorta", "chave",
      "CAMINHO do PEM da chave TLS, e nao a chave -- ve-lo e o que diagnostica "
      "o par trocado; a chave em si nunca sai do arquivo (config.rs, pedido 572)"),
+    ("PhxError", "SenhaDeExecucaoExigida.0",
+     "o ESCOPO da recusa da camada de protecao -- op, base, tabela, categoria "
+     "e numero de linhas --, e nunca a senha: o nome fala da senha que FALTOU "
+     "(pedidos 765/767, protecao.rs)"),
     ("Cru", "chave",
      "chave de MENSAGEM da fabrica de idiomas -- o que o relatorio do "
      "conferidor precisa imprimir para dizer QUAL texto esta cru. Esconde-la "

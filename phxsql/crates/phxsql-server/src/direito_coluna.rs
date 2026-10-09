@@ -89,6 +89,9 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("desafio", PorColuna::Nenhum),
     ("login", PorColuna::Nenhum),
     ("sair", PorColuna::Nenhum),
+    ("trancar_execucao", PorColuna::Nenhum),
+    ("liberar_execucao", PorColuna::Nenhum),
+    ("senha_execucao_definir", PorColuna::Nenhum),
     ("quem_sou", PorColuna::Nenhum),
     ("catalogo", PorColuna::Nenhum),
     // -------------------------------------------------------- o que existe

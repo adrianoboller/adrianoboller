@@ -7,12 +7,15 @@
 //! ninguem olhava para ele: um `WHERE id > 0` esquecido reescreve a tabela
 //! inteira, e o primeiro sinal era o dano.
 //!
-//! # So observa
+//! # Aqui so se mede e se observa; quem recusa e a camada de protecao
 //!
-//! Nada aqui recusa nem muda a resposta. A ocorrencia sai pelo produtor
-//! unico (`telemetria::sinal`, A3), e quem decide o que fazer com ela e
-//! gente. Recusar seria guarda nova IMPOSTA -- todo job de manutencao que
-//! reescreve uma tabela pequena pararia de um dia para o outro.
+//! Nada AQUI recusa. A ocorrencia sai pelo produtor unico
+//! (`telemetria::sinal`, A3), e as duas funcoes devolvem o que acharam
+//! largo para quem chama perguntar a camada de protecao
+//! (`crate::protecao`, pedidos 765/767): desde 09/10/2026 o plano largo e da
+//! lista de perigo e, sem a senha de execucao, nao executa -- decisao do
+//! dono, que fez dela a excecao explicita a «guarda nova entra pedida».
+//! A medida continua UMA, e mora aqui; a decisao continua UMA, e mora la.
 //!
 //! # O portao vem antes do trabalho
 //!
@@ -44,21 +47,31 @@ pub fn largo(linhas: u64, vivas: u64) -> bool {
 /// O plano de um `UPDATE`/`DELETE` por faixa, com a lista de rowids ja
 /// fechada e nada gravado. `vivas` e o que o `coletar_rowids` examinou na
 /// visao das ativas -- o mesmo passo, nenhuma leitura a mais.
-pub fn observar_a_faixa(op: &str, database: &str, tabela: &str, linhas: u64, vivas: u64) {
+///
+/// Devolve se o plano e largo.
+pub fn observar_a_faixa(op: &str, database: &str, tabela: &str, linhas: u64, vivas: u64) -> bool {
     if !largo(linhas, vivas) {
-        return;
+        return false;
     }
     avisar(op, database, tabela, linhas, vivas);
+    true
 }
 
 /// O plano de uma cascata do `ao_alterar`, achatado e ainda nao aplicado.
 /// Conta por filha: mil linhas espalhadas por tres tabelas grandes nao sao
 /// o mesmo susto que mil linhas de uma tabela de mil.
-pub fn observar_a_cascata(database: &str, plano: &[EscritaDaCascata]) {
+///
+/// Devolve a PRIMEIRA filha larga -- tabela, linhas do plano nela e vivas --,
+/// ou `None`. Uma basta para a camada de protecao recusar; o aviso sai de
+/// todas.
+pub fn observar_a_cascata(
+    database: &str,
+    plano: &[EscritaDaCascata],
+) -> Option<(String, u64, u64)> {
     // O total limita cada parcela: abaixo do piso no total, nenhuma filha
     // passa dele, e o laco nem comeca.
     if (plano.len() as u64) < PISO_DE_LINHAS {
-        return;
+        return None;
     }
     let mut por_filha: Vec<(&str, u64, u64)> = Vec::new();
     for e in plano {
@@ -67,11 +80,14 @@ pub fn observar_a_cascata(database: &str, plano: &[EscritaDaCascata]) {
             None => por_filha.push((&e.tabela, 1, e.vivas_na_filha)),
         }
     }
+    let mut primeira = None;
     for (tabela, linhas, vivas) in por_filha {
         if largo(linhas, vivas) {
             avisar("cascata", database, tabela, linhas, vivas);
+            primeira.get_or_insert_with(|| (tabela.to_string(), linhas, vivas));
         }
     }
+    primeira
 }
 
 /// O corpo unico dos dois. Os `dados` vao como pedido JSON, porque a camada
