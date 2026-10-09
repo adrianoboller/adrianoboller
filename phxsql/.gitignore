@@ -84,3 +84,7 @@ chave-do-fio.hex
 # (`resultado.json`, `prova-das-guardas.json`), nao a imagem -- como as
 # capturas das outras telas.
 /testes-web/phxzip/capturas/*.png
+
+# A bancada do PhxZip (pedido 455) grava a corrida pela metade aqui e so
+# promove a resultados.json no fim, como as outras.
+/bancada/phxzip/resultados.parcial.json

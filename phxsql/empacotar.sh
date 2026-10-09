@@ -103,8 +103,10 @@ confere_versoes() {
   # digitado ali envelhece tao calado quanto o selo da capa do dossie -- com o
   # agravante de mandar o leitor procurar um arquivo que nao existe.
   local fora
-  fora=$(grep -ohE 'phxsql-[0-9]+\.[0-9]+\.[0-9]+' MANUAL.txt README.md docs/*.md |
-    grep -v "^phxsql-$VERSAO\$" | sort -u || true)
+  # O `phxzip-` entra na mesma regua desde o pedido 455: o MANUAL-PHXZIP.md
+  # mora em docs/ e manda baixar `phxzip-<versao>-<plataforma>.zip`.
+  fora=$(grep -ohE 'phx(sql|zip)-[0-9]+\.[0-9]+\.[0-9]+' MANUAL.txt README.md docs/*.md |
+    grep -vE "^phx(sql|zip)-$VERSAO\$" | sort -u || true)
   [ -z "$fora" ] ||
     { echo "   nome de arquivo com versao velha: $(echo "$fora" | tr '\n' ' ')"; erro=1; }
 
@@ -183,8 +185,8 @@ confere_ferramentas_windows() {
   fi
   [ $falta -eq 0 ] && return 0
   echo
-  echo "   O pacote de Windows nao sai desta maquina sem os dois. Os de Linux"
-  echo "   e de fontes saem: ./empacotar.sh linux e ./empacotar.sh fontes."
+  echo "   O pacote de Windows nao sai desta maquina sem os dois. Os outros"
+  echo "   saem: $(basename "$0") linux, por exemplo."
   return 3
 }
 
@@ -238,6 +240,27 @@ fecha() {
   echo "   $SAIDA/$nome.zip"
 }
 
+# O alvo instalado, ou o comando exato de quem nao o tem. Funcao, e nao linha
+# dentro do monta(), porque o `empacotar-phxzip.sh` (pedido 455) faz a MESMA
+# pergunta para os mesmos alvos -- e a resposta que ele da e outra: la a falta
+# vira pacote NAO MONTADO, com o motivo, e as outras plataformas seguem.
+alvo_instalado() {
+  local alvo=$1
+  rustup target list --installed 2>/dev/null | grep -qx "$alvo" && return 0
+  echo "   FALTA o alvo $alvo:"
+  echo "       rustup target add $alvo"
+  return 1
+}
+
+# O ligador dos alvos `musl`: o `rust-lld` que ja vem com a ferramenta. Sem
+# dependencia de C, nao ha o que um `gcc` cruzado teria de resolver. Funcao
+# pelo mesmo motivo do `alvo_instalado`: o PhxZip liga os mesmos alvos.
+ligador_musl() {
+  local var
+  var="CARGO_TARGET_$(echo "$1" | tr 'a-z-' 'A-Z_')_LINKER"
+  export "$var=rust-lld"
+}
+
 monta() {
   local alvo=$1 rotulo=$2 sufixo=$3 sem_odbc=${4:-}
   local nome="phxsql-$VERSAO-$rotulo"
@@ -245,21 +268,13 @@ monta() {
 
   echo "== $rotulo ($alvo)"
   if [ "$rotulo" = "windows" ]; then confere_ferramentas_windows; fi
-  if ! rustup target list --installed 2>/dev/null | grep -qx "$alvo"; then
-    echo "   FALTA o alvo $alvo:"
-    echo "       rustup target add $alvo"
-    exit 1
-  fi
+  alvo_instalado "$alvo" || exit 1
   if [ -n "$sem_odbc" ]; then
     # `musl` nao produz `cdylib`, entao o driver ODBC nao cabe neste pacote --
     # e nao faz falta: o driver e do lado CLIENTE, na maquina que roda a
     # ferramenta de relatorio, nao na placa que guarda o dado. Quem precisar de
     # ODBC em ARM compila para o alvo `gnu` da mesma arquitetura.
-    #
-    # O ligador e o `rust-lld` que ja vem com a ferramenta: sem dependencia de
-    # C, nao ha o que um `gcc` cruzado teria de resolver.
-    local var="CARGO_TARGET_$(echo "$alvo" | tr 'a-z-' 'A-Z_')_LINKER"
-    export "$var=rust-lld"
+    ligador_musl "$alvo"
     cargo build --release --offline --target "$alvo" \
       -p phxsql-server --bin phxsqld \
       -p phxsql-cli --bin phxsql \
@@ -873,6 +888,14 @@ depois. Os zips daqui sao os MESMOS arquivos, com os mesmos hashes.
 FIM
   fecha "$nome"
 }
+
+# Carregado com `source` (o `empacotar-phxzip.sh`, pedido 455), o arquivo para
+# aqui: quem carrega quer as funcoes -- manifesto, fecha, conferir, as
+# conferencias de versao e de alvo --, e nao o despacho nem a lista de fora,
+# que gravaria o SHA256SUMS dos zips do PhxSql. Mesmo motor, nunca copia.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+  return 0
+fi
 
 case "$QUAL" in
   conferir) conferir; exit 0 ;;

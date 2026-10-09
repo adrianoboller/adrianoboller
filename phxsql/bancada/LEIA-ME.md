@@ -22,6 +22,7 @@ deve acreditar.
 | `sqlite/` | a comparação com o **SQLite(R)**, que é a que decide o caso do celular: motor contra motor, o custo do soquete medido à parte, e a durabilidade casada nos três regimes. Ver `sqlite/LEIA-ME.md` e `docs/MOBILE.md` |
 | `arm/` | a prova de que o binário **ARM64 roda** — sob `qemu-user-static`, sem VM. `docs/EMPACOTAMENTO.md` §7.3 |
 | `windows/` | a mesma prova para o **`.exe`**, sob `wine`. A sonda é a do `arm/`, com o rótulo vindo de fora. `docs/EMPACOTAMENTO.md` §6.1 |
+| `phxzip/` | o **PhxZip contra o `7z`** do sistema (pedido 455, Z11): o mesmo conjunto compactado e extraído pelos dois, com o 7z ajustado para o **mesmo método** (LZMA2 não sólido, guloso, `mc=48`, uma thread) e o 7z no padrão só como referência marcada. `medir.py` grava o `resultados.json`; `manual.py` leva os números ao `docs/MANUAL-PHXZIP.md` e, com `--catraca`, reprova o manual velho |
 | *(fora daqui)* `testes-web/grade/custo-da-ordem.mjs` | o custo da grade **ordenada** medido **na tela**, num navegador de verdade, em três escalas de tabela. Mora com os testes de frontend porque é lá que está o `phxsqld` de bateria e o navegador; o lado do motor da mesma pergunta é o `--example o-que-a-grade-ordenada-custa`. `docs/DESEMPENHO.md` §19 |
 
 A carga do lado do PhxSql é `crates/phxsql-store/examples/carga.rs`, que roda

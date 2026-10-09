@@ -533,3 +533,35 @@ verdade, servidor sobe dele), e a receita de ANTES do pedido 478 — reposta ali
 por valor, porque depois deste pedido integrado o `empacotar.sh` de `HEAD`
 deixa de ter essa versão — fecha com `config.json` em claro, a assinatura do
 defeito.
+
+---
+
+## 9. Os pacotes do PhxZip (pedido 455)
+
+```bash
+./empacotar-phxzip.sh              # linux, windows, arm64 e arm32, em pacotes/phxzip/
+./empacotar-phxzip.sh arm64        # uma plataforma só
+./empacotar-phxzip.sh conferir     # forma, SHA256SUMS e manifesto de cada zip
+python3 bancada/pacote/provar-phxzip.py   # a conferência fica vermelha quando deve
+```
+
+`phxzip-<versão>-<plataforma>.zip` leva `phxzipcmd`, `phxzipweb`, o
+`MANUAL-PHXZIP.md`, `LICENCA.txt` (o SPDX do `Cargo.toml`; o texto da licença
+continua decisão do dono, §4), `fonte-exo2-OFL.txt` (a OFL da fonte que o
+`phxzipweb` embute, que a licença dela manda acompanhar), `COMECE-AQUI.txt` e o
+`MANIFESTO.sha256`.
+
+**Mesmo motor.** O `empacotar-phxzip.sh` carrega este `empacotar.sh` com
+`source` — o arquivo para antes do despacho quando é carregado — e chama as
+funções de cá: `confere_versoes`, `alvo_instalado`, `ligador_musl`,
+`confere_ferramentas_windows`, `fecha` (que chama `manifesto`) e `conferir`.
+Não há segunda receita de manifesto, de zip nem de conferência. O que é dele:
+o conteúdo do pacote, a conferência da **forma** de cada binário (a
+arquitetura pelo `file`: o binário de Linux no zip de ARM passa no manifesto,
+porque o hash é do arquivo que está lá) e a plataforma que não monta virar
+`phxzip-<versão>-<plataforma>.NAO-MONTADO.txt`, com o motivo e o comando, e
+saída 3 — em vez do `exit 1` que para tudo no PhxSql.
+
+A conferência por dentro é o `phxsql conferir-pacote`, o mesmo do PhxSql: o
+pacote do PhxZip **não** traz conferidor próprio, e o `COMECE-AQUI.txt` diz
+isso e manda usar o `sha256sum -c` (ou o `Get-FileHash` no Windows).
