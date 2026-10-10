@@ -35,12 +35,16 @@ fn servidor_com_cadastro_amarra(
     exigir_amarra: bool,
 ) -> (Arc<Servidor>, PathBuf, DirTemp) {
     let dir = DirTemp::novo(&format!("cad-op-{nome}"));
+    // A politica de senha VELHA vai escrita no arquivo (pedido 770): estes
+    // testes provam o cadastro, nao a politica, e as senhas deles sao de
+    // antes dela. O par novo/velho mora em `testes_dos_padroes_770`.
     let caminho = dir.join("config.json");
     std::fs::write(
         &caminho,
         format!(
             "{{\n  \"_nota\": \"comentario que a gravacao nao pode comer\",\n  \
                  \"token\": \"t\",\n  \"bind\": \"127.0.0.1:5399\",\n  \
+                 \"politica_de_senha\": {{\"minimo\": 0, \"classes\": false, \"diferente_do_login\": false}},\n  \
                  \"base\": \"{}\",\n  \
                  \"usuarios\": [\n    {{\n      \"id\": 9,\n      \"nome\": \"Ana\",\n      \
                  \"login\": \"ana\",\n      \"senha_hash\": \"{}\",\n      \

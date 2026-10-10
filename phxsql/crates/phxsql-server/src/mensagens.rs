@@ -759,6 +759,64 @@ pub const FABRICA: &[MensagemFabrica] = &[
             "usuario o contraseña inválidos",
         ],
     },
+    // Pedido 770: a senha NOVA que a politica recusa. Uma mensagem por regra,
+    // e cada uma diz o campo que a afrouxa -- quem cria usuario por script
+    // precisa saber o que mudou e onde, e um «senha fraca» seco mandaria
+    // adivinhar qual das tres regras pegou.
+    MensagemFabrica {
+        nome: "erro.senha_curta",
+        textos: [
+            "senha nova curta: a politica pede {minimo} caracteres ou mais \
+             (politica_de_senha.minimo)",
+            "nouveau mot de passe trop court : la politique exige {minimo} \
+             caractères ou plus (politica_de_senha.minimo)",
+            "new password too short: the policy requires {minimo} characters or \
+             more (politica_de_senha.minimo)",
+            "nuova password troppo corta: la politica richiede {minimo} caratteri \
+             o più (politica_de_senha.minimo)",
+            "neues Passwort zu kurz: die Richtlinie verlangt {minimo} Zeichen oder \
+             mehr (politica_de_senha.minimo)",
+            "contraseña nueva corta: la política pide {minimo} caracteres o más \
+             (politica_de_senha.minimo)",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.senha_sem_classes",
+        textos: [
+            "senha nova fraca: a politica pede ao menos uma letra maiuscula, uma \
+             minuscula, um algarismo e um simbolo (politica_de_senha.classes)",
+            "nouveau mot de passe faible : la politique exige au moins une \
+             majuscule, une minuscule, un chiffre et un symbole \
+             (politica_de_senha.classes)",
+            "new password too weak: the policy requires at least one uppercase \
+             letter, one lowercase letter, one digit and one symbol \
+             (politica_de_senha.classes)",
+            "nuova password debole: la politica richiede almeno una maiuscola, una \
+             minuscola, una cifra e un simbolo (politica_de_senha.classes)",
+            "neues Passwort zu schwach: die Richtlinie verlangt mindestens einen \
+             Groß- und einen Kleinbuchstaben, eine Ziffer und ein Sonderzeichen \
+             (politica_de_senha.classes)",
+            "contraseña nueva débil: la política pide al menos una mayúscula, una \
+             minúscula, un dígito y un símbolo (politica_de_senha.classes)",
+        ],
+    },
+    MensagemFabrica {
+        nome: "erro.senha_igual_ao_login",
+        textos: [
+            "senha nova igual ao login, recusada \
+             (politica_de_senha.diferente_do_login)",
+            "nouveau mot de passe identique à l'identifiant, refusé \
+             (politica_de_senha.diferente_do_login)",
+            "new password equal to the login, refused \
+             (politica_de_senha.diferente_do_login)",
+            "nuova password uguale al login, rifiutata \
+             (politica_de_senha.diferente_do_login)",
+            "neues Passwort gleich dem Login, abgelehnt \
+             (politica_de_senha.diferente_do_login)",
+            "contraseña nueva igual al login, rechazada \
+             (politica_de_senha.diferente_do_login)",
+        ],
+    },
     MensagemFabrica {
         nome: "erro.faca_login",
         textos: [

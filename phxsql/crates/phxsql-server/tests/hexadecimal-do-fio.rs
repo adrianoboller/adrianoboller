@@ -517,13 +517,15 @@ fn subir_web(base: &std::path::Path) -> SocketAddr {
     let caminho = base.join("config.json");
     // Duas vagas na web: se o panico vazasse a vaga, a terceira volta do
     // laco abaixo ja nao seria atendida.
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
             r#"{{ "bind": "127.0.0.1:0", "token": "{TOKEN}", {caminhos},
                   "cifra_fio": {{ "exigir": false }},
                   "recursos": {{ "conexoes_web_max": 2 }},
-                  "web": {{ "ligado": true, "bind": "127.0.0.1:0" }} }}"#,
+                  "web": {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false }} }}"#,
             caminhos = caminhos(base),
         ),
     )

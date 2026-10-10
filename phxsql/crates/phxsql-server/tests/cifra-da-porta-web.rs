@@ -90,6 +90,8 @@ fn esperar_web(alvo: SocketAddr) -> String {
 fn config_que_nao_declara_a_web(base: &std::path::Path, dados: u16) -> Config {
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -102,7 +104,7 @@ fn config_que_nao_declara_a_web(base: &std::path::Path, dados: u16) -> Config {
               "dblink": "{}",
               "jobs": "{}",
               "cifra_fio": {{ "exigir": false }},
-              "web": {{ "ligado": true }}
+              "web": {{ "ligado": true, "tls": false }}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),
@@ -158,8 +160,16 @@ fn a_porta_web_sem_endereco_declarado_nao_atende_de_fora() {
          frente vira teatro, porque da para ligar direto no motor ao lado dele"
     );
     // Um `config.json` que nao fala de proxy nem abre porta nenhuma para fora
-    // nao pode ganhar aviso: aviso falso gasta a confianca do verdadeiro.
-    assert!(c.avisos.is_empty(), "{:?}", c.avisos);
+    // nao pode ganhar aviso: aviso falso gasta a confianca do verdadeiro. O
+    // unico que sobra e o `770:` do `"tls": false` que este teste ESCREVEU --
+    // aviso verdadeiro, sobre a decisao escrita, e nao sobre o endereco.
+    assert!(
+        c.avisos
+            .iter()
+            .all(|a| a.starts_with("770: web.tls = false")),
+        "{:?}",
+        c.avisos
+    );
 
     c.web.bind = format!("{host}:0");
     let s = Servidor::novo(c).unwrap();
@@ -247,6 +257,8 @@ fn abrir_a_porta_web_no_arquivo_avisa_a_falta_do_proxy() {
     let base = pasta("aviso");
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -258,7 +270,7 @@ fn abrir_a_porta_web_no_arquivo_avisa_a_falta_do_proxy() {
               "seguranca": {{ "blacklist": "{}" }},
               "dblink": "{}",
               "jobs": "{}",
-              "web": {{ "ligado": true, "bind": "0.0.0.0:0" }}
+              "web": {{ "ligado": true, "bind": "0.0.0.0:0", "tls": false }}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),

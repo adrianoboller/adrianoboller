@@ -37,6 +37,12 @@ struct Portas {
 /// Sobe as tres portas HTTP com `"tls": true` e SEM dizer nada de
 /// `cifra_fio`: a exigencia e a de fabrica, que e o que se quer provar.
 fn subir(base: &Path) -> (Arc<Servidor>, Portas) {
+    subir_com(base, r#", "tls": true"#)
+}
+
+/// `tls` e o pedaco que entra no fim das duas secoes HTTP: `, "tls": true`
+/// (o escrito) ou vazio (o de fabrica, pedido 770).
+fn subir_com(base: &Path, tls: &str) -> (Arc<Servidor>, Portas) {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let h = phxsql_core::senha::cifrar_com(SENHA, 1);
     let caminho = base.join("config.json");
@@ -55,10 +61,9 @@ fn subir(base: &Path) -> (Arc<Servidor>, Portas) {
               "usuarios": [
                 {{ "id": 2, "login": "{LOGIN}", "nome": "Ana", "senha_hash": "{h}",
                    "ativo": true, "supervisor": true }} ],
-              "web":  {{ "ligado": true, "bind": "127.0.0.1:0", "tls": true }},
+              "web":  {{ "ligado": true, "bind": "127.0.0.1:0"{tls} }},
               "rest": {{ "ligado": true, "bind": "127.0.0.1:0",
-                         "swagger_ligado": true, "swagger_bind": "127.0.0.1:0",
-                         "tls": true }}
+                         "swagger_ligado": true, "swagger_bind": "127.0.0.1:0"{tls} }}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),
@@ -156,6 +161,38 @@ fn com_tls_as_portas_http_atendem_a_cifra_exigida_pelo_certificado_gerado() {
     // O explorador e a SEGUNDA porta da secao rest, com o mesmo certificado.
     let (codigo, corpo) = curl(&ca_rest, p.swagger, "GET", "/", false, "");
     assert_eq!(codigo, 200, "{corpo}");
+}
+
+/// Pedido 770, pelo soquete: SEM `"tls"` escrito, as tres portas HTTP ja
+/// falam TLS -- o certificado de fabrica e gerado, o `curl` o confere, e o
+/// HTTP cru recebe o alerta. Antes do 770 esta mesma config subia em claro e,
+/// com a exigencia de fabrica, recusava todo pedido com 403. RED medido: com
+/// o padrao `!atras_de_proxy` do `Web::de_json` trocado por `false`, o
+/// certificado da web nao nasce e a primeira afirmacao cai.
+#[test]
+fn sem_tls_escrito_as_portas_http_ja_falam_tls_de_fabrica() {
+    let d = DirTemp::novo("tls-de-fabrica-770");
+    let (_s, p) = subir_com(&d.0, "");
+    let ca_web = d.0.join("tls-web-certificado.pem");
+    let ca_rest = d.0.join("tls-rest-certificado.pem");
+    assert!(ca_web.exists(), "a web nao gerou o certificado de fabrica");
+    assert!(
+        ca_rest.exists(),
+        "o rest nao gerou o certificado de fabrica"
+    );
+    let (codigo, corpo) = curl(&ca_web, p.web, "GET", "/saude", false, "");
+    assert_eq!(codigo, 200, "{corpo}");
+    let (codigo, corpo) = curl(&ca_rest, p.rest, "POST", "/v1/ping", true, "{}");
+    assert_eq!(codigo, 200, "{corpo}");
+    let (codigo, corpo) = curl(&ca_rest, p.swagger, "GET", "/", false, "");
+    assert_eq!(codigo, 200, "{corpo}");
+    let mut c = TcpStream::connect(("127.0.0.1", p.web)).unwrap();
+    c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    c.write_all(b"GET /saude HTTP/1.1\r\nHost: x\r\n\r\n")
+        .unwrap();
+    let mut resposta = Vec::new();
+    let _ = c.read_to_end(&mut resposta);
+    assert_eq!(resposta.first(), Some(&21), "{resposta:?}");
 }
 
 #[test]

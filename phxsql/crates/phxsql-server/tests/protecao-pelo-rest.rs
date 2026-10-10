@@ -25,6 +25,8 @@ fn subir(base: &Path, ligada: bool) -> Arc<Servidor> {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
     let caminho = base.join("config.json");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -37,7 +39,7 @@ fn subir(base: &Path, ligada: bool) -> Arc<Servidor> {
               "dblink": "{}",
               "jobs": "{}",
               "cifra_fio": {{ "exigir": false }},
-              "rest": {{ "ligado": true, "bind": "127.0.0.1:0" }},
+              "rest": {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false }},
               "protecao": {{ "ligada": {ligada} }}
             }}"#,
             bar(base.join("base")),

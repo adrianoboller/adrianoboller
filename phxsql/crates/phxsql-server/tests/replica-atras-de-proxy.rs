@@ -47,6 +47,8 @@ fn subir(base: &std::path::Path, atras_de_proxy: bool, lista: &str) -> (Arc<Serv
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -61,7 +63,7 @@ fn subir(base: &std::path::Path, atras_de_proxy: bool, lista: &str) -> (Arc<Serv
               "cifra_fio": {{ "exigir": false }},
               "replicacao": {{ "papel": "source", "id_servidor": "proxy-01",
                                "replicas_autorizadas": [{lista}] }},
-              "web":  {{ "ligado": true, "bind": "127.0.0.1:0"{proxy} }}
+              "web":  {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false{proxy} }}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),

@@ -794,14 +794,29 @@ impl Sessoes {
         id
     }
 
-    /// Devolve o login da sessao, renovando o prazo a cada uso.
-    pub fn usar(&mut self, id: &str, duracao_ms: i64, agora_ms: i64) -> Option<String> {
+    /// Devolve o login da sessao, renovando o prazo a cada uso -- nunca alem
+    /// do teto absoluto (`teto_ms` desde o nascimento; 0 = sem teto, pedido
+    /// 770).
+    ///
+    /// O teto entra no proprio `expira_ms`, e nao numa segunda conferencia:
+    /// assim o `limpar` e o `logins_vivos`, que so olham o `expira_ms`, ja
+    /// enxergam a sessao morta pelo teto sem saber que ele existe.
+    pub fn usar(
+        &mut self,
+        id: &str,
+        duracao_ms: i64,
+        teto_ms: i64,
+        agora_ms: i64,
+    ) -> Option<String> {
         let s = self.dentro.get_mut(id)?;
         if agora_ms > s.expira_ms {
             self.dentro.remove(id);
             return None;
         }
         s.expira_ms = agora_ms + duracao_ms;
+        if teto_ms > 0 {
+            s.expira_ms = s.expira_ms.min(s.desde_ms + teto_ms);
+        }
         Some(s.login.clone())
     }
 
@@ -1029,12 +1044,15 @@ mod tests {
     fn sessao_vale_e_expira() {
         let mut s = Sessoes::default();
         let id = s.nova("adriano", HORA, T0);
-        assert_eq!(s.usar(&id, HORA, T0).as_deref(), Some("adriano"));
+        assert_eq!(s.usar(&id, HORA, 0, T0).as_deref(), Some("adriano"));
         // Cada uso renova o prazo.
-        assert_eq!(s.usar(&id, HORA, T0 + HORA / 2).as_deref(), Some("adriano"));
+        assert_eq!(
+            s.usar(&id, HORA, 0, T0 + HORA / 2).as_deref(),
+            Some("adriano")
+        );
         // Passado o prazo desde o ultimo uso, cai.
-        assert!(s.usar(&id, HORA, T0 + 3 * HORA).is_none());
-        assert!(s.usar(&id, HORA, T0 + 3 * HORA).is_none());
+        assert!(s.usar(&id, HORA, 0, T0 + 3 * HORA).is_none());
+        assert!(s.usar(&id, HORA, 0, T0 + 3 * HORA).is_none());
     }
 
     #[test]
@@ -1053,15 +1071,15 @@ mod tests {
         let mut s = Sessoes::default();
         let id = s.nova("ana", HORA, T0);
         assert!(s.encerrar(&id));
-        assert!(s.usar(&id, HORA, T0).is_none());
+        assert!(s.usar(&id, HORA, 0, T0).is_none());
         assert!(!s.encerrar(&id));
     }
 
     #[test]
     fn sessao_desconhecida_nao_entra() {
         let mut s = Sessoes::default();
-        assert!(s.usar("nao-existe", HORA, T0).is_none());
-        assert!(s.usar("", HORA, T0).is_none());
+        assert!(s.usar("nao-existe", HORA, 0, T0).is_none());
+        assert!(s.usar("", HORA, 0, T0).is_none());
     }
 
     #[test]
@@ -1306,9 +1324,9 @@ mod tests {
     fn a_sessao_anonima_ganha_nome_no_login() {
         let mut s = Sessoes::default();
         let id = s.nova("", HORA, T0);
-        assert_eq!(s.usar(&id, HORA, T0).as_deref(), Some(""));
+        assert_eq!(s.usar(&id, HORA, 0, T0).as_deref(), Some(""));
         assert!(s.definir_login(&id, "adriano"));
-        assert_eq!(s.usar(&id, HORA, T0).as_deref(), Some("adriano"));
+        assert_eq!(s.usar(&id, HORA, 0, T0).as_deref(), Some("adriano"));
         assert!(!s.definir_login("sessao-que-nao-existe", "invasor"));
     }
 }

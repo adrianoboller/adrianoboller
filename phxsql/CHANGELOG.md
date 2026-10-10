@@ -12,7 +12,29 @@ Os números são **medidos**, nunca estimados.
 
 ## Não lançado
 
-(nada ainda)
+### 770 — os padrões de fábrica endurecem, mesmo quebrando cliente antigo
+
+Decisão do dono, 09/10/2026: *«eu preciso de alta segurança e fidelidade dos dados»*. É
+**exceção explícita**, só para este pedido, à pétrea «guarda nova entra pedida»; a pétrea não
+foi revogada. Os números saíram da régua dos motores (`docs/propostas/padroes-770.md`). Toda
+config que **escreve** o valor velho continua valendo, com uma linha `770:` no arranque.
+
+**Mudado — o que quebra, e o ajuste:**
+
+- **TLS nas portas web e REST de fábrica** (autoassinado até entrar um certificado). Quem ligou
+  a porta com `"exigir": false` e falava `http://` passa a receber `https://`. Ajuste: usar
+  `https://`, ou `"tls": false` na seção. A seção com `"atras_de_proxy": true` nasce sem TLS.
+  Quem estava com a exigência de fábrica e sem TLS tinha uma porta que recusava tudo — passou a
+  funcionar. A porta de dados não muda: já era cifrada pelo túnel do fio exigido.
+- **Política de senha nova**: 8 caracteres ou mais, maiúscula, minúscula, algarismo e símbolo,
+  diferente do login — em `usuario_criar`, `usuario_alterar` e `CREATE/ALTER USER`. Senha já
+  gravada continua entrando. Ajuste: `"politica_de_senha": {"minimo": 0, "classes": false,
+  "diferente_do_login": false}`.
+- **Sessão web curta**: 15 min sem uso (eram 60) e teto absoluto de 12 h desde o login (não
+  havia). Ajuste: `"sessao_minutos": 60, "sessao_teto_horas": 0` na seção `web`.
+
+**Sabido:** os 15 min e as 12 h saíram da NIST 800-63B-4 (AAL3), não da régua — os quatro
+motores não têm sessão de navegador. O número foi ao dono para confirmar.
 
 ## 0.20.0 — 09/10/2026: TLS 1.3 escrito aqui, caixa offline e o desenho único da recuperação
 

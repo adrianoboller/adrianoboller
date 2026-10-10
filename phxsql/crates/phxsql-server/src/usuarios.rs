@@ -1884,6 +1884,7 @@ pub fn aplicar_na_arvore(
     acao: Acao,
     p: &Json,
     quem: Option<&Usuario>,
+    senha_nova: &ConferirSenhaNova<'_>,
 ) -> Result<String> {
     let login = p.texto_ou("login", p.texto_ou("usuario", "")).to_string();
     login_valido(&login)?;
@@ -1933,11 +1934,11 @@ pub fn aplicar_na_arvore(
                     "ja ha um usuario com o login {login:?}"
                 )));
             }
-            lista.push(objeto_do_usuario(&login, p, None)?);
+            lista.push(objeto_do_usuario(&login, p, None, senha_nova)?);
         }
         Acao::Alterar => {
             let i = posicao.ok_or_else(|| nao_existe(&login))?;
-            lista[i] = objeto_do_usuario(&login, p, Some(&lista[i]))?;
+            lista[i] = objeto_do_usuario(&login, p, Some(&lista[i]), senha_nova)?;
         }
         Acao::Excluir => {
             let i = posicao.ok_or_else(|| nao_existe(&login))?;
@@ -1982,13 +1983,26 @@ fn nao_existe(login: &str) -> PhxError {
     ))
 }
 
+/// Quem decide se a senha NOVA serve (pedido 770): `(login, senha)`.
+///
+/// Vem de fora porque a decisao mora na configuracao e o texto da recusa na
+/// fabrica de mensagens, e nenhum dos dois e deste modulo. Chamada so quando
+/// o pedido traz senha, ja dentro do teto e antes do PBKDF2 -- e depois das
+/// guardas do root e do supervisor, que respondem primeiro.
+pub type ConferirSenhaNova<'a> = dyn Fn(&str, &str) -> Result<()> + 'a;
+
 /// O objeto do usuario como ele vai para o `config.json`.
 ///
 /// `anterior` e o objeto que ja estava no arquivo, quando havia um: os campos
 /// que o pedido NAO traz ficam como estavam, e os que este processo nao
 /// conhece ficam tambem. Alterar o telefone de alguem nao pode apagar a chave
 /// publica dele nem um campo que outra versao gravou.
-fn objeto_do_usuario(login: &str, p: &Json, anterior: Option<&Json>) -> Result<Json> {
+fn objeto_do_usuario(
+    login: &str,
+    p: &Json,
+    anterior: Option<&Json>,
+    senha_nova: &ConferirSenhaNova<'_>,
+) -> Result<Json> {
     let mut pares: Vec<(String, Json)> = match anterior {
         Some(Json::Objeto(velhos)) => velhos.clone(),
         _ => Vec::new(),
@@ -2021,6 +2035,9 @@ fn objeto_do_usuario(login: &str, p: &Json, anterior: Option<&Json>) -> Result<J
             // O teto ANTES do PBKDF2 (pedido 521): senha que o login recusaria
             // nao nasce, e o `CREATE USER` de 1 MiB deixa de ser uma conta.
             senha::caber_no_teto(clara)?;
+            // A politica da senha nova (pedido 770): depois do teto, para a
+            // senha de 1 MiB ouvir o texto de sempre, e antes do PBKDF2.
+            senha_nova(login, clara)?;
             por("senha_hash", Json::texto_de(senha::cifrar(clara)));
             // A senha em texto puro que o formato ainda aceita sai JUNTO: um
             // usuario que a tinha e trocou de senha nao pode continuar com a
@@ -2661,6 +2678,7 @@ mod tests {
             Acao::Alterar,
             &arvore(r#"{"login":"velho","senha":"a-senha-nova"}"#),
             Some(&supervisora()),
+            &|_, _| Ok(()),
         )
         .unwrap();
         let texto = a.escrever();
@@ -2710,6 +2728,7 @@ mod tests {
             Acao::Alterar,
             &arvore(r#"{"login":"bia","telefone":"+55 47 90000-0000"}"#),
             Some(&supervisora()),
+            &|_, _| Ok(()),
         )
         .unwrap();
         let c = Cadastro::de_json(&a).unwrap();
@@ -2729,9 +2748,15 @@ mod tests {
         ));
         // Sem `quem` -- token de servico --, para a guarda que pega ser a do
         // ultimo administrador, e nao a da propria conta.
-        let e = aplicar_na_arvore(&mut a, Acao::Excluir, &arvore(r#"{"login":"ana"}"#), None)
-            .unwrap_err()
-            .to_string();
+        let e = aplicar_na_arvore(
+            &mut a,
+            Acao::Excluir,
+            &arvore(r#"{"login":"ana"}"#),
+            None,
+            &|_, _| Ok(()),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(e.contains("supervisor ativo"), "{e}");
     }
 
@@ -2749,6 +2774,7 @@ mod tests {
             Acao::Excluir,
             &arvore(r#"{"login":"bia"}"#),
             Some(&supervisora()),
+            &|_, _| Ok(()),
         )
         .unwrap();
         let c = Cadastro::de_json(&a).unwrap();

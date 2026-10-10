@@ -315,6 +315,27 @@ impl Servidor {
     /// O cadastro vivo e trocado e a geracao anda. O proximo `login` ja aceita
     /// quem acabou de nascer, e quem foi excluido perde a ficha no proximo
     /// pedido da propria conexao -- ver `refrescar_a_sessao`.
+    /// A politica da senha NOVA (pedido 770), com o texto da recusa no
+    /// idioma do servidor. O cadastro a chama so quando o pedido traz senha
+    /// -- alterar o telefone de alguem nao reconfere a senha que ja esta
+    /// gravada, a regra dos tres maduros (conferem na definicao) -- e depois
+    /// das guardas do root e do supervisor, que respondem primeiro.
+    fn conferir_a_senha_nova(&self, login: &str, clara: &str) -> Result<()> {
+        use crate::config::SenhaRecusada;
+        match self.config.politica_de_senha.conferir(login, clara) {
+            Ok(()) => Ok(()),
+            Err(SenhaRecusada::Curta(n)) => Err(PhxError::Esquema(
+                self.msg("erro.senha_curta", &[("minimo", &n.to_string())]),
+            )),
+            Err(SenhaRecusada::SemClasses) => {
+                Err(PhxError::Esquema(self.msg("erro.senha_sem_classes", &[])))
+            }
+            Err(SenhaRecusada::IgualAoLogin) => Err(PhxError::Esquema(
+                self.msg("erro.senha_igual_ao_login", &[]),
+            )),
+        }
+    }
+
     pub(super) fn op_usuario(
         &self,
         acao: crate::usuarios::Acao,
@@ -337,7 +358,13 @@ impl Servidor {
         let mut login = String::new();
         let mut avisos = Vec::new();
         let novo = crate::config::Config::gravar_a_secao(&caminho, "usuarios", |arvore| {
-            login = crate::usuarios::aplicar_na_arvore(arvore, acao, p, quem.as_ref())?;
+            login = crate::usuarios::aplicar_na_arvore(
+                arvore,
+                acao,
+                p,
+                quem.as_ref(),
+                &|login, clara| self.conferir_a_senha_nova(login, clara),
+            )?;
             // O cadastro que VAI ao disco, conferido contra o esquema antes
             // de ir -- pedido 235, pela MESMA passada do arranque. Dentro do
             // fecho porque a recusa tem de vir antes da gravacao: gravar e

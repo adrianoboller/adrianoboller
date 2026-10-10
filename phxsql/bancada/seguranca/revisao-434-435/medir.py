@@ -22,7 +22,9 @@ def subir(nome, com_cadastro, extra_usuarios=True):
     cfg = {"bind": f"127.0.0.1:{p}", "base": os.path.join(d, "base"), "token": TOK,
            "log_acessos": os.path.join(d, "acessos.log"), "blacklist": os.path.join(d, "blacklist.json"),
            "dblink": os.path.join(d, "dblink.json"), "jobs": os.path.join(d, "jobs.json"),
-           "timeout_s": 60, "cifra_fio": {"exigir": False}, "web": {"ligado": False}}
+           "timeout_s": 60, "cifra_fio": {"exigir": False}, "web": {"ligado": False},
+           # 770: a politica de senha VELHA por escrito -- a medida e outra.
+           "politica_de_senha": {"minimo": 0, "classes": False, "diferente_do_login": False}}
     if com_cadastro:
         cfg["root"] = {"login": "root", "senha_hash": H}
         if extra_usuarios:

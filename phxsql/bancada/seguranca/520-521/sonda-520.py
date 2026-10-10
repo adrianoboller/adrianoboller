@@ -45,8 +45,11 @@ def subir():
             {"login": "ana", "senha_hash": hash_de("senha-da-ana", b"fedcba9876543210"), "nivel": "leitor"},
             {"login": "ze", "senha_hash": hash_de("senha-do-ze", b"a1b2c3d4e5f60718"), "nivel": "leitor", "ativo": False},
         ],
-        "web": {"ligado": True, "bind": f"127.0.0.1:{PORTA_WEB}"},
+        # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+        "web": {"ligado": True, "tls": False, "bind": f"127.0.0.1:{PORTA_WEB}"},
         "cifra_fio": {"exigir": False},
+        # 770: a politica de senha VELHA por escrito -- a sonda mede o teto.
+        "politica_de_senha": {"minimo": 0, "classes": False, "diferente_do_login": False},
     }
     cfgp = os.path.join(BASE, "config.json")
     json.dump(cfg, open(cfgp, "w"))

@@ -262,6 +262,16 @@ fn gerar_senha(args: &[String]) -> ExitCode {
         eprintln!("{e}");
         return ExitCode::FAILURE;
     }
+    // A politica de fabrica (pedido 770) AVISA aqui, e nao recusa: o hash
+    // pronto que vai para o `config.json` pula o validador nos tres maduros
+    // tambem, e e o caminho de quem edita o arquivo -- o administrador. Mas
+    // ele precisa saber que `usuario_criar` recusaria esta mesma senha.
+    if let Err(e) = phxsql_server::config::PoliticaDeSenha::default().conferir("", &clara) {
+        eprintln!(
+            "aviso: a politica de senha de fabrica recusaria esta senha num \
+             usuario_criar ({e}); o hash sai mesmo assim"
+        );
+    }
     let hash = phxsql_core::senha::cifrar(&clara);
     println!("\"senha_hash\": \"{hash}\"");
     ExitCode::SUCCESS

@@ -264,6 +264,10 @@ fn a_web_levanta_a_porta_de_dados_depois_de_parada() {
     // passaria a medir o portao errado.
     c.cifra_fio.exigir = false;
     c.web.ligado = true;
+    // `tls` desligado POR ESCRITO (pedido 770): a porta web nasce com TLS, e
+    // esta bateria fala HTTP em claro com o servico pelo mesmo motivo do
+    // escape da cifra acima.
+    c.web.tls.ligado = false;
     c.web.bind = "127.0.0.1:0".into();
     let s = Servidor::novo(c).unwrap();
     let copia = Arc::clone(&s);

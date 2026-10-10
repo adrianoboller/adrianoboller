@@ -116,7 +116,7 @@ function configBase(base, portaDados, portaWeb, token, hash) {
     // `cifra_fio.exigir` nasceu ligado (18/09/2026), a porta web recusa todo
     // pedido com 403 enquanto ninguém declarar o proxy — e a tela nem chega a
     // pintar o botão de entrar. Aqui o proxy é o próprio localhost.
-    web: { ligado: true, bind: `127.0.0.1:${portaWeb}`, sessao_minutos: 60,
+    web: { ligado: true, bind: `127.0.0.1:${portaWeb}`, sessao_minutos: 60, tls: false /* 770: http em claro e sessao de 60 min POR ESCRITO -- a bateria nao fala TLS */,
            atras_de_proxy: true },
     recursos: { durabilidade: 'sistema', cache_paginas: 256 },
     usuarios: [{

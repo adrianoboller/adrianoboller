@@ -1820,10 +1820,12 @@ fn a_ficha_do_usuario_mostra_as_regras_de_coluna() {
 fn servidor_de_arquivo(nome: &str) -> (Arc<Servidor>, DirTemp) {
     let dir = dir_temp(nome);
     let caminho = dir.join("config.json");
+    // A politica de senha VELHA por escrito (pedido 770): as senhas daqui
+    // sao de antes da politica de fabrica, e a pergunta deste teste e outra.
     std::fs::write(
         &caminho,
         format!(
-            r#"{{"token":"t","bind":"127.0.0.1:5399","base":"{}",
+            r#"{{"token":"t","bind":"127.0.0.1:5399","base":"{}","politica_de_senha":{{"minimo":0,"classes":false,"diferente_do_login":false}},
                     "usuarios":[{{"id":1,"login":"ana","supervisor":true,
                                   "senha_hash":"pbkdf2-sha256$1000$00$00"}}]}}"#,
             dir.join("dados").display()

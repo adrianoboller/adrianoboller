@@ -64,6 +64,9 @@ fn subir(base: &std::path::Path) -> (Arc<Servidor>, u16, u16) {
     c.cifra_fio.exigir = false;
     c.web.ligado = false;
     c.rest.ligado = true;
+    // `tls` desligado POR ESCRITO (pedido 770): a porta REST nasce com TLS,
+    // e esta bateria fala HTTP em claro pelo mesmo motivo do escape acima.
+    c.rest.tls.ligado = false;
     c.rest.bind = "127.0.0.1:0".into();
     c.rest.token = BEARER.into();
     let s = Servidor::novo(c).unwrap();

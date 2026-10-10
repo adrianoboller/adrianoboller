@@ -335,11 +335,16 @@ fn caminhos(base: &std::path::Path) -> String {
 fn subir(base: &std::path::Path) -> (Arc<Servidor>, u16, u16) {
     std::fs::create_dir_all(base.join("base")).unwrap();
     let caminho = base.join("config.json");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro. E a
+    // politica de senha velha, tambem escrita: o `CREATE USER` daqui tem de
+    // CHEGAR ao cadastro para a ausencia da senha no log provar alguma coisa.
     std::fs::write(
         &caminho,
         format!(
             r#"{{ "bind": "127.0.0.1:0", "token": "{TOKEN}", {caminhos},
-                  "web": {{ "ligado": true, "bind": "127.0.0.1:0" }},
+                  "politica_de_senha": {{ "minimo": 0, "classes": false, "diferente_do_login": false }},
+                  "web": {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false }},
                   "cifra_fio": {{ "exigir": false }} }}"#,
             caminhos = caminhos(base),
         ),

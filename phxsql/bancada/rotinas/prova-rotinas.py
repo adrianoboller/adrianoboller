@@ -73,7 +73,8 @@ class Servidor:
                 # bancada de teste, NAO cliente do produto -- fala em claro para medir "A prova dos gatilhos e dos procedimentos, pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
                 json.dump({"base": "base", "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
                            "token": TOKEN,
-                           "web": {"ligado": True,
+                           # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+                           "web": {"ligado": True, "tls": False,
                                    "bind": f"127.0.0.1:{PORTA_WEB}"}}, f, indent=2)
         log = open(os.path.join(BASE, "servidor.log"), "a")
         self.proc = subprocess.Popen([PHXSQLD], cwd=BASE, stdout=log,

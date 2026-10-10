@@ -2427,7 +2427,7 @@ const DEMO = {
       threads:0, cpu_percentual:100, nucleos_efetivos:8, conexoes_max:64, usuarios_max:0},
     seguranca:{comandos_proibidos:["excluir"], bases_proibidas:[], tentativas_ate_bloquear:5,
       janela_minutos:10, bloqueio_minutos:60, blacklist:"blacklist.json", firewall:false},
-    web:{ligado:true, bind:"127.0.0.1:5001", sessao_minutos:60, servidores:[]},
+    web:{ligado:true, bind:"127.0.0.1:5001", sessao_minutos:15, sessao_teto_horas:12, tls:true, servidores:[]},
     backup:{agendado:false, hora:"03:00", cada_horas:24, destino:"backups", zip:true,
       database:"", admin:"agendado", manter:14},
     replicacao:{papel:"isolado", envio:"", retorno:"", id_servidor:"",

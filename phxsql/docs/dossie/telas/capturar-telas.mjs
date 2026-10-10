@@ -74,7 +74,7 @@ async function subir() {
   const caminho = join(dir, 'config.json');
   writeFileSync(caminho, JSON.stringify({
     base: join(dir, 'dados'), bind: `127.0.0.1:${PORTA_DADOS}`, token: TOKEN, max_linhas: 5000,
-    web: { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60 },
+    web: { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60, tls: false /* 770: http em claro e sessao de 60 min POR ESCRITO -- a bateria nao fala TLS */ },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
     usuarios: [{ id: 10, nome: 'Adriano Boller', login: USUARIO,
       senha_hash: hashDaSenha(SENHA), supervisor: true, ativo: true, bases: {} }],

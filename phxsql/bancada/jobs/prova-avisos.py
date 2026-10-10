@@ -182,7 +182,8 @@ def escrever_config(pasta, com_email, porta_smtp, avisar_jobs=True):
         "seguranca": {"blacklist": str(pasta / "blacklist.json")},
         "dblink": str(pasta / "dblink.json"),
         "jobs": str(pasta / "jobs.json"),
-        "web": {"ligado": True, "bind": f"127.0.0.1:{PORTA_WEB}"},
+        # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+        "web": {"ligado": True, "tls": False, "bind": f"127.0.0.1:{PORTA_WEB}"},
         "root": {"id": 1, "login": "root", "nome": "Root da prova",
                  "senha_hash": hash_da_senha()},
     }

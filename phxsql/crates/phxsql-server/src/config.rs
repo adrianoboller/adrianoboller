@@ -3455,6 +3455,18 @@ impl ServidorWeb {
     }
 }
 
+/// A sessao web sem uso, de fabrica (pedido 770): 15 minutos.
+///
+/// Os quatro motores da regua nao tem sessao de navegador -- o `wait_timeout`
+/// do MySQL e do MariaDB (8 h) e o `idle_session_timeout` do PostgreSQL (0)
+/// medem conexao ociosa, nao sessao autenticada --, entao o numero sai da
+/// norma: NIST SP 800-63B-4, AAL3, inatividade de 15 min e teto de 12 h.
+/// Numero e hipoteses em `docs/propostas/padroes-770.md` #11.
+pub const SESSAO_MINUTOS_DE_FABRICA: u64 = 15;
+
+/// O teto absoluto da sessao web, de fabrica (pedido 770): 12 horas.
+pub const SESSAO_TETO_HORAS_DE_FABRICA: u64 = 12;
+
 /// Interface web: um servidor HTTP separado, que serve a pagina do Centro de
 /// Controle e traduz o clique do navegador no mesmo protocolo da porta 5000.
 ///
@@ -3466,7 +3478,16 @@ pub struct Web {
     /// Endereco de escuta da interface. Padrao: so o proprio computador.
     pub bind: String,
     /// Minutos que uma sessao do navegador vale sem uso. Cada clique renova.
+    ///
+    /// Nasce [`SESSAO_MINUTOS_DE_FABRICA`] (15) desde o pedido 770; era 60.
     pub sessao_minutos: u64,
+    /// O teto ABSOLUTO da sessao, em horas desde o login, que clique nenhum
+    /// renova. Zero = sem teto, o comportamento de antes do 770.
+    ///
+    /// Existe porque a inatividade sozinha nao encerra nada numa tela que
+    /// pergunta sozinha: o aquario e o painel renovam a sessao a cada poucos
+    /// segundos, e uma TV ligada ficaria logada para sempre.
+    pub sessao_teto_horas: u64,
     /// Servidores PhxSql que esta interface pode alcancar.
     ///
     /// VAZIO = so este servidor. E o padrao, e e o padrao certo: uma interface
@@ -3518,8 +3539,17 @@ pub struct Web {
 /// (MySQL `auto_generate_certs` e MariaDB 11.4 geram; o PostgreSQL nao):
 /// 2 + 3 = 5 contra 4, e gera -- no diretorio de dados, como os dois fazem.
 ///
-/// Guarda nova entra PEDIDA: `tls` nasce `false`, e quem nao escreve nada
-/// continua com a porta como era.
+/// # De fabrica, desde o pedido 770
+///
+/// Na porta de DADOS `tls` continua nascendo `false`: o comportamento que a
+/// regua manda (conexao cifrada de fabrica) ja e entregue pelo tunel do fio,
+/// exigido desde 18/09. Nas portas HTTP (`web`, `rest`) ele nasce `true`
+/// (decisao do dono no 770, numero da regua em
+/// `docs/propostas/padroes-770.md` #3): com `cifra_fio.exigir` ligado, porta
+/// HTTP sem TLS recusa TODO pedido, e o padrao velho era uma porta que nao
+/// servia a ninguem. A excecao e a secao que declara `"atras_de_proxy": true`
+/// -- quem termina o TLS e o proxy, e falar TLS para ele quebraria a ponte.
+/// `"tls": false` escrito continua valendo, com aviso no arranque.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TlsPorta {
     pub ligado: bool,
@@ -3530,9 +3560,18 @@ pub struct TlsPorta {
 }
 
 impl TlsPorta {
-    fn de_json(secao: &Json) -> TlsPorta {
+    /// O TLS de fabrica de uma porta HTTP: ligado, autoassinado ate alguem
+    /// escrever o par de caminhos. Ver a nota «De fabrica» do tipo.
+    pub fn de_fabrica_http() -> TlsPorta {
         TlsPorta {
-            ligado: secao.booleano_ou("tls", false),
+            ligado: true,
+            ..TlsPorta::default()
+        }
+    }
+
+    fn de_json(secao: &Json, padrao: bool) -> TlsPorta {
+        TlsPorta {
+            ligado: secao.booleano_ou("tls", padrao),
             certificado: secao.texto_ou("tls_certificado", "").trim().to_string(),
             chave: secao.texto_ou("tls_chave", "").trim().to_string(),
         }
@@ -3641,10 +3680,11 @@ impl Default for Web {
         Web {
             ligado: false,
             bind: format!("127.0.0.1:{PORTA_WEB_PADRAO}"),
-            sessao_minutos: 60,
+            sessao_minutos: SESSAO_MINUTOS_DE_FABRICA,
+            sessao_teto_horas: SESSAO_TETO_HORAS_DE_FABRICA,
             servidores: Vec::new(),
             atras_de_proxy: false,
-            tls: TlsPorta::default(),
+            tls: TlsPorta::de_fabrica_http(),
             integracao_claude: true,
         }
     }
@@ -3661,9 +3701,12 @@ impl Web {
                 sessao_minutos: w
                     .inteiro_ou("sessao_minutos", padrao.sessao_minutos as i64)
                     .max(1) as u64,
+                sessao_teto_horas: w
+                    .inteiro_ou("sessao_teto_horas", padrao.sessao_teto_horas as i64)
+                    .max(0) as u64,
                 servidores: Web::servidores_de(w, saidas),
                 atras_de_proxy: w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
-                tls: TlsPorta::de_json(w),
+                tls: TlsPorta::de_json(w, !w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy)),
                 integracao_claude: w.booleano_ou("integracao_claude", padrao.integracao_claude),
             },
         }
@@ -3700,9 +3743,22 @@ impl Web {
             .ok_or_else(|| PhxError::Esquema(format!("web.bind sem endereco: {:?}", self.bind)))
     }
 
-    /// Prazo da sessao em milissegundos.
+    /// Prazo da sessao SEM USO, em milissegundos -- nunca alem do teto.
+    ///
+    /// O teto entra aqui tambem para que uma sessao recem-nascida ja nasca
+    /// dentro dele: `sessao_minutos` maior que o teto faria o `limpar` e o
+    /// `logins_vivos` contarem viva quem o teto ja matou.
     pub fn sessao_ms(&self) -> i64 {
-        self.sessao_minutos as i64 * 60_000
+        let inatividade = self.sessao_minutos as i64 * 60_000;
+        match self.sessao_teto_ms() {
+            0 => inatividade,
+            teto => inatividade.min(teto),
+        }
+    }
+
+    /// O teto absoluto da sessao em milissegundos; 0 = sem teto.
+    pub fn sessao_teto_ms(&self) -> i64 {
+        self.sessao_teto_horas as i64 * 3_600_000
     }
 
     /// A interface pode abrir conexao para este endereco?
@@ -3853,7 +3909,7 @@ impl Default for Rest {
             swagger_ligado: false,
             swagger_bind: format!("127.0.0.1:{PORTA_SWAGGER_PADRAO}"),
             atras_de_proxy: false,
-            tls: TlsPorta::default(),
+            tls: TlsPorta::de_fabrica_http(),
         }
     }
 }
@@ -3881,7 +3937,7 @@ impl Rest {
                     .trim()
                     .to_string(),
                 atras_de_proxy: r.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
-                tls: TlsPorta::de_json(r),
+                tls: TlsPorta::de_json(r, !r.booleano_ou("atras_de_proxy", padrao.atras_de_proxy)),
             },
         }
     }
@@ -4640,6 +4696,123 @@ impl Protecao {
     }
 }
 
+/// A politica da senha NOVA (pedido 770): o que `usuario_criar` e
+/// `usuario_alterar` recusam antes do PBKDF2.
+///
+/// # O numero, da regua
+///
+/// Os tres maduros nao tem politica nenhuma de fabrica -- ela mora num modulo
+/// que nao vem carregado (`passwordcheck` no PostgreSQL, `validate_password`
+/// no MySQL, `simple_password_check` no MariaDB). «Senha forte» e decisao do
+/// dono; o que a regua decide sao os valores que os tres usam quando ligados:
+///
+/// - comprimento 8: os tres convergem (`MIN_PWD_LENGTH 8`,
+///   `validate_password.length 8`, `simple_password_check_minimal_length 8`);
+/// - quatro classes (maiuscula, minuscula, algarismo, simbolo): MySQL 2 +
+///   MariaDB 3 = 5 contra «letra e nao-letra» do PostgreSQL 4;
+/// - igual ao login, recusada: os tres convergem. «Contem o login» (so PG,
+///   4 x 5) e «o login ao contrario» (so MySQL, 2 x 7) morreram.
+///
+/// # O que ela NAO alcanca, de proposito
+///
+/// A senha que ja esta gravada: os tres conferem so na DEFINICAO, nunca no
+/// login, e conferir no login trancaria fora quem ja trabalha. E o hash
+/// pronto escrito no `config.json` (`senha_hash`), que nos tres tambem pula o
+/// validador -- o servidor nao tem a senha para medir.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoliticaDeSenha {
+    /// Caracteres (e nao bytes) no minimo. 0 = sem minimo.
+    pub minimo: usize,
+    /// Exige as quatro classes.
+    pub classes: bool,
+    /// Recusa a senha igual ao login.
+    pub diferente_do_login: bool,
+}
+
+/// O comprimento minimo de fabrica -- o numero em que os tres convergem.
+pub const SENHA_MINIMA_DE_FABRICA: usize = 8;
+
+impl Default for PoliticaDeSenha {
+    fn default() -> PoliticaDeSenha {
+        PoliticaDeSenha {
+            minimo: SENHA_MINIMA_DE_FABRICA,
+            classes: true,
+            diferente_do_login: true,
+        }
+    }
+}
+
+/// Por que a senha nova foi recusada. O texto sai da fabrica de mensagens,
+/// no idioma do servidor -- aqui so a decisao.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SenhaRecusada {
+    Curta(usize),
+    SemClasses,
+    IgualAoLogin,
+}
+
+/// O texto de CONSOLE (o `phxsqld --senha`); a resposta do protocolo sai da
+/// fabrica de mensagens, no idioma do servidor.
+impl std::fmt::Display for SenhaRecusada {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SenhaRecusada::Curta(n) => write!(f, "menos de {n} caracteres"),
+            SenhaRecusada::SemClasses => {
+                write!(f, "falta maiuscula, minuscula, algarismo ou simbolo")
+            }
+            SenhaRecusada::IgualAoLogin => write!(f, "igual ao login"),
+        }
+    }
+}
+
+impl PoliticaDeSenha {
+    fn de_json(j: &Json) -> PoliticaDeSenha {
+        let padrao = PoliticaDeSenha::default();
+        let Some(c) = j.campo("politica_de_senha") else {
+            return padrao;
+        };
+        PoliticaDeSenha {
+            minimo: c.inteiro_ou("minimo", padrao.minimo as i64).max(0) as usize,
+            classes: c.booleano_ou("classes", padrao.classes),
+            diferente_do_login: c.booleano_ou("diferente_do_login", padrao.diferente_do_login),
+        }
+    }
+
+    /// Confere a senha nova de `login`. A ordem e a do custo de quem
+    /// corrige: o comprimento primeiro, porque e o que todo mundo erra.
+    pub fn conferir(&self, login: &str, senha: &str) -> std::result::Result<(), SenhaRecusada> {
+        if senha.chars().count() < self.minimo {
+            return Err(SenhaRecusada::Curta(self.minimo));
+        }
+        if self.classes {
+            // Pela classe Unicode, e nao pela ASCII: «Ação2026!» tem as
+            // quatro, e recusar a cedilha seria recusar o portugues.
+            let tem = |f: fn(&char) -> bool| senha.chars().any(|c| f(&c));
+            let quatro = tem(|c| c.is_uppercase())
+                && tem(|c| c.is_lowercase())
+                && tem(|c| c.is_numeric())
+                && tem(|c| !c.is_alphanumeric());
+            if !quatro {
+                return Err(SenhaRecusada::SemClasses);
+            }
+        }
+        // Comparacao exata, como os tres: PG `strcmp`, MySQL binaria,
+        // MariaDB `strncmp`.
+        if self.diferente_do_login && senha == login {
+            return Err(SenhaRecusada::IgualAoLogin);
+        }
+        Ok(())
+    }
+
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("minimo", Json::de_u64(self.minimo as u64)),
+            ("classes", Json::Bool(self.classes)),
+            ("diferente_do_login", Json::Bool(self.diferente_do_login)),
+        ])
+    }
+}
+
 /// Teto do prazo do diario, em dias: cem anos. Nao e politica, e a conta em
 /// milissegundos caber folgada num `i64`.
 pub const PRAZO_DO_DIARIO_MAX: i64 = 36_500;
@@ -5080,6 +5253,8 @@ pub struct Config {
     pub diario: ExpurgoDoDiario,
     /// A camada de protecao. Ver [`Protecao`].
     pub protecao: Protecao,
+    /// O que a senha nova tem de ter. Ver [`PoliticaDeSenha`].
+    pub politica_de_senha: PoliticaDeSenha,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
     pub telemetria: Painel,
     /// O perfil visual do aquario (pedido 783). Ver
@@ -5157,6 +5332,7 @@ impl std::fmt::Debug for Config {
             lgpd,
             diario,
             protecao,
+            politica_de_senha,
             telemetria,
             aquario,
             profiler,
@@ -5198,6 +5374,7 @@ impl std::fmt::Debug for Config {
             .field("lgpd", lgpd)
             .field("diario", diario)
             .field("protecao", protecao)
+            .field("politica_de_senha", politica_de_senha)
             .field("telemetria", telemetria)
             .field("aquario", aquario)
             .field("profiler", profiler)
@@ -5220,7 +5397,7 @@ impl std::fmt::Debug for Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 37] = [
+const CAMPOS_CONHECIDOS: [&str; 38] = [
     "bind",
     "tls",
     "tls_certificado",
@@ -5258,6 +5435,7 @@ const CAMPOS_CONHECIDOS: [&str; 37] = [
     "diretivas",
     "protecao",
     "aquario",
+    "politica_de_senha",
 ];
 
 /// O que cada secao conhecida aceita por dentro.
@@ -5269,7 +5447,7 @@ const CAMPOS_CONHECIDOS: [&str; 37] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 20] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 21] = [
     (
         "recursos",
         &[
@@ -5299,6 +5477,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 20] = [
             "ligado",
             "bind",
             "sessao_minutos",
+            "sessao_teto_horas",
             "servidores",
             "atras_de_proxy",
             "tls",
@@ -5445,6 +5624,10 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 20] = [
         ],
     ),
     (
+        "politica_de_senha",
+        &["minimo", "classes", "diferente_do_login"],
+    ),
+    (
         "diario",
         &[
             "expurgo",
@@ -5552,6 +5735,7 @@ impl Default for Config {
             lgpd: Lgpd::default(),
             diario: ExpurgoDoDiario::default(),
             protecao: Protecao::default(),
+            politica_de_senha: PoliticaDeSenha::default(),
             telemetria: Painel::default(),
             aquario: crate::aquario::perfil::Perfil::default(),
             profiler: PerfilEmDisco::default(),
@@ -5805,7 +5989,7 @@ impl Config {
                     .map(|seg| seg.texto_ou("blacklist", "blacklist.json"))
                     .unwrap_or("blacklist.json"),
             ),
-            tls: TlsPorta::de_json(j),
+            tls: TlsPorta::de_json(j, false),
             web: Web::de_json(j, &mut saidas),
             rest: Rest::de_json(j),
             backup: Backup::de_json(j)?,
@@ -5819,6 +6003,7 @@ impl Config {
             lgpd: Lgpd::de_json(j)?,
             diario: ExpurgoDoDiario::de_json(j)?,
             protecao: Protecao::de_json(j, &mut avisos),
+            politica_de_senha: PoliticaDeSenha::de_json(j),
             telemetria: Painel::de_json(j, &mut avisos),
             aquario: crate::aquario::perfil::Perfil::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
@@ -5871,6 +6056,7 @@ impl Config {
             );
         }
         c.avisar_os_segredos_que_faltam();
+        c.avisar_os_padroes_velhos_do_770(j);
         c.avisar_o_que_viaja_em_claro();
         c.avisar_a_cifra_de_fabrica_das_saidas(saidas);
         Ok(c)
@@ -5922,6 +6108,79 @@ impl Config {
     /// continua recusando o arranque, como ja recusava a senha vazia -- agora
     /// dizendo qual variavel faltou.
     ///
+    /// Os padroes que o pedido 770 endureceu, declarados POR ESCRITO no valor
+    /// velho (ou mais frouxo) -- um aviso por campo.
+    ///
+    /// Vale o que esta escrito: o 770 muda o padrao de quem NAO declarou, e
+    /// quem declarou continua com a propria decisao. Mas a decisao velha
+    /// aparece a cada arranque, porque ela pode ter sido escrita quando o
+    /// padrao era outro, e quem le o arquivo hoje nao sabe se foi escolha ou
+    /// heranca. Le o JSON CRU, e nao o `Config`: o valor efetivo nao diz se
+    /// veio do arquivo ou da fabrica, e so o escrito merece o aviso.
+    fn avisar_os_padroes_velhos_do_770(&mut self, j: &Json) {
+        let mut novos = Vec::new();
+        let secoes = [
+            ("web", self.web.ligado),
+            ("rest", self.rest.ligado || self.rest.swagger_ligado),
+        ];
+        for (secao, ligada) in secoes {
+            let s = j.campo(secao);
+            let tls_falso = s.and_then(|s| s.campo("tls")) == Some(&Json::Bool(false));
+            if ligada && tls_falso {
+                novos.push(format!(
+                    "770: {secao}.tls = false escrito -- a porta fala HTTP em claro. O \
+                     padrao agora e TLS 1.3 (autoassinado ate um certificado entrar em \
+                     {secao}.tls_certificado); apague o campo para seguir o padrao"
+                ));
+            }
+        }
+        let web = j.campo("web");
+        if let Some(n) = web
+            .and_then(|w| w.campo("sessao_minutos"))
+            .and_then(Json::inteiro)
+        {
+            if n > SESSAO_MINUTOS_DE_FABRICA as i64 {
+                novos.push(format!(
+                    "770: web.sessao_minutos = {n} escrito, acima dos \
+                     {SESSAO_MINUTOS_DE_FABRICA} de fabrica -- a sessao sem uso vive mais \
+                     que o padrao endurecido"
+                ));
+            }
+        }
+        if let Some(n) = web
+            .and_then(|w| w.campo("sessao_teto_horas"))
+            .and_then(Json::inteiro)
+        {
+            if n <= 0 || n > SESSAO_TETO_HORAS_DE_FABRICA as i64 {
+                let o_que = if n <= 0 {
+                    "SEM teto -- clique nenhum faz a sessao acabar".to_string()
+                } else {
+                    format!("acima das {SESSAO_TETO_HORAS_DE_FABRICA} h de fabrica")
+                };
+                novos.push(format!("770: web.sessao_teto_horas = {n} escrito, {o_que}"));
+            }
+        }
+        if let Some(ps) = j.campo("politica_de_senha") {
+            if let Some(n) = ps.campo("minimo").and_then(Json::inteiro) {
+                if n < SENHA_MINIMA_DE_FABRICA as i64 {
+                    novos.push(format!(
+                        "770: politica_de_senha.minimo = {n} escrito, abaixo dos \
+                         {SENHA_MINIMA_DE_FABRICA} caracteres de fabrica"
+                    ));
+                }
+            }
+            for campo in ["classes", "diferente_do_login"] {
+                if ps.campo(campo) == Some(&Json::Bool(false)) {
+                    novos.push(format!(
+                        "770: politica_de_senha.{campo} = false escrito -- a senha nova \
+                         deixa de passar por esta regra de fabrica"
+                    ));
+                }
+            }
+        }
+        self.avisos.extend(novos);
+    }
+
     /// Fala so com quem declarou e nao tem. Quem escreveu o segredo no arquivo,
     /// ou exportou a variavel, nao ouve nada daqui.
     fn avisar_os_segredos_que_faltam(&mut self) {
@@ -6596,6 +6855,10 @@ impl Config {
                     ("ligado", Json::Bool(self.web.ligado)),
                     ("bind", Json::texto_de(&self.web.bind)),
                     ("sessao_minutos", Json::de_u64(self.web.sessao_minutos)),
+                    (
+                        "sessao_teto_horas",
+                        Json::de_u64(self.web.sessao_teto_horas),
+                    ),
                     ("atras_de_proxy", Json::Bool(self.web.atras_de_proxy)),
                     ("integracao_claude", Json::Bool(self.web.integracao_claude)),
                     ("tls", Json::Bool(self.web.tls.ligado)),
@@ -6672,6 +6935,7 @@ impl Config {
             ("lgpd", self.lgpd.para_json()),
             ("diario", self.diario.para_json()),
             ("protecao", self.protecao.para_json()),
+            ("politica_de_senha", self.politica_de_senha.para_json()),
             // As cores VAO para a tela por aqui -- o mesmo caminho de todo o
             // resto da configuracao. A tela de configuracao nao le arquivo, e
             // o painel de bolhas as recebe na propria resposta da telemetria,
@@ -9718,8 +9982,10 @@ mod tests {
         let c = Config::de_json(&Json::analisar(r#"{"token":"x"}"#).unwrap()).unwrap();
         assert!(!c.web.ligado);
         assert_eq!(c.web.bind, "127.0.0.1:5001");
-        assert_eq!(c.web.sessao_minutos, 60);
-        assert_eq!(c.web.sessao_ms(), 3_600_000);
+        // Pedido 770: a sessao de fabrica encurtou de 60 para 15 min, com
+        // teto de 12 h -- o par novo/velho mora em `testes_dos_padroes_770`.
+        assert_eq!(c.web.sessao_minutos, 15);
+        assert_eq!(c.web.sessao_ms(), 900_000);
     }
 
     #[test]
@@ -9797,7 +10063,9 @@ mod tests {
     /// faz a coisa certa. O aviso diz o que fazer, e nao so o que esta ruim.
     #[test]
     fn porta_http_aberta_ao_mundo_avisa_no_arranque_e_sobe() {
-        let txt = r#"{"token":"x","web":{"ligado":true,"bind":"0.0.0.0:8080"}}"#;
+        // `"tls": false` POR ESCRITO desde o pedido 770: a porta HTTP nasce
+        // com TLS, e o aviso que este teste trava e o da porta em claro.
+        let txt = r#"{"token":"x","web":{"ligado":true,"bind":"0.0.0.0:8080","tls":false}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         c.validar().unwrap();
         let aviso = c
@@ -9819,8 +10087,9 @@ mod tests {
     /// chama as mesmas funcoes na mesma ordem.
     #[test]
     fn as_portas_do_rest_avisam_pelo_mesmo_caminho() {
+        // `"tls": false` escrito pelo motivo do teste de cima (pedido 770).
         let txt = r#"{"token":"x","rest":{"ligado":true,"bind":"0.0.0.0:6000",
-            "swagger_ligado":true,"swagger_bind":"0.0.0.0:7000"}}"#;
+            "swagger_ligado":true,"swagger_bind":"0.0.0.0:7000","tls":false}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         assert!(
             c.avisos.iter().any(|a| a.starts_with("rest.bind")),
@@ -9915,8 +10184,10 @@ mod tests {
     /// nomeia as portas e as duas saidas escritas.
     #[test]
     fn exigir_a_cifra_do_fio_com_porta_http_sem_proxy_avisa_que_ela_recusa() {
+        // `"tls": false` escrito desde o pedido 770: com o TLS de fabrica as
+        // portas atendem, e o aviso daqui e o de quem escolheu o claro.
         let txt = r#"{"token":"x","cifra_fio":{"exigir":true},
-            "web":{"ligado":true},"rest":{"ligado":true}}"#;
+            "web":{"ligado":true,"tls":false},"rest":{"ligado":true,"tls":false}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         let aviso = c
             .avisos

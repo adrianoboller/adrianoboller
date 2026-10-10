@@ -100,7 +100,7 @@ function configDe(dir, nome, h, membros) {
       nos: membros.map(n => ({ id: n, endereco: '127.0.0.1', porta: PORTAS[n] })),
     },
   };
-  if (nome === 'no1') c.web = { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60 };
+  if (nome === 'no1') c.web = { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60, tls: false /* 770: http em claro e sessao de 60 min POR ESCRITO -- a bateria nao fala TLS */ };
   else c.somente_leitura = true;
   return c;
 }

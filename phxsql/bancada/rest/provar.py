@@ -161,7 +161,8 @@ def escrever_config(h):
                 "database": "loja",
                 "tabelas": ["clientes", "salarios"],
                 "token": TOKEN_DO_REST,
-                "swagger_ligado": True,
+                # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+                "swagger_ligado": True, "tls": False,
                 "swagger_bind": f"127.0.0.1:{PORTA_SWAGGER}",
             },
             "usuarios": usuarios,

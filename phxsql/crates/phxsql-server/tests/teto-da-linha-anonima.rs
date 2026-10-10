@@ -329,8 +329,11 @@ fn subir_de_arquivo_com(
     protecao: bool,
 ) -> (Arc<Servidor>, u16) {
     let caminho = base.join("config.json");
+    // A politica de senha VELHA por escrito (pedido 770): a bateria mede o
+    // teto da linha, e as senhas dela sao de antes da politica de fabrica.
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:0", "base": {b:?}, "token": "{TOKEN}",
+              "politica_de_senha": {{ "minimo": 0, "classes": false, "diferente_do_login": false }},
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?}, "usuarios": [{usuarios}],
               "timeout_s": 60,

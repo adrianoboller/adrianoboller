@@ -95,7 +95,8 @@ class Servidor:
             # Curto: um cliente que segura o cabecalho por SEGURAR s tem de
             # ser servido quando completa, e nao cortado pelo servidor antes.
             "timeout_s": int(SEGURAR) + 10,
-            "web": {"ligado": True, "bind": f"127.0.0.1:{porta_web}"},
+            # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+            "web": {"ligado": True, "tls": False, "bind": f"127.0.0.1:{porta_web}"},
             "recursos": {"conexoes_web_max": teto, "fila_web_ms": fila_ms},
             "root": {"id": 1, "nome": "root", "login": "root",
                      "senha_hash": self.hash_da_senha(SENHA)},

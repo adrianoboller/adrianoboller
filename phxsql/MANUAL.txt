@@ -2837,10 +2837,19 @@ LIGAR
         "web": {
           "ligado": true,
           "bind": "127.0.0.1:5001",
-          "sessao_minutos": 60,
+          "sessao_minutos": 15,
+          "sessao_teto_horas": 12,
           "atras_de_proxy": false,
           "integracao_claude": true
         }
+
+    "sessao_minutos" e quanto a sessao vive SEM USO (cada clique renova);
+    "sessao_teto_horas" e o teto ABSOLUTO desde o login, que clique nenhum
+    renova -- sem ele, a tela que pergunta sozinha (aquario, painel na TV)
+    ficaria logada para sempre. De fabrica, 15 min e 12 h desde o pedido
+    770 (eram 60 min e sem teto). Quem escreve os valores velhos
+    ("sessao_minutos": 60, "sessao_teto_horas": 0) continua com eles, e o
+    arranque avisa com uma linha "770:".
 
     "integracao_claude": false DESLIGA a integracao da tela com a Claude
     (API da Anthropic) nesta instalacao: a origem da Anthropic sai da
@@ -2851,7 +2860,7 @@ LIGAR
 
     No terminal aparece:
 
-        interface web em http://127.0.0.1:5001 | sessao de 60 min
+        interface web em https://127.0.0.1:5001 | sessao de 15 min sem uso, teto 12 h
 
     Abra esse endereco. Entre com o token do config.json e o seu usuario.
 
@@ -2863,15 +2872,28 @@ LIGAR
 
     HTTP e texto puro: senha, token e dado viajam legiveis para quem estiver
     no caminho. O PhxSql TERMINA TLS 1.3 nas portas web, REST e de dados
-    quando "tls": true (docs/SEGURANCA.md 7); ele nao e o padrao. Sem isso, a
-    saida e um proxy reverso que termina TLS na frente dele (7.1), e proxy so
-    protege se o motor NAO estiver aberto ao lado dele: com a porta web na
-    rede, quem ataca liga direto e pula o TLS inteiro.
+    quando "tls": true (docs/SEGURANCA.md 7).
 
-    DECISAO DO DONO, 07/10/2026 (pedido 660, depois da versao): na 1.0 o TLS
-    passa a ser OBRIGATORIO por padrao. Na 0.19 segue opcional, para nao
-    quebrar cliente antigo, e o aviso no ping para conexao nao cifrada AINDA
-    NAO existe -- esta decidido, nao implementado.
+    DESDE O PEDIDO 770 (decisao do dono, 09/10/2026), NAS PORTAS WEB E REST
+    O TLS E O PADRAO: sem "tls" escrito a porta fala https, com um
+    certificado AUTOASSINADO gerado ao lado do config.json na primeira vez
+    (o navegador avisa ate um certificado de verdade entrar em
+    tls_certificado/tls_chave). O padrao antigo nao servia a ninguem: com
+    cifra_fio.exigir ligado (o de fabrica), porta HTTP sem TLS recusa todo
+    pedido. A excecao e a secao com "atras_de_proxy": true, que nasce sem
+    TLS -- quem termina o TLS e o proxy. O LOOPBACK NAO E ISENTO: MySQL e
+    MariaDB nao tratam TCP no 127.0.0.1 como transporte seguro, e a regua
+    deu 5 x 4 (docs/propostas/padroes-770.md #2).
+
+    O QUE QUEBRA: quem ligou a porta com "exigir": false e falava http://
+    passa a receber https. O AJUSTE: usar https://, ou escrever "tls": false
+    na secao -- vale como antes, e o arranque avisa com uma linha "770:".
+    Isso antecipa o pedido 660, que deixava o TLS obrigatorio para a 1.0.
+
+    Sem TLS na porta, a saida e um proxy reverso que termina TLS na frente
+    dele (7.1), e proxy so protege se o motor NAO estiver aberto ao lado
+    dele: com a porta web na rede, quem ataca liga direto e pula o TLS
+    inteiro.
 
     Por isso, quem escreve um bind que atende de fora ("0.0.0.0:5001" ou o
     IP da placa) le no arranque um aviso dizendo isso e o que fazer. Ele NAO
@@ -4375,8 +4397,8 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
 
     PELO SQL
 
-        CREATE USER carlos PASSWORD 'a-senha-do-carlos';
-        ALTER  USER carlos PASSWORD 'a-senha-nova';
+        CREATE USER carlos PASSWORD 'A-senha-do-Carlos-1';
+        ALTER  USER carlos PASSWORD 'A-senha-nova-2';
         DROP   USER carlos;
 
     Sao comandos de sessao: viram os pedidos acima e passam pelo mesmo
@@ -4386,6 +4408,38 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     A SENHA TEM TETO de 65.535 bytes, o mesmo no login: acima dele a
     recusa vem antes de qualquer conta, dizendo o tamanho e nunca a senha
     ("limite excedido: a senha tem N bytes e o teto e 65535").
+
+    A SENHA NOVA TEM POLITICA (pedido 770, decisao do dono de 09/10/2026).
+    Criar ou alterar usuario com "senha" (pelo protocolo ou pelo SQL) exige,
+    de fabrica:
+
+        - 8 caracteres ou mais (caracteres, nao bytes);
+        - ao menos uma letra MAIUSCULA, uma minuscula, um algarismo e um
+          simbolo -- letra acentuada conta como letra (a palavra "acao"
+          com cedilha e til, maiuscula no inicio e "-2026" no fim, passa);
+        - ser diferente do login.
+
+    Os numeros sao os dos validadores do PostgreSQL (passwordcheck), do
+    MySQL (validate_password) e do MariaDB (simple_password_check); ver
+    docs/propostas/padroes-770.md. A recusa diz a regra e o campo:
+
+        "senha nova curta: a politica pede 8 caracteres ou mais
+         (politica_de_senha.minimo)"
+
+    A politica vale na DEFINICAO, nunca no login: quem ja tem senha gravada
+    continua entrando, e alterar o telefone de alguem nao reconfere a senha
+    dele. O "senha_hash" escrito a mao no config.json tambem nao passa por
+    ela (o servidor nao tem a senha para medir); o "phxsqld --senha" avisa
+    quando a senha nao passaria.
+
+    O QUE QUEBRA: script que cria usuario com senha fraca passa a ser
+    recusado. O AJUSTE: senha que passe, ou a politica velha por escrito --
+
+        "politica_de_senha": { "minimo": 0, "classes": false,
+                               "diferente_do_login": false }
+
+    -- que vale como antes, com uma linha "770:" no arranque por regra
+    afrouxada.
 
     Num servidor SOMENTE-LEITURA as tres sao recusadas, como o
     config_gravar: um servidor assim nao reescreve a propria configuracao

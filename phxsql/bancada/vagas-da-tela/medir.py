@@ -105,7 +105,8 @@ class Servidor:
             "bind": f"127.0.0.1:{porta_dados}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
             "timeout_s": 30,
-            "web": {"ligado": True, "bind": f"127.0.0.1:{porta_web}"},
+            # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+            "web": {"ligado": True, "tls": False, "bind": f"127.0.0.1:{porta_web}"},
             "root": {"id": 1, "nome": "root", "login": "root",
                      "senha_hash": self.hash_da_senha()},
             "usuarios": [],

@@ -60,6 +60,8 @@ fn subir(base: &Path, escape: bool, extra_web: &str) -> Arc<Servidor> {
     let h = hash_da_ana();
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -75,8 +77,8 @@ fn subir(base: &Path, escape: bool, extra_web: &str) -> Arc<Servidor> {
               "usuarios": [
                 {{ "id": 2, "login": "ana", "nome": "Ana", "senha_hash": "{h}",
                    "ativo": true, "supervisor": true }} ],
-              "web": {{ "ligado": true, "bind": "0.0.0.0:0"{extra_web} }},
-              "rest": {{ "ligado": true, "bind": "0.0.0.0:0" }}
+              "web": {{ "ligado": true, "bind": "0.0.0.0:0", "tls": false{extra_web} }},
+              "rest": {{ "ligado": true, "bind": "0.0.0.0:0", "tls": false }}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),

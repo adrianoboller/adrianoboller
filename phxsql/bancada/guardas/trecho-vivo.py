@@ -984,7 +984,11 @@ TETO_TESTE_SEM_MODULO = 0
 # phxsys.protecao (o leitor, o monitoramento, a dispensa, a leitura sob a trava
 # e as tres da semeadura), 7 do job autorizado e 3 do primeiro cadastro. RED
 # de cada uma pelo provador com `--so`.
-PISO_DAS_ENTRADAS = 940
+# +7 (pedido 770, 10/10/2026): o TLS de fabrica da web e do REST, a sessao
+# sem teto e a de 60 min, a politica de senha frouxa e a que ninguem chamava,
+# e o valor velho escrito valendo calado. Provadas com `--so` nas sete.
+# 947 = 940 (P12/P13) + 7 (770), somados na integracao.
+PISO_DAS_ENTRADAS = 947
 
 # ------------------------------------------------------------- APOSENTADAS
 #

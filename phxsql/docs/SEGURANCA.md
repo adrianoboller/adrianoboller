@@ -1190,7 +1190,12 @@ ser a única saída.
 ```
 
 - **`tls`** liga o TLS na porta (na seção `rest`, nas **duas** portas dela, como o
-  `atras_de_proxy`). Nasce `false`: guarda nova entra pedida.
+  `atras_de_proxy`). **Nas seções `web` e `rest` nasce `true` desde o pedido 770**
+  (decisão do dono, exceção explícita à «guarda nova entra pedida»; régua 5 × 4 em
+  `docs/propostas/padroes-770.md` #3), exceto na seção com `"atras_de_proxy": true`,
+  que nasce sem TLS porque quem termina é o proxy. Na porta de dados continua
+  `false`: ela já é cifrada pelo túnel do fio exigido. `"tls": false` escrito
+  continua valendo, com o aviso `770:` no arranque.
 - **`tls_certificado` e `tls_chave`**: PEM do certificado (a folha primeiro) e da
   chave privada **P-256** (SEC 1 ou PKCS#8). Os dois juntos, ou nenhum.
 - **Os dois vazios** → um autoassinado gerado na primeira subida, ao lado do

@@ -340,9 +340,11 @@ demonstracao() {
   comandos=$(./target/release/phxsql | grep -cE '^  phxsql ')
 
   mkdir -p "$dir/demonstracao"
-  # O campo e "sessao_minutos". Ele ja saiu daqui escrito "sessao_min", que o
-  # servidor recusa com um AVISO e ignora -- e como o padrao tambem e 60, a
-  # tela ficava igual e ninguem via. Configuracao que nao e lida mente.
+  # A sessao e o TLS da web seguem o padrao de fabrica (pedido 770: 15 min
+  # sem uso, teto de 12 h, https autoassinado). Ja houve aqui um
+  # "sessao_min" escrito errado, ignorado com AVISO e que ninguem via porque
+  # o padrao era igual -- configuracao que nao e lida mente. E escrever o
+  # valor velho por extenso faria a demonstracao subir com o aviso "770:".
   cat > "$dir/demonstracao/config.json" <<JSON
 {
   "_comentario": "AMBIENTE DE DEMONSTRACAO -- nao use em producao. Escuta so em 127.0.0.1; a senha esta no COMECE-AQUI.txt. Para um servidor de verdade, gere o seu com: phxsqld --exemplo 1 > config.json e depois phxsqld --empacotar-config",
@@ -351,7 +353,7 @@ demonstracao() {
   "base": "dados",
   "token": "demo",
 
-  "web": { "ligado": true, "bind": "127.0.0.1:8080", "sessao_minutos": 60 },
+  "web": { "ligado": true, "bind": "127.0.0.1:8080" },
 
   "usuarios": [
     {
@@ -400,7 +402,12 @@ PHXSQL $VERSAO -- COMO VER A TELA EM UM MINUTO                          Windows
 
 2. Abra o navegador em:
 
-       http://127.0.0.1:8080
+       https://127.0.0.1:8080
+
+   O certificado e AUTOASSINADO (gerado na primeira subida, ao lado do
+   config.json): o navegador avisa que nao conhece quem assinou. Numa
+   demonstracao local, aceite o aviso; num servidor de verdade, ponha um
+   certificado em web.tls_certificado e web.tls_chave.
 
 3. Entre com:
 
@@ -487,7 +494,12 @@ PHXSQL $VERSAO -- COMO VER A TELA EM UM MINUTO                            Linux
 
 2. Abra o navegador em:
 
-       http://127.0.0.1:8080
+       https://127.0.0.1:8080
+
+   O certificado e AUTOASSINADO (gerado na primeira subida, ao lado do
+   config.json): o navegador avisa que nao conhece quem assinou. Numa
+   demonstracao local, aceite o aviso; num servidor de verdade, ponha um
+   certificado em web.tls_certificado e web.tls_chave.
 
 3. Entre com:
 

@@ -77,6 +77,8 @@ fn subir(base: &std::path::Path, cifra_fio: &str, atras_de_proxy: bool) -> (Arc<
     let h = phxsql_core::senha::cifrar_com(SENHA, 1);
     let caminho = base.join("config.json");
     let bar = |p: std::path::PathBuf| p.display().to_string().replace('\\', "/");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -91,8 +93,8 @@ fn subir(base: &std::path::Path, cifra_fio: &str, atras_de_proxy: bool) -> (Arc<
               "usuarios": [
                 {{ "id": 2, "login": "{LOGIN}", "nome": "Ana", "senha_hash": "{h}",
                    "ativo": true, "supervisor": true }} ],
-              "web":  {{ "ligado": true, "bind": "127.0.0.1:0"{proxy} }},
-              "rest": {{ "ligado": true, "bind": "127.0.0.1:0",
+              "web":  {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false{proxy} }},
+              "rest": {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false,
                          "swagger_ligado": true,
                          "swagger_bind": "127.0.0.1:0"{proxy} }}{cifra_fio}
             }}"#,

@@ -39,7 +39,7 @@ function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}, extra 
     // A bateria abre e fecha ficha o tempo todo; sem isto a sessao poderia
     // vencer no meio de um caso longo e o erro sairia como «nao autenticado»,
     // que manda procurar defeito no lugar errado.
-    web: { ligado: true, bind: `${hostWeb}:${portaWeb}`, sessao_minutos: 60, ...webExtra },
+    web: { ligado: true, bind: `${hostWeb}:${portaWeb}`, sessao_minutos: 60, tls: false /* 770: http em claro e sessao de 60 min POR ESCRITO -- a bateria nao fala TLS */, ...webExtra },
     // A PORTA HTTP DESTA BATERIA E TEXTO PURO, E DE PROPOSITO.
     //
     // O pedido 370 fez `cifra_fio.exigir` nascer `true`, e desde entao toda
@@ -60,6 +60,13 @@ function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}, extra 
     // escape ESCRITO e o caminho que o 766 oferece; tirar esta linha volta a
     // derrubar os dois casos nos dois temas (medido em 10/10/2026).
     seguranca: { poupar_loopback: false },
+    // A POLITICA DE SENHA VELHA, POR ESCRITO (pedido 770). Desde o 770 a
+    // senha nova pede 8 caracteres, as quatro classes e ser diferente do
+    // login; os casos desta bateria criam usuarios com senhas de antes dela
+    // (usuarios, direito por coluna, usuario de uma base, senha de execucao)
+    // e o que provam e a tela, nao a politica -- o par novo/velho mora na
+    // suite (`testes_dos_padroes_770`). Tirar esta linha derruba 5 casos.
+    politica_de_senha: { minimo: 0, classes: false, diferente_do_login: false },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
     // A sonda de saude do disco a cada 2 s, e nao a cada 300 (5 min, padrao
     // do pedido 249): o caso `saude-do-disco` espera o EVENTO da proxima

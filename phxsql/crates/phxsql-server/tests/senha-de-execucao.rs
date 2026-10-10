@@ -33,6 +33,8 @@ fn subir(base: &Path) -> Arc<Servidor> {
     let bar = |p: PathBuf| p.display().to_string().replace('\\', "/");
     let h = phxsql_core::senha::cifrar_com(LOGIN, 1);
     let caminho = base.join("config.json");
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     std::fs::write(
         &caminho,
         format!(
@@ -43,7 +45,7 @@ fn subir(base: &Path) -> Arc<Servidor> {
               "cifra_fio": {{ "exigir": false }},
               "usuarios": [ {{ "id": 2, "login": "ana", "nome": "Ana",
                                "senha_hash": "{h}", "ativo": true, "supervisor": true }} ],
-              "web": {{ "ligado": true, "bind": "127.0.0.1:0" }}
+              "web": {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false }}
             }}"#,
             bar(base.join("base")),
             bar(base.join("acessos.log")),

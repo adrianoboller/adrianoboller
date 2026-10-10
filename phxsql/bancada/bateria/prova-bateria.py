@@ -115,7 +115,8 @@ class Servidor:
             # bancada de teste, NAO cliente do produto -- fala em claro para medir "A bateria de ponta a ponta dos SEIS itens, pelo SOQUETE" sem o aperto de mao no meio (servidor exige a cifra por padrao desde o pedido 370)
             "bind": f"127.0.0.1:{PORTA}", "cifra_fio": {"exigir": False},
             "token": TOKEN,
-            "web": {"ligado": True, "bind": f"127.0.0.1:{PORTA_WEB}"},
+            # 770: a porta HTTP nasce com TLS; esta bancada fala http em claro -- o valor velho POR ESCRITO.
+            "web": {"ligado": True, "tls": False, "bind": f"127.0.0.1:{PORTA_WEB}"},
             "recursos": {"cache_paginas": 2048},
             "root": {"id": 1, "nome": "root", "login": "root",
                      "senha_hash": hash_da_senha("root-1234")},

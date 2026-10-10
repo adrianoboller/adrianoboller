@@ -29099,4 +29099,129 @@ fn anotar(""",
         ],
         "seguem": [],
     },
+    {
+        "id": "770-web-sem-tls-de-fabrica",
+        "titulo": "a porta web nascia em claro e, com a cifra exigida de fabrica, recusava todo pedido (pedido 770)",
+        "porque": ("pedido 770, decisao do dono: TLS de fabrica nas portas HTTP; a regua deu 5 x 4 (MySQL e MariaDB geram o certificado)."),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """tls: TlsPorta::de_json(w, !w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy)),""",
+        "troca": """tls: TlsPorta::de_json(w, false),""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "tls-das-portas-http"],
+        "caem": [
+            "sem_tls_escrito_as_portas_http_ja_falam_tls_de_fabrica",
+        ],
+        "seguem": [
+            "com_tls_as_portas_http_atendem_a_cifra_exigida_pelo_certificado_gerado",
+        ],
+    },
+    {
+        "id": "770-rest-sem-tls-de-fabrica",
+        "titulo": "a porta REST nascia em claro -- o irmao da web, pelo mesmo `TlsPorta::de_json` (pedido 770)",
+        "porque": ("pedido 770: irmao e quem chama as mesmas funcoes na mesma ordem; a web e o REST leem o TLS pelo mesmo caminho."),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """tls: TlsPorta::de_json(r, !r.booleano_ou("atras_de_proxy", padrao.atras_de_proxy)),""",
+        "troca": """tls: TlsPorta::de_json(r, false),""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_padroes_770::as_portas_http_nascem_com_tls_e_a_de_dados_nao",
+        ],
+        "seguem": [
+            "servidor::testes_dos_padroes_770::quem_escreve_tls_false_continua_em_claro_com_aviso",
+        ],
+    },
+    {
+        "id": "770-sessao-sem-teto",
+        "titulo": "a sessao web que a tela renova sozinha (aquario, painel na TV) vivia para sempre: sem teto absoluto (pedido 770)",
+        "porque": ("pedido 770: inatividade sozinha nao encerra a tela que pergunta a cada poucos segundos; NIST 800-63B-4 AAL3, 12 h."),
+        "arquivo": "crates/phxsql-server/src/http.rs",
+        "trecho": """        if teto_ms > 0 {
+            s.expira_ms = s.expira_ms.min(s.desde_ms + teto_ms);
+        }
+""",
+        "troca": "",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_padroes_770::o_teto_derruba_a_sessao_que_cada_clique_renovava",
+        ],
+        "seguem": [
+            "servidor::testes_dos_padroes_770::a_sessao_web_nasce_curta_e_com_teto",
+        ],
+    },
+    {
+        "id": "770-sessao-de-60-min",
+        "titulo": "a sessao web de fabrica voltava a 60 min sem uso (pedido 770)",
+        "porque": ("pedido 770, decisao do dono: sessao curta; 15 min (NIST 800-63B-4 AAL3), numero levado ao dono para confirmar."),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """pub const SESSAO_MINUTOS_DE_FABRICA: u64 = 15;""",
+        "troca": """pub const SESSAO_MINUTOS_DE_FABRICA: u64 = 60;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_padroes_770::a_sessao_web_nasce_curta_e_com_teto",
+        ],
+        "seguem": [
+            "servidor::testes_dos_padroes_770::o_teto_derruba_a_sessao_que_cada_clique_renovava",
+        ],
+    },
+    {
+        "id": "770-politica-de-senha-frouxa",
+        "titulo": "a politica de senha de fabrica voltava a aceitar qualquer senha nao vazia (pedido 770)",
+        "porque": ("pedido 770: 8 caracteres (os tres convergem), quatro classes (MySQL 2 + MariaDB 3 = 5 x PG 4), diferente do login (os tres)."),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            minimo: SENHA_MINIMA_DE_FABRICA,
+            classes: true,
+            diferente_do_login: true,""",
+        "troca": """            minimo: 0,
+            classes: false,
+            diferente_do_login: false,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_padroes_770::a_politica_de_fabrica_recusa_curta_sem_classes_e_igual_ao_login",
+            "servidor::testes_dos_padroes_770::usuario_criar_recusa_a_senha_fraca_pela_politica_de_fabrica",
+        ],
+        "seguem": [
+            "servidor::testes_dos_padroes_770::quem_declara_a_politica_velha_continua_criando_senha_fraca_com_aviso",
+        ],
+    },
+    {
+        "id": "770-cadastro-sem-politica",
+        "titulo": "o cadastro gravava a senha nova sem passar pela politica -- a decisao existia e ninguem a chamava (pedido 770)",
+        "porque": ("pedido 770: a politica e conferida no unico ponto em que a senha existe em claro, antes do PBKDF2."),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """            senha_nova(login, clara)?;
+""",
+        "troca": "",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_padroes_770::usuario_criar_recusa_a_senha_fraca_pela_politica_de_fabrica",
+        ],
+        "seguem": [
+            "servidor::testes_dos_padroes_770::a_politica_de_fabrica_recusa_curta_sem_classes_e_igual_ao_login",
+            "servidor::testes_dos_padroes_770::quem_declara_a_politica_velha_continua_criando_senha_fraca_com_aviso",
+        ],
+    },
+    {
+        "id": "770-valor-velho-calado",
+        "titulo": "o valor velho escrito no config.json valia em silencio: ninguem sabia se era escolha ou heranca (pedido 770)",
+        "porque": ("pedido 770: config que declara o valor velho continua valendo, COM aviso no arranque."),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """        c.avisar_os_padroes_velhos_do_770(j);
+""",
+        "troca": "",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_dos_padroes_770::quem_declara_a_politica_velha_continua_criando_senha_fraca_com_aviso",
+            "servidor::testes_dos_padroes_770::quem_escreve_tls_false_continua_em_claro_com_aviso",
+            "servidor::testes_dos_padroes_770::quem_escreve_a_sessao_velha_continua_com_ela_e_com_aviso",
+        ],
+        "seguem": [
+            "servidor::testes_dos_padroes_770::a_sessao_web_nasce_curta_e_com_teto",
+        ],
+    },
 ]

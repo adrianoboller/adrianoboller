@@ -2805,6 +2805,7 @@ fontes_do_servidor! {
     "servidor/testes_dos_alarmes.rs",
     "servidor/testes_dos_caminhos_da_protecao.rs",
     "servidor/testes_dos_numeros_de_origem.rs",
+    "servidor/testes_dos_padroes_770.rs",
     "servidor/testes_dos_produtores_769.rs",
     "servidor/testes_dos_produtores_779.rs",
     "servidor/testes_encerrar_sessao_644.rs",
@@ -2951,6 +2952,8 @@ mod testes_chave_estrangeira;
 
 #[cfg(test)]
 mod testes_cadastro_de_usuarios;
+#[cfg(test)]
+mod testes_dos_padroes_770;
 
 #[cfg(test)]
 mod testes_config_gravar;

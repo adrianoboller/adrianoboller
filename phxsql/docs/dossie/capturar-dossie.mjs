@@ -53,7 +53,7 @@ async function subir() {
   const caminho = join(dir, 'config.json');
   writeFileSync(caminho, JSON.stringify({
     base, bind: `127.0.0.1:${PORTA_DADOS}`, token: TOKEN, max_linhas: 5000,
-    web: { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60 },
+    web: { ligado: true, bind: `127.0.0.1:${PORTA_WEB}`, sessao_minutos: 60, tls: false /* 770: http em claro e sessao de 60 min POR ESCRITO -- a bateria nao fala TLS */ },
     // A porta HTTP da captura e texto puro em 127.0.0.1, de proposito: desde
     // o pedido 370 `cifra_fio.exigir` nasce `true` e toda porta HTTP sem
     // proxy TLS responde 403 -- a captura fotografava o JSON do 403 em vez

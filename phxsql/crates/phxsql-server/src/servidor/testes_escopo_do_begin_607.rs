@@ -16,10 +16,12 @@ const SENHA: &str = "a-senha-forte-do-607";
 fn servidor() -> (Arc<Servidor>, DirTemp) {
     let dir = DirTemp::novo("607-escopo");
     let caminho = dir.join("config.json");
+    // A politica de senha VELHA por escrito (pedido 770): as senhas daqui
+    // sao de antes da politica de fabrica, e a pergunta deste teste e outra.
     std::fs::write(
         &caminho,
         format!(
-            r#"{{"token":"t","bind":"127.0.0.1:5399","base":"{}",
+            r#"{{"token":"t","bind":"127.0.0.1:5399","base":"{}","politica_de_senha":{{"minimo":0,"classes":false,"diferente_do_login":false}},
                     "usuarios":[{{"id":1,"nome":"Ana","login":"ana","senha_hash":"{}",
                     "supervisor":true}}]}}"#,
             dir.join("dados").display(),

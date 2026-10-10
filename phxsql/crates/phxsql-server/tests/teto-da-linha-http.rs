@@ -73,13 +73,15 @@ fn subir(base: &std::path::Path) -> (Arc<Servidor>, SocketAddr) {
     // `portao_de_rede_http` recusa antes de `ler_pedido` existir, e a prova
     // mediria o portao errado. O `timeout_s` alto e o que da a separacao de
     // tempo explicada no cabecalho.
+    // `"tls": false` POR ESCRITO (pedido 770): a porta HTTP nasce com TLS, e esta
+    // prova fala HTTP em claro de proposito -- o assunto dela e outro.
     let texto = format!(
         r#"{{ "bind": "127.0.0.1:0", "base": {base:?}, "token": "{TOKEN}",
               "log_acessos": {log:?}, "blacklist": {bl:?}, "dblink": {dbl:?},
               "jobs": {jobs:?},
               "timeout_s": 60,
               "cifra_fio": {{ "exigir": false }},
-              "web": {{ "ligado": true, "bind": "127.0.0.1:0" }} }}"#,
+              "web": {{ "ligado": true, "bind": "127.0.0.1:0", "tls": false }} }}"#,
         base = base.display().to_string(),
         log = base.join("acessos.log").display().to_string(),
         bl = base.join("blacklist.json").display().to_string(),

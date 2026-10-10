@@ -47,9 +47,13 @@ impl Servidor {
             }
         }
         anunciar(&format!(
-            "interface web em {}://{endereco} | sessao de {} min",
+            "interface web em {}://{endereco} | sessao de {} min sem uso, teto {}",
             if tls.is_some() { "https" } else { "http" },
-            self.config.web.sessao_minutos
+            self.config.web.sessao_minutos,
+            match self.config.web.sessao_teto_horas {
+                0 => "nenhum".to_string(),
+                h => format!("{h} h"),
+            }
         ));
         // O estado do tunel de cada destino, dito ALTO no arranque -- e nao so
         // no dia em que alguem abre a conexao. `cifra` sem pino protege da
@@ -1348,7 +1352,9 @@ impl Servidor {
         let mut id_sessao = String::new();
         if !id_pedido.is_empty() {
             if let Ok(mut vivas) = self.sessoes.lock() {
-                if let Some(login) = vivas.usar(id_pedido, duracao, agora) {
+                if let Some(login) =
+                    vivas.usar(id_pedido, duracao, self.config.web.sessao_teto_ms(), agora)
+                {
                     id_sessao = id_pedido.to_string();
                     sessao.desafio = vivas.tomar_desafio(id_pedido);
                     if !login.is_empty() {

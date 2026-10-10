@@ -187,6 +187,10 @@ def montar_config():
         "token": "t",
         "log_acessos": BASE + "/acessos.log",
         "web": {"ligado": False},
+        # 770: a politica de senha VELHA por escrito -- esta bancada prova o
+        # cadastro (e o teto de 8 bytes e o espaco no login) com senhas de
+        # antes da politica de fabrica; o par novo/velho e da suite.
+        "politica_de_senha": {"minimo": 0, "classes": False, "diferente_do_login": False},
         "seguranca": {"blacklist": BASE + "/blacklist.json"},
         "profiler": {"arquivo": BASE + "/perfil.txt"},
         "_nota": "comentario que a gravacao do cadastro nao pode comer",
