@@ -17,6 +17,7 @@
 //!   ver `elevenlabs.rs`): a limpeza do texto, o teto, a saida confinada e a conferencia do
 //!   WAV antes de entregar sao as mesmas -- so muda quem produz os bytes.
 
+use crate::decisao::{Decisor, DecisorDeRegras, Desfecho, Questao, RegraDeDecisao, Valor};
 use crate::motor::{Agent, CancelFlag, Observer, artifact_for};
 use crate::tarefa::{Task, TaskStatus, confine};
 use crate::visao::{PastaTemp, TranscribeTool, isolado_com};
@@ -36,6 +37,61 @@ const MAX_WAV: u64 = 256 * 1024 * 1024;
 
 fn falha(e: impl std::fmt::Display) -> ToolError {
     ToolError::Failed(e.to_string())
+}
+
+/// Perfil de voz (`voz.perfil`): decide se a nuvem pode ser chamada.
+/// - `Offline`: so os motores locais; a nuvem configurada e recusada por nome, nunca chamada.
+/// - `Auto`/`Nuvem`: a nuvem configurada vale, mas pode DEGRADAR para o local (radar R4).
+///
+/// Valor desconhecido ou ausente cai em `Auto` -- o comportamento de hoje, para «guarda nova
+/// entra pedida, nao imposta»: quem nao pediu perfil nenhum fica exatamente como antes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum PerfilDeVoz {
+    Offline,
+    #[default]
+    Auto,
+    Nuvem,
+}
+
+impl PerfilDeVoz {
+    pub fn ler(s: Option<&str>) -> Self {
+        match s {
+            Some("offline") => Self::Offline,
+            Some("nuvem") => Self::Nuvem,
+            _ => Self::Auto,
+        }
+    }
+
+    /// O perfil efetivo da configuracao (`voz.perfil`). E o ponto por onde TODA operacao de
+    /// voz que alcançaria a nuvem le o perfil -- o `speak` o guarda num campo, e o `voice_list`
+    /// chama aqui --, para a decisao «offline recusa a rede» nascer de UM lugar so.
+    pub fn do_config() -> Self {
+        Self::ler(crate::config::texto_de("voz.perfil").as_deref())
+    }
+
+    /// A frase canonica da recusa de rede do perfil offline, nomeando o provedor online. UMA
+    /// fonte para o texto, reusada pelo `speak` e pelo `voice_list`: duas redacoes divergiriam.
+    fn frase_recusa_rede(provedor_online: &str) -> String {
+        format!(
+            "perfil offline (voz.perfil) recusa a rede: o provedor online {provedor_online} nao \
+sera chamado"
+        )
+    }
+
+    /// A recusa (por nome) quando o perfil e offline, para quem alcançaria a nuvem SEM queda
+    /// local -- hoje o `voice_list`, cuja pergunta nenhum motor local responde. `None` fora do
+    /// offline.
+    pub fn recusa_rede(self, provedor_online: &str) -> Option<ToolError> {
+        (self == PerfilDeVoz::Offline)
+            .then(|| ToolError::Denied(Self::frase_recusa_rede(provedor_online)))
+    }
+}
+
+/// O motor que atende uma fala: o comando local, ou a nuvem (ElevenLabs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Motor {
+    Comando,
+    ElevenLabs,
 }
 
 /// A configuracao, pela chave do catalogo (`voz.*`); a variavel citada ao operador sai de
@@ -199,6 +255,9 @@ pub struct SpeakTool {
     /// Provedor ElevenLabs no lugar do comando. `Err`: escolhido e indisponivel (sem chave,
     /// sem voz); a ferramenta recusa com o motivo.
     pub elevenlabs: Option<Result<crate::elevenlabs::FalaElevenLabs, String>>,
+    /// Perfil de voz: em `Offline` a nuvem nunca e chamada; em `Auto`/`Nuvem` ela pode cair
+    /// para o comando local. O padrao (`Auto`) e o comportamento de antes deste campo.
+    pub perfil: PerfilDeVoz,
 }
 
 /// Fala gravada e conferida.
@@ -228,17 +287,50 @@ impl SpeakTool {
             modelo_sha256: var("voz.tts.modelo_sha256"),
             pastas: lista_de_pastas(crate::config::lista_de("voz.tts.pastas")),
             elevenlabs,
+            perfil: PerfilDeVoz::ler(var("voz.perfil").as_deref()),
         }
     }
 
-    /// Pronto para falar, pelo provedor escolhido; senao, a recusa que o operador conserta.
+    /// O provedor online que a config pediu (hoje so a ElevenLabs), para a recusa do perfil
+    /// offline NOMEAR o que seria chamado -- `Some` sempre que `voz.tts.provedor=elevenlabs`,
+    /// mesmo quando o cliente nao pode ser montado (sem chave): o que importa e o pedido.
+    fn nuvem_pedida(&self) -> Option<&'static str> {
+        self.elevenlabs.as_ref().map(|_| "elevenlabs")
+    }
+
+    /// O motor local esta configurado?
+    fn local_pronto(&self) -> Result<(), ToolError> {
+        self.configurado().map(|_| ())
+    }
+
+    /// Pronto para falar sob o perfil. `Offline` barra a nuvem e exige o local (recusa
+    /// nomeando o provedor online quando ele foi pedido); `Auto`/`Nuvem` aceita a nuvem
+    /// disponivel ou a queda para o local, e so recusa quando NENHUM dos dois esta pronto.
     fn pronto(&self) -> Result<(), ToolError> {
+        if self.perfil == PerfilDeVoz::Offline {
+            return self
+                .local_pronto()
+                .map_err(|e_local| match self.nuvem_pedida() {
+                    Some(online) => ToolError::Denied(format!(
+                        "{}; configure o motor de voz local -- {e_local}",
+                        PerfilDeVoz::frase_recusa_rede(online)
+                    )),
+                    None => e_local,
+                });
+        }
         match &self.elevenlabs {
+            // Nuvem disponivel: fala por ela (e cai para o local se ela falhar).
             Some(Ok(_)) => Ok(()),
-            Some(Err(e)) => Err(ToolError::Denied(format!(
-                "texto para fala indisponivel: {e}"
-            ))),
-            None => self.configurado().map(|_| ()),
+            // Nuvem pedida mas indisponivel: so vale se houver local para a queda.
+            Some(Err(e)) => self.local_pronto().map_err(|e_local| {
+                ToolError::Denied(format!(
+                    "texto para fala indisponivel: a nuvem (elevenlabs) nao esta pronta ({e}) e \
+nao ha motor local para a queda -- {}",
+                    e_local
+                ))
+            }),
+            // provedor=comando: so o local.
+            None => self.local_pronto(),
         }
     }
 
@@ -300,7 +392,7 @@ impl SpeakTool {
         self.pronto()?;
         // Controle vira espaco: quebra de linha e tabulacao nao mudam o que se fala, e um
         // NUL no meio do argumento o cortaria.
-        let mut limpo: String = texto
+        let limpo: String = texto
             .trim()
             .chars()
             .map(|c| if c.is_control() { ' ' } else { c })
@@ -320,34 +412,7 @@ impl SpeakTool {
             )));
         }
         let alvo = confine(workdir, saida).map_err(ToolError::Denied)?;
-        let bytes = match &self.elevenlabs {
-            Some(Ok(el)) => {
-                if let Some(v) = voz
-                    && !crate::elevenlabs::voz_valida(v)
-                {
-                    return Err(ToolError::InvalidArguments(format!(
-                        "voice invalida: {v:?} (o voice_id do voice_list)"
-                    )));
-                }
-                let (el, voz) = (el.clone(), voz.map(String::from));
-                tokio::task::spawn_blocking(move || el.falar(&limpo, voz.as_deref(), prazo))
-                    .await
-                    .map_err(falha)?
-                    .map_err(|e| ToolError::Failed(format!("elevenlabs: {e}")))?
-            }
-            _ => {
-                if voz.is_some() {
-                    return Err(ToolError::InvalidArguments(
-                        "'voice' so com PHXCLAW_TTS_PROVEDOR=elevenlabs".into(),
-                    ));
-                }
-                // Um motor que recebe o texto como argumento solto leria "-x" como opcao.
-                if limpo.starts_with('-') {
-                    limpo.insert(0, ' ');
-                }
-                self.falar_por_comando(&limpo, prazo).await?
-            }
-        };
+        let (bytes, motor, caiu) = self.produzir(&limpo, voz, prazo).await?;
         if bytes.len() as u64 > MAX_WAV {
             return Err(ToolError::Failed(format!(
                 "o motor de voz gravou {} bytes, acima do teto de {MAX_WAV}",
@@ -366,11 +431,155 @@ impl SpeakTool {
             std::fs::create_dir_all(d).map_err(falha)?;
         }
         std::fs::write(&alvo, &bytes).map_err(falha)?;
+        // R4: qual motor atendeu, e se so atendeu por queda. Desligada custa um load.
+        crate::metricas::GLOBAL.voz_motor(matches!(motor, Motor::ElevenLabs), caiu);
         Ok(Fala { caminho: alvo, wav })
+    }
+
+    /// Os bytes do WAV e o motor que os produziu, pela decisao de queda. A nuvem com voz por
+    /// nome nao cai (a queda nao honraria a voz pedida); nos demais casos, a nuvem que falha
+    /// em `Auto`/`Nuvem` degrada para o comando local, e a falta de local vira a recusa que
+    /// nomeia os dois.
+    async fn produzir(
+        &self,
+        limpo: &str,
+        voz: Option<&str>,
+        prazo: Duration,
+    ) -> Result<(Vec<u8>, Motor, bool), ToolError> {
+        // 'voice' so existe na nuvem; com ele nao ha queda que o honre.
+        if let Some(v) = voz {
+            let Some(Ok(el)) = &self.elevenlabs else {
+                return Err(ToolError::InvalidArguments(
+                    "'voice' so com PHXCLAW_TTS_PROVEDOR=elevenlabs".into(),
+                ));
+            };
+            if self.perfil == PerfilDeVoz::Offline {
+                return Err(ToolError::Denied(format!(
+                    "{}, e 'voice' so vale nele",
+                    PerfilDeVoz::frase_recusa_rede("elevenlabs")
+                )));
+            }
+            if !crate::elevenlabs::voz_valida(v) {
+                return Err(ToolError::InvalidArguments(format!(
+                    "voice invalida: {v:?} (o voice_id do voice_list)"
+                )));
+            }
+            let b = self
+                .falar_por_nuvem(el.clone(), limpo, Some(v), prazo)
+                .await?;
+            return Ok((b, Motor::ElevenLabs, false));
+        }
+        // Base: o que a config pediu. A decisao so degrada disto para o local.
+        let nuvem_pedida = self.elevenlabs.is_some();
+        match self.decidir(false).await {
+            Motor::ElevenLabs => {
+                let Some(Ok(el)) = &self.elevenlabs else {
+                    // decidir() so devolve ElevenLabs com o cliente pronto.
+                    return Err(ToolError::Failed("estado de voz inconsistente".into()));
+                };
+                match self.falar_por_nuvem(el.clone(), limpo, None, prazo).await {
+                    Ok(b) => Ok((b, Motor::ElevenLabs, false)),
+                    Err(e_nuvem) => match self.decidir(true).await {
+                        // A nuvem falhou: cai para o local (R4).
+                        Motor::Comando => match self.falar_por_comando(limpo, prazo).await {
+                            Ok(b) => Ok((b, Motor::Comando, true)),
+                            Err(e_local) => Err(ToolError::Failed(format!(
+                                "a nuvem (elevenlabs) falhou ({e_nuvem}) e a queda para o motor \
+local tambem: {e_local}"
+                            ))),
+                        },
+                        // Sem local para cair: devolve a falha da nuvem.
+                        Motor::ElevenLabs => Err(e_nuvem),
+                    },
+                }
+            }
+            Motor::Comando => {
+                let b = self.falar_por_comando(limpo, prazo).await?;
+                // caiu so quando a config pedia a nuvem e o perfil permitia queda (em offline
+                // o local nao e queda: ja e o motor do perfil).
+                let caiu = nuvem_pedida && self.perfil != PerfilDeVoz::Offline;
+                Ok((b, Motor::Comando, caiu))
+            }
+        }
+    }
+
+    /// Qual motor atende a fala, pela escada de decisao (`decisao.rs`): uma escolha entre
+    /// `comando` (local) e `elevenlabs` (nuvem) em que as regras SO degradam -- o perfil
+    /// offline, a nuvem indisponivel e a falha da tentativa derrubam para `comando`, e regra
+    /// nenhuma sobe de `comando` para `elevenlabs`. A tabela de queda vive em UM lugar
+    /// (`regras_de_queda`) e e consultada no inicio (`falhou=false`) e depois de uma falha
+    /// (`falhou=true`): a queda nao vira um `if` repetido a cada chamada.
+    async fn decidir(&self, falhou: bool) -> Motor {
+        // So a nuvem configurada tem de onde degradar; config local ja e o fundo.
+        if !matches!(self.elevenlabs, Some(Ok(_)) | Some(Err(_))) {
+            return Motor::Comando;
+        }
+        let mut ctx = String::new();
+        if self.perfil == PerfilDeVoz::Offline {
+            ctx.push_str("perfil=offline ");
+        }
+        if matches!(self.elevenlabs, Some(Err(_))) {
+            ctx.push_str("nuvem=indisponivel ");
+        }
+        if falhou {
+            ctx.push_str("tentativa=falhou ");
+        }
+        let q = Questao::escolha(
+            "qual motor de voz atende a fala",
+            &["comando", "elevenlabs"],
+            ctx,
+        );
+        let decisor = DecisorDeRegras {
+            nome: "voz".into(),
+            regras: Self::regras_de_queda(),
+        };
+        match decisor.decidir(&q).await {
+            Desfecho::Decidido(d) if matches!(&d.valor, Valor::Escolha(s) if s == "comando") => {
+                Motor::Comando
+            }
+            // SemDecisao (nenhum sinal adverso): fica na nuvem que a config pediu.
+            _ => Motor::ElevenLabs,
+        }
+    }
+
+    /// As regras da queda: cada sinal adverso aponta para o motor local, com confianca 1,0
+    /// porque e deterministico. Nenhuma aponta para a nuvem -- a decisao nao concede o que a
+    /// config nao pediu.
+    fn regras_de_queda() -> Vec<RegraDeDecisao> {
+        ["perfil=offline", "nuvem=indisponivel", "tentativa=falhou"]
+            .into_iter()
+            .map(|p| RegraDeDecisao {
+                palavras: vec![p.into()],
+                valor: Valor::Escolha("comando".into()),
+                confianca: 1.0,
+            })
+            .collect()
+    }
+
+    /// Os bytes do WAV pela nuvem (ElevenLabs), fora do runtime (chamada bloqueante).
+    async fn falar_por_nuvem(
+        &self,
+        el: crate::elevenlabs::FalaElevenLabs,
+        limpo: &str,
+        voz: Option<&str>,
+        prazo: Duration,
+    ) -> Result<Vec<u8>, ToolError> {
+        let (limpo, voz) = (limpo.to_string(), voz.map(String::from));
+        tokio::task::spawn_blocking(move || el.falar(&limpo, voz.as_deref(), prazo))
+            .await
+            .map_err(falha)?
+            .map_err(|e| ToolError::Failed(format!("elevenlabs: {e}")))
     }
 
     /// Os bytes do WAV pelo comando local, no bwrap, com o modelo conferido.
     async fn falar_por_comando(&self, limpo: &str, prazo: Duration) -> Result<Vec<u8>, ToolError> {
+        // Um motor que recebe o texto como argumento solto leria "-x" como opcao.
+        let limpo = if limpo.starts_with('-') {
+            format!(" {limpo}")
+        } else {
+            limpo.to_string()
+        };
+        let limpo = limpo.as_str();
         let (modelo_cmd, modelo, sha) = self.configurado()?;
         if !modelo.is_file() {
             return Err(ToolError::Denied(format!(
@@ -916,6 +1125,15 @@ will be spoken aloud.\n",
         .await;
         if let Err(e) = r {
             turno.erro = Some(e);
+        }
+        // Parte 3 (captura-so): grava o turno na memoria de cognicao local, pelo motor da
+        // outra frente. Erro aqui NAO derruba a conversa -- turno nao gravado e perda de
+        // aprendizado, nao de fala -- e o aviso leva so o id da tarefa, nunca o conteudo.
+        if let Err(e) = crate::voz_memoria::registrar_turno(agente.store.root(), &turno) {
+            eprintln!(
+                "aviso: voz: turno {} nao gravado na memoria: {e}",
+                turno.tarefa
+            );
         }
         turnos.push(turno);
     }

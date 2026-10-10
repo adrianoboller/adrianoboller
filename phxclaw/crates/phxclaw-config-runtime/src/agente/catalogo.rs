@@ -658,6 +658,16 @@ const FIXAS: &[L] = &[
     ),
     // --- voz ---
     c(
+        "voz.perfil",
+        "PHXCLAW_VOZ_PERFIL",
+        Tipo::Enum(&["offline", "auto", "nuvem"]),
+        Some("auto"),
+        (
+            "Perfil de voz: offline força os motores locais e recusa a rede (nomeando o provedor online barrado), auto usa o provedor configurado, nuvem idem",
+            "Voice profile: offline forces the local engines and refuses the network (naming the blocked online provider), auto uses the configured provider, cloud alike",
+        ),
+    ),
+    c(
         "voz.tts.provedor",
         "PHXCLAW_TTS_PROVEDOR",
         Tipo::Enum(&["comando", "elevenlabs"]),
@@ -2777,6 +2787,9 @@ pub const SO_DO_OPERADOR: &[(&str, Txt)] = &[
     ("decisao.laya.url", DESTINO),
     ("decisao.laya.credencial_nome", DESTINO),
     ("elevenlabs.api", DESTINO),
+    // O perfil offline e um teto: barra a rede: um repositorio confiado nao reabre a nuvem
+    // que o operador fechou.
+    ("voz.perfil", TETO),
     ("imagem.url", DESTINO),
     ("xai.api", DESTINO),
     ("n8n.url", DESTINO),

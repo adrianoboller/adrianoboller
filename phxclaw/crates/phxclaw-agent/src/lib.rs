@@ -108,6 +108,7 @@ pub mod tunel;
 pub mod ui;
 pub mod visao;
 pub mod voz;
+pub mod voz_memoria;
 pub mod workspace;
 pub mod xai;
 

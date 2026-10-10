@@ -747,6 +747,9 @@
     "dir": null
   },
   "voz": {
+    "//": [
+      "perfil: Perfil de voz: offline força os motores locais e recusa a rede (nomeando o provedor online barrado), auto usa o provedor configurado, nuvem idem [enum offline|auto|nuvem; ambiente PHXCLAW_VOZ_PERFIL]"
+    ],
     "kws": {
       "//": [
         "bin: Executável da palavra de ativação [caminho; ambiente PHXCLAW_KWS_BIN]",
@@ -757,6 +760,7 @@
       "modelo_dir": null,
       "modelo_sha256": null
     },
+    "perfil": "auto",
     "stt": {
       "//": [
         "provedor: Quem transcreve: o whisper.cpp local ou a ElevenLabs [enum whisper|elevenlabs; ambiente PHXCLAW_STT_PROVEDOR]"

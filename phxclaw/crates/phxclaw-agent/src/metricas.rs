@@ -184,6 +184,11 @@ pub struct Metricas {
     ide_completar_tokens: AtomicU64,
     ide_completar_custo_micro: AtomicU64,
     ide_completar_custo_nao_medido: AtomicU64,
+    // Qual motor de voz atendeu cada fala (R4): o local sem queda, o local porque a nuvem
+    // degradou, e a nuvem. `caiu` e a dimensao fechada que diz se houve queda.
+    voz_comando: AtomicU64,
+    voz_comando_queda: AtomicU64,
+    voz_elevenlabs: AtomicU64,
 }
 
 /// As metricas do processo do `servir`.
@@ -234,6 +239,9 @@ impl Metricas {
             ide_completar_tokens: AtomicU64::new(0),
             ide_completar_custo_micro: AtomicU64::new(0),
             ide_completar_custo_nao_medido: AtomicU64::new(0),
+            voz_comando: AtomicU64::new(0),
+            voz_comando_queda: AtomicU64::new(0),
+            voz_elevenlabs: AtomicU64::new(0),
         }
     }
 
@@ -324,6 +332,23 @@ impl Metricas {
         }
     }
 
+    /// Qual motor atendeu uma fala (R4): `nuvem` quando foi a ElevenLabs, senao o comando
+    /// local -- e `caiu` quando o local so atendeu porque a nuvem pedida degradou. Desligada
+    /// custa um load atomico: o interruptor vem antes do contador.
+    pub fn voz_motor(&self, nuvem: bool, caiu: bool) {
+        if !self.ligada() {
+            return;
+        }
+        let c = if nuvem {
+            &self.voz_elevenlabs
+        } else if caiu {
+            &self.voz_comando_queda
+        } else {
+            &self.voz_comando
+        };
+        c.fetch_add(1, Relaxed);
+    }
+
     /// As series, uma vez: o texto do Prometheus (`texto`) e o OTLP (`otel.rs`) saem daqui,
     /// e por isso uma metrica nova aparece nos dois ou em nenhum. `None` desligada.
     pub fn series(&self) -> Option<Vec<Serie>> {
@@ -340,7 +365,7 @@ impl Metricas {
                     .map(|(i, e)| {
                         let x = v[i].load(Relaxed);
                         (
-                            Some(("estado", *e)),
+                            vec![("estado", *e)],
                             if dinheiro {
                                 Numero::Dinheiro(x as f64 / 1e6)
                             } else {
@@ -351,17 +376,16 @@ impl Metricas {
                     .collect(),
             ),
         };
-        let contador =
-            |nome, ajuda, pontos: Vec<(Option<(&'static str, &'static str)>, u64)>| Serie {
-                nome,
-                ajuda,
-                tipo: TipoDeSerie::Contador(
-                    pontos
-                        .into_iter()
-                        .map(|(r, v)| (r, Numero::Inteiro(v)))
-                        .collect(),
-                ),
-            };
+        let contador = |nome, ajuda, pontos: Vec<(Rotulos, u64)>| Serie {
+            nome,
+            ajuda,
+            tipo: TipoDeSerie::Contador(
+                pontos
+                    .into_iter()
+                    .map(|(r, v)| (r, Numero::Inteiro(v)))
+                    .collect(),
+            ),
+        };
         Some(vec![
             por_estado(
                 "phxclaw_tarefas_total",
@@ -402,15 +426,15 @@ impl Metricas {
             contador(
                 "phxclaw_passos_total",
                 "Passos gravados pelas tarefas de objetivo terminadas.",
-                vec![(None, self.passos.load(Relaxed))],
+                vec![(vec![], self.passos.load(Relaxed))],
             ),
             contador(
                 "phxclaw_ferramenta_chamadas_total",
                 "Chamadas de ferramenta, pelo resultado.",
                 vec![
-                    (Some(("resultado", "ok")), self.ferramenta_ok.load(Relaxed)),
+                    (vec![("resultado", "ok")], self.ferramenta_ok.load(Relaxed)),
                     (
-                        Some(("resultado", "erro")),
+                        vec![("resultado", "erro")],
                         self.ferramenta_erro.load(Relaxed),
                     ),
                 ],
@@ -420,18 +444,18 @@ impl Metricas {
                 "Pedidos ao modelo, pelo resultado.",
                 vec![
                     (
-                        Some(("resultado", "ok")),
+                        vec![("resultado", "ok")],
                         self.modelo_chamadas.load(Relaxed),
                     ),
-                    (Some(("resultado", "erro")), self.modelo_erros.load(Relaxed)),
+                    (vec![("resultado", "erro")], self.modelo_erros.load(Relaxed)),
                 ],
             ),
             contador(
                 "phxclaw_tokens_total",
                 "Tokens informados pelo provedor.",
                 vec![
-                    (Some(("tipo", "entrada")), self.tokens_entrada.load(Relaxed)),
-                    (Some(("tipo", "saida")), self.tokens_saida.load(Relaxed)),
+                    (vec![("tipo", "entrada")], self.tokens_entrada.load(Relaxed)),
+                    (vec![("tipo", "saida")], self.tokens_saida.load(Relaxed)),
                 ],
             ),
             contador(
@@ -439,11 +463,11 @@ impl Metricas {
                 "Completacoes por IA do editor (fora de qualquer tarefa e orcamento), pelo resultado; recusada = teto ide.ia_teto_tokens_hora.",
                 vec![
                     (
-                        Some(("resultado", "ok")),
+                        vec![("resultado", "ok")],
                         self.ide_completar_ok.load(Relaxed),
                     ),
                     (
-                        Some(("resultado", "recusada")),
+                        vec![("resultado", "recusada")],
                         self.ide_completar_recusadas.load(Relaxed),
                     ),
                 ],
@@ -451,21 +475,39 @@ impl Metricas {
             contador(
                 "phxclaw_ide_completar_custo_nao_medido_total",
                 "Completacoes do editor sem custo medido (modelo fora da tabela, ou sem tabela).",
-                vec![(None, self.ide_completar_custo_nao_medido.load(Relaxed))],
+                vec![(vec![], self.ide_completar_custo_nao_medido.load(Relaxed))],
             ),
             contador(
                 "phxclaw_ide_completar_tokens_total",
                 "Tokens (entrada + saida) gastos pela completacao por IA do editor.",
-                vec![(None, self.ide_completar_tokens.load(Relaxed))],
+                vec![(vec![], self.ide_completar_tokens.load(Relaxed))],
             ),
             Serie {
                 nome: "phxclaw_ide_completar_custo_total",
                 ajuda: "Custo da completacao por IA do editor, na moeda da tabela PHXCLAW_CUSTO_PRECOS.",
                 tipo: TipoDeSerie::Contador(vec![(
-                    None,
+                    vec![],
                     Numero::Dinheiro(self.ide_completar_custo_micro.load(Relaxed) as f64 / 1e6),
                 )]),
             },
+            contador(
+                "phxclaw_voz_motor_total",
+                "Falas atendidas por motor de voz (R4); caiu=true quando a nuvem pedida degradou para o motor local.",
+                vec![
+                    (
+                        vec![("provedor", "comando"), ("caiu", "false")],
+                        self.voz_comando.load(Relaxed),
+                    ),
+                    (
+                        vec![("provedor", "comando"), ("caiu", "true")],
+                        self.voz_comando_queda.load(Relaxed),
+                    ),
+                    (
+                        vec![("provedor", "elevenlabs"), ("caiu", "false")],
+                        self.voz_elevenlabs.load(Relaxed),
+                    ),
+                ],
+            ),
             self.ferramenta_duracao.serie(
                 "phxclaw_ferramenta_duracao_segundos",
                 "Latencia de cada chamada de ferramenta.",
@@ -486,9 +528,16 @@ impl Metricas {
                 TipoDeSerie::Contador(pontos) => {
                     let _ = writeln!(o, "# TYPE {} counter", s.nome);
                     for (r, v) in pontos {
-                        let rotulo = r
-                            .map(|(k, v)| format!("{{{k}=\"{v}\"}}"))
-                            .unwrap_or_default();
+                        let rotulo = if r.is_empty() {
+                            String::new()
+                        } else {
+                            let pares = r
+                                .iter()
+                                .map(|(k, v)| format!("{k}=\"{v}\""))
+                                .collect::<Vec<_>>()
+                                .join(",");
+                            format!("{{{pares}}}")
+                        };
                         let _ = match v {
                             Numero::Inteiro(x) => writeln!(o, "{}{rotulo} {x}", s.nome),
                             Numero::Dinheiro(x) => writeln!(o, "{}{rotulo} {x:.6}", s.nome),
@@ -521,10 +570,15 @@ pub enum Numero {
     Dinheiro(f64),
 }
 
+/// Os rotulos de um ponto: pares (chave, valor) de conjunto fechado. Vazio = sem rotulo. E
+/// lista, e nao um par unico, porque uma serie pode cruzar duas dimensoes fechadas -- o
+/// `voz_motor` traz `provedor` e `caiu` juntos, e cada uma e um conjunto fixo.
+pub type Rotulos = Vec<(&'static str, &'static str)>;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TipoDeSerie {
-    /// Pontos de um contador; o rotulo, quando ha, e de conjunto fechado.
-    Contador(Vec<(Option<(&'static str, &'static str)>, Numero)>),
+    /// Pontos de um contador; os rotulos, quando ha, sao de conjunto fechado.
+    Contador(Vec<(Rotulos, Numero)>),
     /// Histograma de faixas fixas, com as contagens ACUMULADAS do Prometheus.
     Histograma {
         faixas: &'static [f64],
@@ -754,6 +808,28 @@ mod testes {
         }
     }
 
+    /// R4: o motor de voz que atendeu, com a queda marcada. RED medido: trocar a queda por
+    /// `voz_motor(false, false)` apaga a linha `caiu="true"` e o teste cai; desligada nao conta.
+    #[test]
+    fn voz_motor_conta_o_atendimento_e_a_queda_e_desligada_e_zero() {
+        let m = nova();
+        m.voz_motor(false, true);
+        assert!(m.texto().is_none(), "contou desligada");
+        m.definir(true);
+        m.voz_motor(true, false); // nuvem atendeu
+        m.voz_motor(false, false); // local, sem queda
+        m.voz_motor(false, true); // local porque a nuvem caiu
+        m.voz_motor(false, true);
+        let t = m.texto().unwrap();
+        for l in [
+            "phxclaw_voz_motor_total{provedor=\"elevenlabs\",caiu=\"false\"} 1",
+            "phxclaw_voz_motor_total{provedor=\"comando\",caiu=\"false\"} 1",
+            "phxclaw_voz_motor_total{provedor=\"comando\",caiu=\"true\"} 2",
+        ] {
+            assert!(t.contains(l), "falta {l}:\n{t}");
+        }
+    }
+
     #[tokio::test]
     async fn ligada_conta_e_os_rotulos_sao_de_conjunto_fechado() {
         let m = nova();
@@ -834,6 +910,10 @@ mod testes {
                     "resultado=\"recusada\"",
                     "tipo=\"entrada\"",
                     "tipo=\"saida\"",
+                    // O voz_motor cruza duas dimensoes fechadas; o par inteiro entra na lista.
+                    "provedor=\"comando\",caiu=\"false\"",
+                    "provedor=\"comando\",caiu=\"true\"",
+                    "provedor=\"elevenlabs\",caiu=\"false\"",
                 ]
                 .map(String::from),
             )

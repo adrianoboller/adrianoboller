@@ -66,6 +66,9 @@ pub const ATRIBUTOS: &[&str] = &[
     "estado",
     "resultado",
     "tipo",
+    // voz_motor cruza dois conjuntos fechados: o motor e se houve queda.
+    "provedor",
+    "caiu",
 ];
 
 /// Teto de spans por trace: um fluxo de 1.000 itens com uma chamada por item cabe; um
@@ -662,7 +665,7 @@ pub fn metricas_otlp(series: &[Serie], cfg: &Config, agora: DateTime<Utc>) -> Va
                         let mut p = json!({
                             "startTimeUnixNano": inicio,
                             "timeUnixNano": fim,
-                            "attributes": r.map(|(k, v)| vec![atributo(k, Valor::Texto(v.into()))]).unwrap_or_default(),
+                            "attributes": r.iter().map(|(k, v)| atributo(k, Valor::Texto((*v).into()))).collect::<Vec<_>>(),
                         });
                         match v {
                             Numero::Inteiro(x) => p["asInt"] = json!(x.to_string()),

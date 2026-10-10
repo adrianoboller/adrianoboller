@@ -362,6 +362,10 @@ impl OuvidoElevenLabs {
 /// chave guardada; `media.voices` e leitura (nada muda na conta), fora do padrao.
 pub struct VoiceListTool {
     pub cliente: Arc<ElevenLabs>,
+    /// O perfil de voz: em `Offline` a ferramenta recusa a rede por nome, pelo MESMO ponto de
+    /// decisao que o `speak`/`transcribe` -- listar vozes alcança a nuvem e nenhum motor local
+    /// responde a pergunta, entao offline a barra em vez de vazar a chave e revelar atividade.
+    pub perfil: crate::voz::PerfilDeVoz,
 }
 
 impl VoiceListTool {
@@ -369,6 +373,7 @@ impl VoiceListTool {
     pub fn da_pasta(raiz_do_agente: &Path) -> Option<Self> {
         ElevenLabs::da_pasta(raiz_do_agente).ok().map(|c| Self {
             cliente: Arc::new(c),
+            perfil: crate::voz::PerfilDeVoz::do_config(),
         })
     }
 }
@@ -410,6 +415,10 @@ optionally filtered by 'search'. Pass a voice_id as 'voice' to speak."
     > {
         use phxclaw_agent_core::{ToolError, ToolOutput};
         Box::pin(async move {
+            // Offline recusa a rede, por nome -- a mesma decisao e o mesmo texto do `speak`.
+            if let Some(e) = self.perfil.recusa_rede("elevenlabs") {
+                return Err(e);
+            }
             let busca = args
                 .get("search")
                 .and_then(Value::as_str)

@@ -13,7 +13,7 @@ use phxclaw_agent::api::{AgentFactory, ApiState, Limite, router};
 use phxclaw_agent::canvas::CanvasTool;
 use phxclaw_agent::midia::{ImageGenerateTool, Provedor, preencher_fluxo};
 use phxclaw_agent::visao::TranscribeTool;
-use phxclaw_agent::voz::{SpeakTool, WakeWordTool, conversar, info_wav};
+use phxclaw_agent::voz::{PerfilDeVoz, SpeakTool, WakeWordTool, conversar, info_wav};
 use phxclaw_agent::*;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
 use phxclaw_test_support::pulado;
@@ -108,6 +108,7 @@ fn flite() -> Option<SpeakTool> {
         modelo_sha256: Some(SHA_SLT.into()),
         pastas: vec![d.join("flite/usr")],
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     })
 }
 
@@ -428,6 +429,7 @@ async fn speak_recusa_sem_configuracao_sem_marcador_e_com_modelo_adulterado() {
         modelo_sha256: None,
         pastas: vec![],
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let e = nada.run(json!({"text":"oi"}), &c).await.unwrap_err();
     let m = e.to_string();
@@ -447,6 +449,7 @@ async fn speak_recusa_sem_configuracao_sem_marcador_e_com_modelo_adulterado() {
         modelo_sha256: Some("0".repeat(64)),
         pastas: vec![],
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let m = sem_saida
         .run(json!({"text":"oi"}), &c)
@@ -493,6 +496,7 @@ async fn speak_recusa_wav_invalido_do_motor_e_nao_o_entrega() {
         modelo_sha256: Some(sha),
         pastas: vec![],
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let m = t
         .run(json!({"text":"oi","output":"saida.wav"}), &c)
@@ -1128,6 +1132,7 @@ mod pagos {
                 formato,
                 ajustes,
             })),
+            perfil: PerfilDeVoz::Auto,
         }
     }
 
@@ -1317,6 +1322,7 @@ mod pagos {
         // Vozes.
         let vl = VoiceListTool {
             cliente: Arc::new(ElevenLabs::novo(&base, cred()).unwrap()),
+            perfil: PerfilDeVoz::Auto,
         };
         let r = vl.run(json!({"search":"ana"}), &c).await.unwrap();
         assert!(r.content.contains("abc123  Ana (premade)"), "{}", r.content);
@@ -1355,6 +1361,7 @@ mod pagos {
             modelo_sha256: None,
             pastas: vec![],
             elevenlabs: Some(Err(ElevenLabs::da_pasta(&vazia).err().unwrap())),
+            perfil: PerfilDeVoz::Auto,
         };
         let e = falar.run(json!({"text":"oi"}), &c).await.unwrap_err();
         assert!(
@@ -1756,6 +1763,206 @@ mod pagos {
             .unwrap()
             .to_lowercase();
         assert!(volta.contains("paris"), "a fala da resposta virou: {volta}");
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    /// Quantas quedas (`caiu="true"`) o processo ja contou, lido do `/metrics`. Delta, nunca
+    /// absoluto: outros testes com a metrica ligada tambem falam, e o que o nosso prova e o
+    /// INCREMENTO da nossa queda.
+    fn conta_caiu() -> u64 {
+        let Some(t) = phxclaw_agent::metricas::GLOBAL.texto() else {
+            return 0;
+        };
+        t.lines()
+            .find_map(|l| {
+                l.strip_prefix("phxclaw_voz_motor_total{provedor=\"comando\",caiu=\"true\"} ")
+                    .and_then(|n| n.trim().parse::<u64>().ok())
+            })
+            .unwrap_or(0)
+    }
+
+    /// Guarda nova entra pedida: sem `voz.perfil` (o default Auto), a fala pela nuvem vale como
+    /// antes deste campo -- a ElevenLabs e chamada e o WAV vem dela. RED medido: fazer a decisao
+    /// cair para o local sem sinal adverso (o braco SemDecisao -> `Motor::Comando`) desvia a
+    /// Auto da nuvem e o servidor nao e tocado.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn sem_perfil_nada_muda() {
+        let raiz = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let (base, log) = falso(|r| {
+            if r.caminho.starts_with("/v1/text-to-speech/") {
+                (
+                    200,
+                    vec![("content-type", "audio/wav".into())],
+                    wav_de_pcm(&pcm_sintetico(), 16000),
+                )
+            } else {
+                (404, vec![], b"nao".to_vec())
+            }
+        })
+        .await;
+        let cred = phxclaw_agent::elevenlabs::SERVICO
+            .credencial(&raiz)
+            .unwrap();
+        let t = fala(
+            ElevenLabs::novo(&base, cred).unwrap(),
+            Formato::Wav(16000),
+            None,
+        );
+        assert_eq!(t.perfil, PerfilDeVoz::Auto, "o default do campo e Auto");
+        let c = ctx("sem-perfil");
+        let r = t
+            .run(json!({"text":"ola","output":"a.wav"}), &c)
+            .await
+            .unwrap();
+        assert!(r.content.contains("a.wav"), "{}", r.content);
+        let w = info_wav(&std::fs::read(c.workdir.join("a.wav")).unwrap()).unwrap();
+        assert_eq!((w.taxa, w.canais), (16000, 1), "{w:?}");
+        // A nuvem FOI chamada, exatamente como antes do perfil existir.
+        let l = log.lock().unwrap();
+        assert_eq!(l.len(), 1, "a Auto nao chamou a nuvem");
+        assert!(l[0].caminho.starts_with("/v1/text-to-speech/"));
+        drop(l);
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    /// Perfil offline recusa a rede: com a ElevenLabs pedida e SEM motor local, a fala nao
+    /// chama a nuvem e a recusa NOMEIA o provedor online. RED medido: sem a guarda de offline
+    /// no `pronto` e na decisao, a fala chamaria a ElevenLabs e o servidor seria tocado.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn perfil_offline_recusa_a_nuvem_nomeando_o_provedor() {
+        let raiz = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let (base, log) = falso(|_| {
+            (
+                200,
+                vec![("content-type", "audio/wav".into())],
+                wav_de_pcm(&pcm_sintetico(), 16000),
+            )
+        })
+        .await;
+        let cred = phxclaw_agent::elevenlabs::SERVICO
+            .credencial(&raiz)
+            .unwrap();
+        // offline + nuvem pedida + SEM comando local (o `fala` nasce sem comando).
+        let mut t = fala(
+            ElevenLabs::novo(&base, cred).unwrap(),
+            Formato::Wav(16000),
+            None,
+        );
+        t.perfil = PerfilDeVoz::Offline;
+        let c = ctx("offline-recusa");
+        let e = t.run(json!({"text":"ola"}), &c).await.unwrap_err();
+        let m = e.to_string();
+        assert!(matches!(e, ToolError::Denied(_)), "{m}");
+        assert!(
+            m.contains("offline") && m.contains("elevenlabs"),
+            "a recusa nao nomeia o provedor online: {m}"
+        );
+        // A nuvem NUNCA foi tocada.
+        assert!(
+            log.lock().unwrap().is_empty(),
+            "offline chamou a rede: {:?}",
+            log.lock().unwrap()
+        );
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    /// Queda automatica (R4): em Auto, a ElevenLabs que devolve 5xx cai para o motor LOCAL, o
+    /// WAV sai do flite e a metrica marca `caiu="true"`. RED medido: sem a queda (devolver o
+    /// erro da nuvem em vez de cair para o comando), a fala falha.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn perfil_auto_cai_para_o_local_quando_a_nuvem_falha() {
+        let Some(mut t) = flite() else {
+            return;
+        };
+        let raiz = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let (base, log) = falso(|r| {
+            if r.caminho.starts_with("/v1/text-to-speech/") {
+                (503, vec![], b"indisponivel".to_vec())
+            } else {
+                (404, vec![], b"nao".to_vec())
+            }
+        })
+        .await;
+        let cred = phxclaw_agent::elevenlabs::SERVICO
+            .credencial(&raiz)
+            .unwrap();
+        t.elevenlabs = Some(Ok(FalaElevenLabs {
+            cliente: Arc::new(ElevenLabs::novo(&base, cred).unwrap()),
+            voz: "vozPadrao1".into(),
+            modelo: "eleven_multilingual_v2".into(),
+            formato: Formato::Wav(16000),
+            ajustes: None,
+        }));
+        t.perfil = PerfilDeVoz::Auto;
+
+        phxclaw_agent::metricas::ligar(true);
+        let antes = conta_caiu();
+        let c = ctx("queda");
+        let r = t
+            .run(
+                json!({"text":"The quick brown fox jumps.","output":"q.wav"}),
+                &c,
+            )
+            .await
+            .unwrap();
+        assert!(r.content.contains("q.wav"), "{}", r.content);
+        // O WAV veio do flite local (mono 16 bits PCM); a nuvem deu 503 e nao gravou nada.
+        let w = info_wav(&std::fs::read(c.workdir.join("q.wav")).unwrap()).unwrap();
+        assert_eq!(
+            (w.canais, w.bits, w.formato),
+            (1, 16, 1),
+            "o WAV nao e do flite local: {w:?}"
+        );
+        // A nuvem FOI tentada (e falhou): e o que motivou a queda.
+        assert!(
+            log.lock()
+                .unwrap()
+                .iter()
+                .any(|p| p.caminho.starts_with("/v1/text-to-speech/")),
+            "a nuvem nao foi tentada antes da queda"
+        );
+        // A metrica marcou a queda para o local.
+        let depois = conta_caiu();
+        assert!(
+            depois > antes,
+            "a metrica nao marcou caiu=true (antes {antes}, depois {depois})"
+        );
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    /// `voice_list` honra o perfil offline: com a chave presente e a ElevenLabs configurada, a
+    /// ferramenta NAO alcança a rede e recusa nomeando o provedor online -- pela mesma decisao
+    /// do perfil que o `speak`/`transcribe`. RED medido: sem a guarda no `run`, a chamada parte
+    /// e o servidor-duble e tocado (o teste passaria indevidamente).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn voice_list_recusa_em_offline() {
+        let raiz = raiz_com(&phxclaw_agent::elevenlabs::SERVICO, CHAVE_EL);
+        let (base, log) = falso(|_| {
+            let v = json!({"voices":[{"voice_id":"abc123","name":"Ana","category":"premade"}]});
+            (200, vec![], v.to_string().into_bytes())
+        })
+        .await;
+        let cred = phxclaw_agent::elevenlabs::SERVICO
+            .credencial(&raiz)
+            .unwrap();
+        let vl = VoiceListTool {
+            cliente: Arc::new(ElevenLabs::novo(&base, cred).unwrap()),
+            perfil: PerfilDeVoz::Offline,
+        };
+        let c = ctx("voice-list-offline");
+        let e = vl.run(json!({"search":"ana"}), &c).await.unwrap_err();
+        let m = e.to_string();
+        assert!(matches!(e, ToolError::Denied(_)), "{m}");
+        assert!(
+            m.contains("offline") && m.contains("elevenlabs"),
+            "a recusa nao nomeia o provedor online: {m}"
+        );
+        // A chave presente NAO vazou pela rede: o servidor nunca foi tocado.
+        assert!(
+            log.lock().unwrap().is_empty(),
+            "voice_list alcançou a rede em offline: {:?}",
+            log.lock().unwrap()
+        );
         let _ = std::fs::remove_dir_all(&raiz);
     }
 }

@@ -4925,6 +4925,25 @@
       "variavel": "PHXCLAW_KWS_MODEL_SHA256"
     },
     {
+      "chave": "voz.perfil",
+      "comando_do_segredo": null,
+      "descricao": "Perfil de voz: offline força os motores locais e recusa a rede (nomeando o provedor online barrado), auto usa o provedor configurado, nuvem idem",
+      "descricao_en": "Voice profile: offline forces the local engines and refuses the network (naming the blocked online provider), auto uses the configured provider, cloud alike",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": [
+        "offline",
+        "auto",
+        "nuvem"
+      ],
+      "padrao": "auto",
+      "secao": "voz",
+      "segredo": false,
+      "tipo": "enum",
+      "variavel": "PHXCLAW_VOZ_PERFIL"
+    },
+    {
       "chave": "voz.stt.provedor",
       "comando_do_segredo": null,
       "descricao": "Quem transcreve: o whisper.cpp local ou a ElevenLabs",

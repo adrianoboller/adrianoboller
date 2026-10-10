@@ -2949,6 +2949,16 @@
           },
           "type": "object"
         },
+        "perfil": {
+          "default": "auto",
+          "description": "Perfil de voz: offline força os motores locais e recusa a rede (nomeando o provedor online barrado), auto usa o provedor configurado, nuvem idem (ambiente: PHXCLAW_VOZ_PERFIL)",
+          "enum": [
+            "offline",
+            "auto",
+            "nuvem",
+            null
+          ]
+        },
         "stt": {
           "additionalProperties": false,
           "properties": {

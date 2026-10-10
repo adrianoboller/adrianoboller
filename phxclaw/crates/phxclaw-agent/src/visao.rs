@@ -995,12 +995,16 @@ impl TranscribeTool {
     /// (chave de `phxclaw elevenlabs chave` no broker de `raiz_do_agente`).
     pub fn do_ambiente(raiz_do_agente: &Path) -> Self {
         let var = crate::config::texto_de;
-        let elevenlabs = match var("voz.stt.provedor").as_deref() {
-            None | Some("whisper") => None,
-            Some("elevenlabs") => Some(crate::elevenlabs::OuvidoElevenLabs::do_ambiente(
+        let perfil = crate::voz::PerfilDeVoz::ler(var("voz.perfil").as_deref());
+        let elevenlabs = match (perfil, var("voz.stt.provedor").as_deref()) {
+            // Perfil offline FORCA o whisper local: a nuvem configurada e ignorada, a rede nao
+            // e chamada. E o mesmo perfil que, na fala, recusa a ElevenLabs por nome.
+            (crate::voz::PerfilDeVoz::Offline, _) => None,
+            (_, None | Some("whisper")) => None,
+            (_, Some("elevenlabs")) => Some(crate::elevenlabs::OuvidoElevenLabs::do_ambiente(
                 raiz_do_agente,
             )),
-            Some(o) => Some(Err(format!(
+            (_, Some(o)) => Some(Err(format!(
                 "{} desconhecido: {o} (whisper ou elevenlabs)",
                 crate::config::variavel("voz.stt.provedor")
             ))),
