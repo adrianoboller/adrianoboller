@@ -1001,7 +1001,12 @@ TETO_TESTE_SEM_MODULO = 0
 # sem ensaio, o rowid conferido depois de gravar e a nota do Corrompido
 # calada. RED de cada uma pelo provador com `--so`.
 # 972 = 966 (P7/P8) + 6 (299 F0-F2), somados na integracao.
-PISO_DAS_ENTRADAS = 972
+# +7 (pedido 299, F3-F4, 10/10/2026): o PITR que corta evento a evento, a
+# rompida do PITR que so para a tabela, o PITR numa unidade so, o ensaio do
+# PITR que recusa como replica, o volume sem id que nao vira, a ultima
+# transacao calada e o escopo parcial calado. RED de cada uma pelo provador
+# com `--so`.
+PISO_DAS_ENTRADAS = 979
 
 # ------------------------------------------------------------- APOSENTADAS
 #

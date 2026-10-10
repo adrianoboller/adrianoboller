@@ -281,3 +281,38 @@ história (601) agora segura o database a partir da primeira transação da orig
 que a toca (`orfas-na-replica::a_mae_de_outra_historia_segura_as_filhas`). A
 prova da órfã contada mudou de fábrica: a mãe que saiu da réplica por fora do
 diário.
+
+---
+
+## 9. F3–F5, medido (10/10/2026, papel B, base `2e10a6b7`)
+
+| | RED na base | Prova | Depois do conserto |
+|---|---|---|---|
+| R3 | **vivo**: `(1, 1, 0)` | `testes_pitr::o_pitr_nao_restaura_meia_venda` (o `#[ignore]` saiu) | `(0, 0, 0)`, `parou_na_transacao.motivo = relogio` |
+| R3' (continuidade no PITR) | a outra tabela andava (`reaplicados: 1`) | `testes_pitr::a_tabela_que_nao_continua_segura_as_outras_no_instante_da_copia` | tudo no instante da cópia, `motivo = continuidade` |
+| F10 do ⏸ 717 | o restaurado com UM id para a reaplicação inteira | `testes_pitr::o_restaurado_guarda_o_id_de_cada_transacao` | os ids do vivo, transação a transação |
+| R4 | o evento da tabela velha com `tx` zero | `log::tests::o_volume_sem_id_vira_e_o_commit_sai_com_um_id_so` | o mesmo id da tomada |
+| R6 | o campo não existia | `tests/ultima-transacao-na-replica.rs` (fiel e bidi) | o `tx` do último commit da origem |
+| R5 | o número não existia | `testes_direito_por_tabela::posicao_conta_as_tabelas_fora_do_escopo` | `tabelas_fora_do_escopo: 1` |
+
+**Quatro desvios do desenho, com motivo:**
+
+1. **A barreira do PITR pela continuidade é a cópia inteira**, e não «a primeira
+   transação que toca a rompida»: essa transação é justamente a que o diário
+   recriado ou expurgado não mostra mais, então a primeira *possível* é a
+   primeira depois da cópia.
+2. **O corte pelo relógio é barreira, e não filtro.** A §6 dizia «a transação
+   entra se o maior carimbo dela ≤ `ate`»; a primeira que não entra segura as
+   seguintes, como o PITR do PostgreSQL. Pular e seguir pararia no rowid da
+   tabela da pulada e partiria a seguinte nas outras.
+3. **R4 vira na primeira ESCRITA, e não no arranque**: mesmo efeito, sem abrir
+   toda tabela no arranque, e cobre a CLI e a FFI. O paginado no teto de
+   volumes não tem para onde virar e continua contado.
+4. **R5 conta tabelas, e não transações**: a origem diz quantas ficaram fora do
+   escopo, nunca o nome. Contar as transações que tocaram a escondida pediria à
+   origem ler o diário dela para quem não pode lê-lo.
+
+**R6 entrou nos três caminhos que aplicam grupo** (a réplica fiel, o quórum e
+o bidirecional), por uma função só (`EstadoOrigem::anotar_inteira`), com o id
+de `replica::maior_tx`.
+

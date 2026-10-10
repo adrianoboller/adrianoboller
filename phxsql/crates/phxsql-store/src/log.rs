@@ -1261,6 +1261,23 @@ impl LogFile {
         let paginacao = self.volumes.paginacao();
         let atual = self.cab(self.volume_atual)?;
         let vazio = atual.fim <= atual.cab_len as u64;
+        // Pedido 299, R4: a VIRADA FORCADA do volume sem id. O volume 2/3 nao
+        // tem onde guardar o `tx`, e cada evento dele numa tomada que tambem
+        // grava em volume 4 parte o commit na replica (o «commit misto» do
+        // 684, que ate aqui so se contava). O primeiro evento que chegaria a
+        // ele abre o volume seguinte, ja na 4 -- a mesma virada de sempre,
+        // antecipada, sem reescrever byte nenhum do velho. Acontece na
+        // primeira ESCRITA e nao no arranque: mesmo efeito (nenhuma tomada
+        // grava em volume sem id), sem abrir toda tabela no arranque, e vale
+        // tambem para quem grava sem o servidor (a CLI, a FFI). O que nao
+        // vira: o volume velho vazio (nada a partir) e o paginado ja no teto
+        // de volumes -- esse segue como antes, e contado.
+        if !atual.com_tx && !vazio {
+            let seguinte = self.volume_atual + 1;
+            if self.trilha || seguinte <= paginacao.max_arquivos {
+                return Ok((seguinte, true, atual));
+            }
+        }
         // Sem paginacao o diario so vira de volume com o expurgo ligado, e
         // sem teto de volumes: o formato B nunca reusa numero (pedido 706).
         if self.trilha {
@@ -2626,17 +2643,16 @@ mod tests {
         cofre::gravar_cabecalho_no_volume(&mut v, &cab, MAGIC_LOG).unwrap();
     }
 
-    /// **Pedido 676: o `.log` velho continua legivel, e gravavel.** O volume
-    /// da versao 2 abre, entrega os eventos com a imagem e `tx` zero, passa
-    /// no `verificar`, e o evento novo entra nele com 44 bytes -- um arquivo
-    /// append-only nao se reescreve, entao o volume velho nao vira de versao
-    /// no meio.
+    /// **Pedido 676: o `.log` velho continua legivel; e, desde o pedido 299
+    /// (R4), o PRIMEIRO evento novo vira o volume.** O volume da versao 2
+    /// abre, entrega os eventos com a imagem e `tx` zero e passa no
+    /// `verificar`. O evento novo nao entra mais nele com 44 bytes e sem id:
+    /// abre o volume seguinte, ja na versao 4, com o id -- e o velho continua
+    /// la, fechado, com os tres de antes intactos.
     #[test]
-    fn o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes() {
+    fn o_diario_da_versao_2_continua_abrindo_e_vira_no_primeiro_evento() {
         let d = dir_temp("v2");
         diario_da_versao_2(&d, Paginacao::DESLIGADA, &[b"Blumenau", b"", b"Joinville"]);
-        let tamanho = |d: &std::path::Path| std::fs::metadata(d.join("t.log")).unwrap().len();
-        let antes = tamanho(&d);
 
         let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         assert_eq!(l.verificar().unwrap(), 3);
@@ -2653,19 +2669,44 @@ mod tests {
         l.registrar_com_imagem(Operacao::Alteracao, 2, 2, b"Itajai")
             .unwrap();
         l.sincronizar().unwrap();
-        assert_eq!(
-            tamanho(&d) - antes,
-            EVENTO_CAB as u64 + 6,
-            "o evento novo no volume velho tem de ter 44 bytes"
-        );
+        assert_eq!(l.volumes().len(), 2, "o volume velho nao virou");
         drop(l);
         let mut l = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
         assert_eq!(l.verificar().unwrap(), 4);
-        let ultimo = l.ler_com_imagem(3, 1).unwrap();
-        assert_eq!(ultimo[0].1, b"Itajai");
+        let todos = l.ler_com_imagem(0, 0).unwrap();
+        assert_eq!(todos[0].1, b"Blumenau");
+        assert!(todos[..3].iter().all(|(e, _)| e.tx == 0));
+        assert_eq!(todos[3].1, b"Itajai");
+        assert!(
+            todos[3].0.tx > 0,
+            "o evento novo saiu sem id: entrou no volume velho"
+        );
+        std::fs::remove_dir_all(&d).unwrap();
+    }
+
+    /// **Pedido 299, R4 -- o commit que tocaria um volume sem id e um com id
+    /// sai INTEIRO, com um id so.** E o RED do «commit misto» do 684: ate
+    /// aqui a tomada gravava `tx` zero na tabela velha e o id na nova, e a
+    /// replica recebia a venda partida. Com a virada forcada, o evento da
+    /// tabela velha abre o volume 4 dela e leva o mesmo id.
+    ///
+    /// Com o defeito reposto (sem a virada), o evento da velha sai com zero e
+    /// a primeira assercao cai. O contador global (`commits_mistos`) nao se
+    /// confere aqui de proposito: outro teste do mesmo binario o move.
+    #[test]
+    fn o_volume_sem_id_vira_e_o_commit_sai_com_um_id_so() {
+        let d = dir_temp("misto-vira");
+        diario_da_versao_2(&d, Paginacao::DESLIGADA, &[b"um"]);
+        let mut velho = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        let mut novo = LogFile::criar(&d, "u", Paginacao::DESLIGADA).unwrap();
+        abrir_unidade();
+        let e_novo = novo.registrar(Operacao::Inclusao, 1, 1).unwrap();
+        let e_velho = velho.registrar(Operacao::Inclusao, 2, 1).unwrap();
+        fechar_unidade();
+        assert!(e_novo.tx > 0);
         assert_eq!(
-            ultimo[0].0.tx, 0,
-            "o volume velho nao tem onde guardar o id"
+            e_velho.tx, e_novo.tx,
+            "a tabela velha gravou fora do id da tomada: o commit sai partido"
         );
         std::fs::remove_dir_all(&d).unwrap();
     }
@@ -2707,8 +2748,11 @@ mod tests {
     #[test]
     fn o_commit_que_mistura_volume_sem_id_e_com_id_e_contado() {
         let d = dir_temp("misto");
-        diario_da_versao_2(&d, Paginacao::DESLIGADA, &[b"um"]);
-        let mut velho = LogFile::abrir(&d, "t", Paginacao::DESLIGADA).unwrap();
+        // No teto de UM volume a virada forcada (pedido 299, R4) nao cabe, e
+        // e so ai que o commit misto ainda nasce.
+        let no_teto = Paginacao::nova(10, 1).unwrap();
+        diario_da_versao_2(&d, no_teto, &[b"um"]);
+        let mut velho = LogFile::abrir(&d, "t", no_teto).unwrap();
         let mut novo = LogFile::criar(&d, "u", Paginacao::DESLIGADA).unwrap();
 
         let antes = commits_mistos();

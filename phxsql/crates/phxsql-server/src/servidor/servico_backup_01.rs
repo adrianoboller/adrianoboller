@@ -1257,15 +1257,52 @@ impl Servidor {
     /// de tres eventos: `[1788884516705, 1000000000000, 1788884516705]` -- o
     /// do meio vinte e cinco anos atras, com `origem: 7`.
     ///
-    /// Por isso o filtro e **evento a evento** (`carimbo <= ate`), e nunca
-    /// «corte a lista no primeiro que passou». Cortar por posicao jogaria fora
-    /// os eventos bons que vem depois de um carimbo torto.
+    /// # O corte e por TRANSACAO, na ordem dos ids -- pedido 299, F3
     ///
-    /// E a consequencia de pular um evento no meio e uma GUARDA, nao um
-    /// defeito: o `aplicar_evento` confere o rowid, entao pular uma inclusao e
-    /// aplicar a seguinte para na hora, com «o source diz rowid 2 e aqui saiu
-    /// 1». O `parou_em` da resposta diz isso, em vez de gravar a linha errada
-    /// no slot errado.
+    /// Ate 10/10/2026 o corte era evento a evento (`carimbo <= ate`), e um
+    /// commit de varias tabelas cujo relogio atravessava um milissegundo, com
+    /// o `ate` dentro dele, voltava como MEIA venda: medido `(1, 1, 0)` em
+    /// `(vendas, itens, pagamentos)` -- a venda e um item, sem o pagamento.
+    ///
+    /// Agora a reaplicacao passa pelo MESMO [`crate::replica::Juntador`] da
+    /// replica (lei «funcao e comando vem do mesmo motor»): ele funde os
+    /// diarios pela ordem dos ids de transacao, e a transacao so chega aqui
+    /// inteira, de todas as tabelas. Ela entra se o **maior** carimbo dela for
+    /// `<= ate` -- o *commit time* do PostgreSQL, que «so considera parar
+    /// antes de um registro de COMMIT» (`xlogrecovery.c`). A primeira que nao
+    /// entra vira **barreira**: ela e todas as de id maior ficam fora, em
+    /// todas as tabelas, como o PITR do PostgreSQL, que para na primeira
+    /// transacao depois do alvo.
+    ///
+    /// Por que a barreira, e nao «pule a que passou e aplique as seguintes
+    /// que couberem» (o filtro de antes, transposto): pular uma transacao e
+    /// aplicar a seguinte que toca a mesma tabela para no rowid -- a
+    /// inclusao pulada nao gerou o slot --, e a seguinte entraria pela metade
+    /// nas OUTRAS tabelas dela. A ordem e a do id, estritamente crescente e
+    /// semeado do disco (`log.rs`, `proximo_tx`), e nao a do relogio: o
+    /// carimbo torto do bidirecional so decide se a transacao dele passa do
+    /// `ate`, nunca onde ela mora na fila.
+    ///
+    /// O evento sem id (volume 2/3, anterior ao 676) e uma transacao de um
+    /// evento so, e sem id nao ha ordem entre tabelas: o primeiro deles que
+    /// passa do `ate` para TUDO dali em diante. E a escolha que perde
+    /// restauracao, nunca a que entrega metade -- e desde a virada forcada do
+    /// volume velho (pedido 299, R4) ele so existe em diario anterior a ela.
+    ///
+    /// E o que o aplicador recusaria: o ENSAIO do grupo
+    /// ([`Table::ensaiar_evento`], o mesmo da replica fiel) roda antes do
+    /// primeiro evento, e a transacao que pararia vira a barreira sem nada
+    /// dela gravado. O que escapa do ensaio e cai no aplicador NO MEIO de uma
+    /// transacao derruba a restauracao inteira: desfazer a metade devolveria
+    /// slot, e o palco nunca entra na raiz com meia transacao.
+    ///
+    /// # Um id por transacao tambem no restaurado (o F10 do ⏸ 717)
+    ///
+    /// Cada transacao reaplicada abre a PROPRIA unidade do diario e adota o
+    /// id da original ([`phxsql_store::log::adotar_tx_na_unidade`]): o
+    /// diario do restaurado sai com as mesmas fronteiras do vivo, e uma
+    /// replica tirada dele recebe a venda inteira. Antes a reaplicacao toda
+    /// gravava sob a unidade da tomada -- uma transacao so do tamanho do PITR.
     ///
     /// # O que ele NAO refaz, e por que
     ///
@@ -1274,10 +1311,10 @@ impl Servidor {
     ///   escrita, e os eventos que a cascata dela gerou estao no diario das
     ///   FILHAS -- refazer aqui criaria evento que o original nunca teve.
     /// * **Chave estrangeira.** Pelo mesmo portao e pelo mesmo motivo: a
-    ///   reaplicacao anda por tabela, e nao ha ordem global entre tabelas.
-    ///   Filha orfa no meio da passada se cura quando a tabela da mae for
-    ///   reaplicada; recusar travaria a restauracao inteira por uma ordem que
-    ///   se resolve sozinha.
+    ///   origem ja conferiu, na mesma ordem de transacoes que a reaplicacao
+    ///   segue. Dentro de uma transacao a ordem entre as tabelas e a do
+    ///   grupo, e nao a das maes; a transacao inteira entra antes da proxima,
+    ///   entao a filha nao fica sem a mae no fim de transacao nenhuma.
     /// * **O `.tx`.** A marca de commit em curso ja viaja dentro do backup de
     ///   proposito, e quem a completa e a recuperacao do arranque
     ///   (`transacao::recuperar`, chamada em `Servidor::novo`) -- e ela e
@@ -1297,20 +1334,32 @@ impl Servidor {
     ///
     /// # `ate` e INCLUSIVO
     ///
-    /// `carimbo <= ate`. Quem pede «ate as 15:00:00» quer o que aconteceu as
-    /// 15:00:00,000 -- e o instante que a tela mostra e o instante que se
-    /// digita de volta.
+    /// O maior carimbo da transacao `<= ate`. Quem pede «ate as 15:00:00»
+    /// quer o que aconteceu as 15:00:00,000 -- e o instante que a tela mostra
+    /// e o instante que se digita de volta.
     ///
-    /// # Por que a recusa por tabela nao aborta a restauracao
+    /// # A continuidade que nao confere segura o database INTEIRO
     ///
     /// As recusas que dao para conferir ANTES de tocar em disco acontecem
     /// antes (ver `op_restaurar_backup`): `ate` ilegivel, backup sem carimbo,
     /// `ate` anterior a copia, modo por cima, interruptor da imagem desligado,
     /// database vivo que sumiu. Sobra a continuidade, que so se confere com o
-    /// diario da copia na mao -- ou seja, com a copia ja extraida. Ela sai
-    /// **nomeada, por tabela**, no `parou_em`: aquela tabela ficou no instante
-    /// da copia, e a resposta diz qual e por que. Nao e fracasso da
-    /// restauracao, e por isso nao aborta.
+    /// diario da copia na mao -- ou seja, com a copia ja extraida.
+    ///
+    /// Ate o pedido 299 (F3) ela parava SO a tabela, e as outras andavam: a
+    /// venda entrava sem o pagamento. Agora ela segura o database inteiro no
+    /// instante da copia. Na replica (F2) a barreira e a primeira transacao
+    /// que toca a tabela rompida; aqui essa transacao e justamente a que se
+    /// perdeu -- o diario recriado ou expurgado e o que nao mostra mais quem
+    /// tocou a tabela depois da copia --, entao a primeira POSSIVEL e a
+    /// primeira depois da copia. A resposta diz qual tabela e por que (o
+    /// `parou_em` dela, o mesmo texto de sempre) e que as outras ficaram
+    /// seguradas por ela. Nao e fracasso da restauracao, e por isso nao
+    /// aborta: o database entra no instante da copia, dito.
+    ///
+    /// A tabela da copia que nao vive mais (`sem_diario_vivo`) NAO segura:
+    /// apagar tabela nao deixa evento, e as transacoes que a tocaram depois da
+    /// copia entram sem ela. E o limite escrito, e a resposta a nomeia.
     ///
     /// # Onde isto escreve, e por que o `fsync` fica FORA da trava
     ///
@@ -1331,7 +1380,10 @@ impl Servidor {
     /// O que fica aberto ate la sao as tabelas que RECEBERAM evento, e so
     /// elas: cada `Table` aberta carrega o cache de paginas do `.ndx` (teto de
     /// `recursos.cache_paginas`), entao segurar todas as restauradas pagaria
-    /// RAM por tabela que nem foi tocada.
+    /// RAM por tabela que nem foi tocada. Durante a reaplicacao, sim, todas
+    /// ficam abertas: o `Juntador` pede qualquer uma a qualquer momento. O
+    /// cache enche so com o que se le, e a restauracao que nao toca uma
+    /// tabela nao le pagina dela.
     fn reaplicar_diario_ate(
         &self,
         de: &str,
@@ -1369,13 +1421,14 @@ impl Servidor {
         let trava = self.travar_dados()?;
         let db_vivo = trava.abrir_database(de)?;
         let vivas = db_vivo.todas_as_tabelas()?;
-        // O `fsync` de cada tabela reaplicada, guardado para depois da trava.
-        let mut a_sincronizar: Vec<Table> = Vec::new();
 
-        let mut por_tabela = Vec::new();
+        // O preparo: cada tabela da copia com diario vivo vira uma fila do
+        // `Juntador`, da posicao da copia ate a contagem viva -- lida com a
+        // trava na mao, entao uma FRONTEIRA DE COMMIT, como o `posicao` da
+        // replica.
+        let mut filas: Vec<FilaDoPitr> = Vec::new();
         let mut sem_diario_vivo = Vec::new();
-        let mut total = 0u64;
-
+        let mut rompida: Option<usize> = None;
         for nome in &restauradas {
             if !vivas.contains(nome) {
                 sem_diario_vivo.push(Json::texto_de(nome));
@@ -1383,13 +1436,8 @@ impl Servidor {
             }
             let mut td = db_destino.abrir_qualificada(nome)?;
             let mut tv = db_vivo.abrir_qualificada(nome)?;
-
             let posicao = td.eventos()?;
             let vivos = tv.eventos()?;
-            let mut reaplicados = 0u64;
-            let mut pulados = 0u64;
-            let mut ultimo: Option<i64> = None;
-            let mut parou: Option<String> = None;
 
             // Pedido 706: a copia e mais velha que o que o diario vivo ainda
             // guarda -- o expurgo levou o trecho entre ela e o agora (e o
@@ -1408,79 +1456,265 @@ impl Servidor {
             } else {
                 Self::diario_vivo_continua(&mut td, &mut tv, posicao, vivos)
             };
-            match continua {
-                Ok(()) => {
-                    let mut pos = posicao;
-                    'tabela: while pos < vivos {
-                        let lote = tv.diario_com_imagem(pos, LOTE)?;
-                        if lote.is_empty() {
-                            break;
-                        }
-                        for (e, imagem) in &lote {
-                            pos += 1;
-                            // O corte de cima, evento a evento. Ver o cabecalho.
-                            if e.carimbo > ate_ms {
-                                pulados += 1;
-                                continue;
-                            }
-                            // O evento reaplicado guarda o carimbo e a origem
-                            // do ORIGINAL, e nao a hora da restauracao: o
-                            // diario e trilha de auditoria, e um restaurado
-                            // que jurasse que tudo aconteceu agora destruiria
-                            // justamente o que se foi buscar nele.
-                            td.forcar_proximo_evento(e.carimbo, e.origem);
+            if continua.is_err() && rompida.is_none() {
+                rompida = Some(filas.len());
+            }
+            filas.push(FilaDoPitr {
+                nome: nome.clone(),
+                td,
+                tv,
+                posicao,
+                alvo: vivos,
+                reaplicados: 0,
+                ultimo: None,
+                parou: continua.err(),
+            });
+        }
+
+        let mut corte: Option<CorteDoPitr> = None;
+        let mut transacoes = 0u64;
+        let mut em_pedacos = 0u64;
+        if let Some(r) = rompida {
+            // Ver «A continuidade que nao confere segura o database INTEIRO».
+            let culpada = filas[r].nome.clone();
+            for (i, f) in filas.iter_mut().enumerate() {
+                if i != r {
+                    f.parou = Some(format!(
+                        "segurada no instante da copia pela tabela {culpada}, cujo \
+                         diario vivo nao continua o da copia: as transacoes que a \
+                         tocaram depois da copia nao se reconhecem mais, e reaplicar \
+                         as outras tabelas sem ela entregaria meia transacao \
+                         (pedido 299)"
+                    ));
+                }
+            }
+            corte = Some(CorteDoPitr {
+                tx: None,
+                motivo: "continuidade",
+                tabela: Some(culpada),
+                carimbo: None,
+            });
+        } else {
+            let alvos: Vec<(u64, u64)> = filas.iter().map(|f| (f.posicao, f.alvo)).collect();
+            let mut juntador =
+                crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
+            loop {
+                match juntador.passo() {
+                    crate::replica::Passo::Puxar { fila, desde } => {
+                        let f = &mut filas[fila];
+                        let lote = f.tv.diario_com_imagem(desde, LOTE)?;
+                        let mut eventos = Vec::with_capacity(lote.len());
+                        let mut ruim = None;
+                        for (k, (e, imagem)) in lote.into_iter().enumerate() {
                             // O irmao do `replicar` (pedido 344): a imagem do
                             // diario vivo leva o externo marcado selado com a
                             // chave do `.reg` VIVO, e quem tem essa chave e o
                             // `tv`. Abrir por ele deixa o restaurado selar com
                             // a dele, em vez de depender de os dois arquivos
                             // ainda dividirem o sal.
-                            let aplicado = tv.imagem_para_o_fio(imagem).and_then(|i| {
-                                // O diario e DESTE servidor: a recusa da
-                                // replica sem cofre (pedido 613) nao cabe.
-                                td.reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &i)
-                            });
-                            if let Err(erro) = aplicado {
-                                parou = Some(format!(
-                                    "no evento {pos} do diario ({}): {erro}",
-                                    phxsql_core::datahora::instante_iso(e.carimbo)
-                                ));
-                                break 'tabela;
+                            match f.tv.imagem_para_o_fio(&imagem) {
+                                Ok(i) => eventos.push(crate::replica::EventoRecebido {
+                                    operacao: e.operacao,
+                                    rowid: e.rowid,
+                                    versao: e.versao,
+                                    imagem: i,
+                                    carimbo_ms: e.carimbo,
+                                    origem: e.origem,
+                                    posicao: desde + k as u64,
+                                    tx: e.tx,
+                                }),
+                                Err(erro) => {
+                                    ruim = Some((e.tx, desde + k as u64, e.carimbo, erro));
+                                    break;
+                                }
                             }
-                            reaplicados += 1;
-                            ultimo = Some(e.carimbo);
+                        }
+                        juntador.receber(fila, eventos);
+                        // O evento que nao abre para tudo a partir da
+                        // transacao DELE, em todas as tabelas; o que veio
+                        // antes dele nesta tabela fica na mao.
+                        if let Some((tx, pos, carimbo, erro)) = ruim {
+                            juntador.barrar(tx);
+                            juntador.encerrar(fila);
+                            f.parou = Some(Self::parada_no_evento(pos, carimbo, &erro));
+                            CorteDoPitr::menor(&mut corte, tx, "recusa", &f.nome, carimbo);
                         }
                     }
+                    crate::replica::Passo::Aplicar { grupo, .. } => {
+                        // 1. O relogio: a transacao entra se o MAIOR carimbo
+                        //    dela <= ate. A primeira que nao entra e a
+                        //    barreira.
+                        let mut maior: std::collections::BTreeMap<u64, (i64, usize)> =
+                            std::collections::BTreeMap::new();
+                        for (i, v) in &grupo {
+                            for e in v {
+                                let m = maior.entry(e.tx).or_insert((i64::MIN, *i));
+                                if e.carimbo_ms > m.0 {
+                                    *m = (e.carimbo_ms, *i);
+                                }
+                            }
+                        }
+                        let mut limite: Option<u64> = None;
+                        if let Some((&tx, &(carimbo, i))) =
+                            maior.iter().find(|(_, (c, _))| *c > ate_ms)
+                        {
+                            limite = Some(tx);
+                            CorteDoPitr::menor(&mut corte, tx, "relogio", &filas[i].nome, carimbo);
+                        }
+                        // 2. O ensaio, so do que passou pelo relogio: o que o
+                        //    aplicador recusaria vira a barreira ANTES do
+                        //    primeiro evento.
+                        for (i, v) in &grupo {
+                            let f = &mut filas[*i];
+                            let mut ensaio =
+                                phxsql_store::table::EnsaioDaTabela::do_proprio_diario();
+                            for e in v {
+                                if limite.is_some_and(|l| e.tx >= l) {
+                                    break;
+                                }
+                                if let Err(erro) =
+                                    f.td.ensaiar_evento(e.operacao, e.rowid, &e.imagem, &mut ensaio)
+                                {
+                                    if limite.is_none_or(|l| e.tx < l) {
+                                        limite = Some(e.tx);
+                                    }
+                                    f.parou = Some(Self::parada_no_evento(
+                                        e.posicao + 1,
+                                        e.carimbo_ms,
+                                        &erro,
+                                    ));
+                                    CorteDoPitr::menor(
+                                        &mut corte,
+                                        e.tx,
+                                        "recusa",
+                                        &f.nome,
+                                        e.carimbo_ms,
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                        if let Some(l) = limite {
+                            juntador.barrar(l);
+                        }
+                        // 3. A aplicacao, transacao a transacao na ordem dos
+                        //    ids, cada uma na propria unidade do diario.
+                        let mut ordem: Vec<(usize, crate::replica::EventoRecebido)> = grupo
+                            .into_iter()
+                            .flat_map(|(i, v)| v.into_iter().map(move |e| (i, e)))
+                            .filter(|(_, e)| limite.is_none_or(|l| e.tx < l))
+                            .collect();
+                        ordem.sort_by_key(|(_, e)| e.tx);
+                        let mut corrente: Option<u64> = None;
+                        let mut dentro = false;
+                        for (i, e) in ordem {
+                            if corrente != Some(e.tx) || e.tx == 0 {
+                                phxsql_store::log::fechar_unidade();
+                                phxsql_store::log::abrir_unidade();
+                                phxsql_store::log::adotar_tx_na_unidade(e.tx);
+                                corrente = Some(e.tx);
+                                dentro = false;
+                            }
+                            let f = &mut filas[i];
+                            // O evento reaplicado guarda o carimbo e a origem
+                            // do ORIGINAL, e nao a hora da restauracao: o
+                            // diario e trilha de auditoria, e um restaurado
+                            // que jurasse que tudo aconteceu agora destruiria
+                            // justamente o que se foi buscar nele.
+                            f.td.forcar_proximo_evento(e.carimbo_ms, e.origem);
+                            // O diario e DESTE servidor: a recusa da replica
+                            // sem cofre (pedido 613) nao cabe.
+                            match f
+                                .td
+                                .reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &e.imagem)
+                            {
+                                Ok(_) => {
+                                    if !dentro {
+                                        transacoes += 1;
+                                        dentro = true;
+                                    }
+                                    f.reaplicados += 1;
+                                    f.ultimo = Some(e.carimbo_ms);
+                                }
+                                Err(erro) if dentro => {
+                                    return Err(PhxError::Corrompido(format!(
+                                        "a reaplicacao do diario parou NO MEIO da \
+                                         transacao {} -- {}, {}. O que ja entrou dela \
+                                         nao se desfaz (desfazer devolveria slot), e por \
+                                         isso a restauracao inteira e recusada: nenhum \
+                                         database entra com meia transacao (pedido 299)",
+                                        e.tx,
+                                        f.nome,
+                                        Self::parada_no_evento(e.posicao + 1, e.carimbo_ms, &erro)
+                                    )));
+                                }
+                                Err(erro) => {
+                                    // Nada desta transacao entrou: ela vira a
+                                    // barreira, limpa, como no ensaio.
+                                    juntador.barrar(e.tx);
+                                    f.parou = Some(Self::parada_no_evento(
+                                        e.posicao + 1,
+                                        e.carimbo_ms,
+                                        &erro,
+                                    ));
+                                    CorteDoPitr::menor(
+                                        &mut corte,
+                                        e.tx,
+                                        "recusa",
+                                        &f.nome,
+                                        e.carimbo_ms,
+                                    );
+                                    break;
+                                }
+                            }
+                        }
+                        // A unidade da tomada continua aberta para o resto
+                        // dela, como o `travar_dados` a deixou.
+                        phxsql_store::log::fechar_unidade();
+                        phxsql_store::log::abrir_unidade();
+                    }
+                    crate::replica::Passo::Fim => break,
                 }
-                Err(motivo) => parou = Some(motivo),
             }
+            em_pedacos = juntador.em_pedacos;
+        }
 
-            if reaplicados > 0 {
-                a_sincronizar.push(td);
-            }
-            total += reaplicados;
+        // A resposta por tabela, e o `fsync` guardado para depois da trava. O
+        // punho vivo de cada tabela morre aqui, ainda com a trava na mao.
+        let mut a_sincronizar: Vec<Table> = Vec::new();
+        let mut por_tabela = Vec::new();
+        let mut total = 0u64;
+        for f in filas {
+            total += f.reaplicados;
+            let pulados = f
+                .alvo
+                .saturating_sub(f.posicao)
+                .saturating_sub(f.reaplicados);
             let mut campos = vec![
-                ("tabela", Json::texto_de(nome)),
-                ("reaplicados", Json::de_u64(reaplicados)),
+                ("tabela", Json::texto_de(&f.nome)),
+                ("reaplicados", Json::de_u64(f.reaplicados)),
                 ("pulados", Json::de_u64(pulados)),
                 (
                     "ultimo_carimbo_ms",
-                    match ultimo {
+                    match f.ultimo {
                         Some(c) => Json::Numero(c as f64),
                         None => Json::Nulo,
                     },
                 ),
             ];
-            if let Some(c) = ultimo {
+            if let Some(c) = f.ultimo {
                 campos.push((
                     "ultimo",
                     Json::texto_de(phxsql_core::datahora::instante_iso(c)),
                 ));
             }
-            if let Some(motivo) = parou {
+            if let Some(motivo) = f.parou {
                 campos.push(("parou_em", Json::texto_de(motivo)));
             }
             por_tabela.push(Json::objeto(campos));
+            if f.reaplicados > 0 {
+                a_sincronizar.push(f.td);
+            }
         }
 
         // A TRAVA SAI AQUI, e sai ANTES do `fsync`. Dali para baixo so se
@@ -1516,10 +1750,30 @@ impl Servidor {
                 Json::texto_de(phxsql_core::datahora::instante_iso(ate_ms)),
             ),
             ("reaplicados", Json::de_u64(total)),
+            // Pedido 299, F3: quantas transacoes da origem entraram, e onde a
+            // reaplicacao parou -- a primeira transacao que ficou fora, e por
+            // que (`relogio`: passou do `ate`; `recusa`: o aplicador a
+            // recusaria; `continuidade`: uma tabela segurou tudo no instante
+            // da copia).
+            ("transacoes", Json::de_u64(transacoes)),
+            ("transacoes_em_pedacos", Json::de_u64(em_pedacos)),
+            (
+                "parou_na_transacao",
+                corte.map_or(Json::Nulo, |c| c.para_json()),
+            ),
             ("tabelas", Json::Lista(por_tabela)),
             ("sem_diario_vivo", Json::Lista(sem_diario_vivo)),
             ("novas_na_origem", Json::Lista(novas)),
         ]))
+    }
+
+    /// O `parou_em` de um evento do diario vivo -- uma frase so para o
+    /// ensaio, o aplicador e a imagem que nao abre.
+    fn parada_no_evento(posicao: u64, carimbo: i64, erro: &PhxError) -> String {
+        format!(
+            "no evento {posicao} do diario ({}): {erro}",
+            phxsql_core::datahora::instante_iso(carimbo)
+        )
     }
 
     /// O diario vivo CONTINUA o da copia, ou ja e outro diario?
@@ -1677,4 +1931,78 @@ pub(super) fn corrida_em_panico(panico: &str) -> PhxError {
          segue de pe -- se ela segurava a trava de dados, a trava foi reparada \
          (pedido 502)"
     ))
+}
+
+/// Uma tabela da copia na reaplicacao do PITR -- uma fila do `Juntador`
+/// (pedido 299, F3), com os dois punhos e o que a resposta conta dela.
+struct FilaDoPitr {
+    nome: String,
+    /// A copia, no palco: onde se reaplica.
+    td: Table,
+    /// O vivo: de onde se le o diario.
+    tv: Table,
+    /// Eventos que a copia tem -- de onde a reaplicacao comeca.
+    posicao: u64,
+    /// Eventos que o vivo tinha com a trava na mao -- ate onde ela pode ir.
+    alvo: u64,
+    reaplicados: u64,
+    ultimo: Option<i64>,
+    parou: Option<String>,
+}
+
+/// Onde a reaplicacao do PITR parou: a PRIMEIRA transacao que ficou fora, e
+/// por que -- pedido 299, F3.
+struct CorteDoPitr {
+    /// `None` quando nenhuma transacao chegou a ser vista: a continuidade
+    /// rompida segura tudo desde a copia.
+    tx: Option<u64>,
+    /// `relogio`, `recusa` ou `continuidade`.
+    motivo: &'static str,
+    tabela: Option<String>,
+    carimbo: Option<i64>,
+}
+
+impl CorteDoPitr {
+    /// Guarda o corte de `tx` se ele for o primeiro, ou anterior ao que ja
+    /// havia: a barreira do `Juntador` e a menor, e a resposta diz a mesma.
+    fn menor(
+        corte: &mut Option<CorteDoPitr>,
+        tx: u64,
+        motivo: &'static str,
+        tabela: &str,
+        carimbo: i64,
+    ) {
+        if corte.as_ref().is_some_and(|c| c.tx.is_none_or(|t| t <= tx)) {
+            return;
+        }
+        *corte = Some(CorteDoPitr {
+            tx: Some(tx),
+            motivo,
+            tabela: Some(tabela.to_string()),
+            carimbo: Some(carimbo),
+        });
+    }
+
+    fn para_json(&self) -> Json {
+        let mut campos = vec![
+            // Em texto, como no fio: o id passa de 2^53 e um `f64` o arredondaria.
+            (
+                "tx",
+                self.tx.map_or(Json::Nulo, crate::replica::tx_para_o_fio),
+            ),
+            ("motivo", Json::texto_de(self.motivo)),
+            (
+                "tabela",
+                self.tabela.as_deref().map_or(Json::Nulo, Json::texto_de),
+            ),
+        ];
+        if let Some(c) = self.carimbo {
+            campos.push(("carimbo_ms", Json::Numero(c as f64)));
+            campos.push((
+                "carimbo",
+                Json::texto_de(phxsql_core::datahora::instante_iso(c)),
+            ));
+        }
+        Json::objeto(campos)
+    }
 }

@@ -106,7 +106,7 @@ A regra primordial: **nunca se mata o pai que tem filhos.**
 | **G** | **O `.log` não mudou de versão para a transação existir.** Réplica de qualquer versão aplica sem saber que houve transação | `TRANSACOES.md` §6.1 |
 | **G** | **Cluster com eleição e promoção automática**, provado com três servidores e um SMTP falso na bateria | `CLUSTER.md` §2; parte `cluster` do `provar.py` |
 | **G** | **Escrita na réplica recebe `REDIRECIONA`** (HTTP 421 pelo REST), com o endereço do primário | `REPLICACAO.md` §10; `REST.md` §6 |
-| **G** | **Escrita com quórum, pedida** (pedido 207): `cluster.quorum_minimo` = N faz o commit esperar N réplicas **aplicarem e gravarem em disco** antes do «ok» (zero = desligado, como sempre foi). Espera vencida (`quorum_prazo_ms`, padrão 10.000) **não desfaz** a gravação: responde `alcancado:false` e degrada. Custo medido em loopback, release: **4,010 ms** por commit com 1 de 2 contra **0,305 ms** sem (13,15×); teto dito de ~237 commits/s no servidor inteiro, porque a espera segura a trava de dados. A atomicidade de um commit entre tabelas continua não atravessando o fio (§2.4) | `REPLICACAO.md` §19; `bancada/quorum/`; pedidos 207 e 299 |
+| **G** | **Escrita com quórum, pedida** (pedido 207): `cluster.quorum_minimo` = N faz o commit esperar N réplicas **aplicarem e gravarem em disco** antes do «ok» (zero = desligado, como sempre foi). Espera vencida (`quorum_prazo_ms`, padrão 10.000) **não desfaz** a gravação: responde `alcancado:false` e degrada. Custo medido em loopback, release: **4,010 ms** por commit com 1 de 2 contra **0,305 ms** sem (13,15×); teto dito de ~237 commits/s no servidor inteiro, porque a espera segura a trava de dados. A atomicidade de um commit entre tabelas atravessa o fio desde o pedido 299 (§2.4) | `REPLICACAO.md` §19; `bancada/quorum/`; pedidos 207 e 299 |
 
 ### 1.6 Segurança
 
@@ -153,20 +153,20 @@ Esta seção é a que separa contrato de folheto. Nada aqui é esquecimento.
 
 ### 2.1 **Não é «ACID compliant»** — e a frase não se escreve
 
-**N** — A folha de marca afirma *ACID compliant*. **Não se afirma, e a razão não é o padrão `READ COMMITTED`** (o PostgreSQL se declara ACID com o mesmo padrão; correção do dono em 24/09/2026, pedido 337): é que a prova de cada letra no nível declarado, e a atomicidade entre tabelas através do fio da réplica (pedido 299), ainda não fecham.
+**N** — A folha de marca afirma *ACID compliant*. **Não se afirma, e a razão não é o padrão `READ COMMITTED`** (o PostgreSQL se declara ACID com o mesmo padrão; correção do dono em 24/09/2026, pedido 337): é que a prova de cada letra no nível declarado ainda não fecha. A atomicidade entre tabelas através do fio da réplica (pedido 299) fechou em 10/10/2026.
 A resposta precisa, letra por letra, está em `TRANSACOES.md` §12:
 
 | letra | estado | com precisão |
 |---|---|---|
 | **A** | **entregue** | o conjunto de escrita é aplicado inteiro ou não é aplicado; o `ROLLBACK` não deixa slot, rowid nem evento |
 | **I** | **entregue, com o nome certo; leitura repetível pela trava desde 16/09/2026, para quem pede** | por padrão, escrita serializável por tabela, leitura confirmada e não bloqueante, **sem leitura repetível**. Quem pede `"leitura_repetivel": true` (ou `BEGIN ISOLATION LEVEL REPEATABLE READ`) fecha a leitura não repetível e o fantasma pela trava compartilhada (`ACID.md` §4.5). **Não é ANSI SERIALIZABLE** em regime nenhum, e não pode ser chamado assim |
-| **C** | **entregue dentro da transação** (ACID-C, 15/09/2026) | tipo, unicidade, gatilhos e integridade referencial são conferidos. A lacuna que esta linha trazia — *a cascata do `ao_alterar` escreve em tabela que a transação não declarou* — **fechou**: cada filha entra no conjunto de escrita, o `ROLLBACK` a alcança, o `COMMIT` a conta e a leitura da própria transação a vê (`ACID.md` §2.4 e §3.3). **O que continua fora:** a atomicidade de um commit entre tabelas não atravessa o fio da réplica (§2.4 abaixo, pedido 299) |
+| **C** | **entregue dentro da transação** (ACID-C, 15/09/2026) | tipo, unicidade, gatilhos e integridade referencial são conferidos. A lacuna que esta linha trazia — *a cascata do `ao_alterar` escreve em tabela que a transação não declarou* — **fechou**: cada filha entra no conjunto de escrita, o `ROLLBACK` a alcança, o `COMMIT` a conta e a leitura da própria transação a vê (`ACID.md` §2.4 e §3.3). **Fechou em 10/10/2026 (pedido 299):** a atomicidade de um commit entre tabelas atravessa o fio da réplica — a transação chega inteira ou não chega, inclusive no PITR, e a parada é por transação; o limite declarado é a tabela fora do alcance do usuário da replicação, que chega só com a parte visível, como nos três maduros |
 | **D** | **entregue, e configurável** | com `durabilidade: sistema` quem abre mão é quem configurou, e está escrito |
 
 **N** — **A 1.0 não usará a expressão «ACID compliant» em documento técnico**, com
 ou sem qualificação, e isso é regra da casa e não estilo. O que se pode escrever,
 e é verdade: *atomicidade e durabilidade entregues, isolamento entregue no nível
-declarado acima, consistência conferida na origem e dentro da transação — e a atomicidade de um commit entre tabelas **não** atravessa o fio da réplica.*
+declarado acima, consistência conferida na origem e dentro da transação, e a atomicidade de um commit entre tabelas atravessando o fio da réplica, com o limite do escopo declarado.*
 
 ### 2.2 Onde a decisão foi **NÃO conferir** — escolhas, não buracos
 

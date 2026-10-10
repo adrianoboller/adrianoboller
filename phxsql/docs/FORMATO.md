@@ -1974,14 +1974,28 @@ arquivo. Com 64 bytes ele bateria no fim de um volume recém-criado e diria
 o `.reason` e o `.lgpd` continuam na 2/3: o id de transação é assunto da
 replicação, e só o diário da tabela viaja pelo fio.
 
-**O volume velho continua velho.** Um volume gravado na 2 ou na 3 abre, é lido
-e **continua recebendo eventos de 44 bytes, com `tx` zero**, até a paginação
-virar — o arquivo não se reescreve, pelo mesmo motivo da cifra. O volume
-seguinte nasce na 4. Consequência honesta: uma tabela que ainda escreve num
-volume anterior ao 676 não tem a garantia de transação inteira na réplica
-enquanto não virar de volume (a réplica aplica o evento de `tx` zero sozinho,
-como sempre aplicou). Como ainda não há dado em produção, isso só alcança
-bancos de desenvolvimento.
+**O volume velho continua velho — e não recebe mais evento (pedido 299, R4,
+10/10/2026).** Um volume gravado na 2 ou na 3 abre e é lido como sempre, com
+`tx` zero nos eventos dele; o arquivo não se reescreve, pelo mesmo motivo da
+cifra. O que mudou: o **primeiro evento novo** que chegaria a ele **vira o
+volume** — o velho fecha como está e o evento entra no seguinte, que nasce na
+4, com o id da tomada. Até o 299 o volume velho recebia eventos de 44 bytes
+com `tx` zero até a paginação virar, e a tomada que gravava numa tabela velha
+e numa nova chegava **partida** à réplica (o «commit misto» do 684, que só se
+contava). Nenhum byte muda de lugar: é a mesma virada de sempre, antecipada.
+
+| Diário | O que vira |
+|---|---|
+| sem paginação (o padrão) | o `t.log` ativo fecha como `t#NNN.log` (o formato da trilha do pedido 706) e nasce um `t.log` novo na 4 |
+| paginado | nasce o volume `N + 1` na 4 |
+| paginado já no teto de volumes (`max_arquivos`) | **não vira**: o evento entra no velho com `tx` zero, como antes, e o commit misto continua contado em `replicacao_estado.id_de_transacao.commits_mistos` |
+| volume velho **vazio** | não vira: não há o que partir |
+
+A virada acontece na primeira **escrita**, e não no arranque do servidor: o
+efeito é o mesmo (nenhuma tomada grava num volume sem id), sem abrir toda
+tabela no arranque, e vale também para quem grava sem o servidor (a CLI, a
+FFI). A consequência é a da migração para a 4 (acima): depois da primeira
+escrita, o binário anterior ao 676 não abre mais a tabela.
 
 ### A marca do evento devido (pedido 498)
 

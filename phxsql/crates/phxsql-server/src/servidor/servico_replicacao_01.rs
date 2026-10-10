@@ -705,6 +705,7 @@ impl Servidor {
             self.anotar_estado(&origem.nome, |e| {
                 avisar = !p.com_tx && !e.origem_sem_id_de_transacao;
                 e.origem_sem_id_de_transacao = !p.com_tx;
+                e.anotar_fora_do_escopo(&database, p.fora_do_escopo);
             });
             if avisar {
                 eprintln!(
@@ -1657,6 +1658,13 @@ impl Servidor {
                     juntador.receber(fila, eventos);
                 }
                 crate::replica::Passo::Aplicar { grupo, inteiro } => {
+                    // Pedido 299, R6: a ultima transacao que este grupo leva,
+                    // se ele a leva inteira.
+                    let ultima = if inteiro {
+                        crate::replica::maior_tx(&grupo)
+                    } else {
+                        0
+                    };
                     if !inteiro && juntador.em_pedacos > avisadas {
                         avisadas = juntador.em_pedacos;
                         eprintln!(
@@ -1678,7 +1686,10 @@ impl Servidor {
                         origem,
                         &mut marcas,
                     ) {
-                        Ok(Grupo::Aplicado { n }) => aplicados += n,
+                        Ok(Grupo::Aplicado { n }) => {
+                            aplicados += n;
+                            self.anotar_estado(origem, |e| e.anotar_inteira(database, ultima));
+                        }
                         // A posicao local andou com a trava solta: o que esta
                         // na mao foi pedido de outra posicao. A rodada sai, e
                         // a proxima recomeca de onde a replica esta.

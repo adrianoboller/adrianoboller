@@ -146,6 +146,10 @@ impl Servidor {
         let mut aplicados = 0u64;
         for database in databases {
             let p = crate::replica::posicao(&mut cliente, &database)?;
+            // Pedido 299, R5: o irmao do pull.
+            self.anotar_estado(&origem.nome, |e| {
+                e.anotar_fora_do_escopo(&database, p.fora_do_escopo)
+            });
             if !p.com_imagem {
                 return Err(PhxError::Esquema(format!(
                     "o outro lado ({}) esta sem replicacao.imagem_da_linha: no \
@@ -538,10 +542,17 @@ impl Servidor {
                         Err(e) => break Err(e),
                     }
                 }
-                crate::replica::Passo::Aplicar { grupo, .. } => {
+                crate::replica::Passo::Aplicar { grupo, inteiro } => {
                     for (i, _) in &grupo {
                         filas[*i].tocada = true;
                     }
+                    // Pedido 299, R6: o irmao do pull, contado so quando
+                    // nenhuma tabela do grupo parou no conflito.
+                    let ultima = if inteiro {
+                        crate::replica::maior_tx(&grupo)
+                    } else {
+                        0
+                    };
                     let (n, paradas) = match self.aplicar_grupo_bidi(
                         database,
                         &filas,
@@ -554,6 +565,9 @@ impl Servidor {
                         Err(e) => break Err(e),
                     };
                     aplicados += n;
+                    if paradas.is_empty() {
+                        self.anotar_estado(&origem.nome, |e| e.anotar_inteira(database, ultima));
+                    }
                     // O conflito de unicidade PARA o par nesta tabela, e a
                     // posicao NAO anda -- e a mesma decisao escrita no
                     // `worker.c` do PostgreSQL: nao avancar a origem e o que

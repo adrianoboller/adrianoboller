@@ -383,6 +383,26 @@ replaneja a árvore, acha a filha que a lista não reescreve e recusa o `COMMIT`
 com zero gravado. O fantasma continua acontecendo para quem **lê** (§4.1); o que
 não acontece mais é ele sobreviver como órfã.
 
+**E a cascata — e todo commit entre tabelas — atravessando a réplica (pedido
+299, fechado em 10/10/2026).** Esta seção dizia, por omissão, o que a lei da
+marca dizia por escrito: que a atomicidade de um commit entre tabelas «não
+atravessa o fio da réplica». O commit, com a cascata dentro, chega à réplica
+como **uma** transação: o evento leva o id da tomada (`.log` v4, pedido 676),
+a réplica junta as tabelas pelo id e aplica o grupo inteiro sob uma tomada,
+com a marca `.tx` dela completando para a frente depois de uma queda (682,
+698–701), o ensaio barrando antes do primeiro evento o que o aplicador
+recusaria (F1), e a parada — continuidade rompida, divergência — segurando a
+transação inteira e as seguintes, e não a tabela (F2). O mesmo motor serve o
+quórum, o bidirecional e, desde a F3, o PITR. Provado pelo soquete: a tupla
+`(vendas, itens, pagamentos)` nunca sai de `(0,0,0)` ou `(1,N,1)` com o fio
+derrubado, com `SIGKILL` no meio do grupo, com erro de dado injetado, com
+escrita local na réplica e no restaurado com o `ate` dentro do commit
+(`docs/REPLICACAO.md` §8.2). **O que fica de fora, declarado:** a tabela fora do
+alcance do usuário da replicação não viaja, e a transação que a toca chega com
+a parte visível — os três maduros fazem igual (R5); a carga acima do teto de
+64 MiB que só uma origem anterior ao 685 consegue mandar chega em pedaços,
+contada.
+
 ### 2.5 A conferência antes da marca — pedido 448, 24/09/2026
 
 **O que valia antes, medido no HEAD pelos testes do pedido:** a chave

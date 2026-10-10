@@ -599,7 +599,13 @@ impl Servidor {
                     atras = true;
                     break Ok(());
                 }
-                crate::replica::Passo::Aplicar { grupo, .. } => {
+                crate::replica::Passo::Aplicar { grupo, inteiro } => {
+                    // Pedido 299, R6: o irmao do pull.
+                    let ultima = if inteiro {
+                        crate::replica::maior_tx(&grupo)
+                    } else {
+                        0
+                    };
                     match self.aplicar_grupo_da_replica(
                         database,
                         &mut filas,
@@ -607,7 +613,9 @@ impl Servidor {
                         origem,
                         &mut marcas,
                     ) {
-                        Ok(Grupo::Aplicado { .. }) => {}
+                        Ok(Grupo::Aplicado { .. }) => {
+                            self.anotar_estado(origem, |e| e.anotar_inteira(database, ultima));
+                        }
                         // Pedido 299, F2, o irmao do pull: a continuidade que
                         // rompe recusa o grupo inteiro, e o database fica
                         // para o pull -- que diz a ruptura e monta a barreira

@@ -767,6 +767,31 @@ fn posicao_esconde_a_tabela_negada() {
     );
 }
 
+/// **Pedido 299, R5 -- o `posicao` diz QUANTAS tabelas ficaram fora do
+/// escopo**, para a replica dizer que a transacao que tocar uma delas chega
+/// so com a parte visivel. O numero, e nunca o nome: o irmao de cima confere
+/// que a `folha` nao vaza.
+///
+/// Com a contagem tirada (o defeito reposto), o campo volta zero.
+#[test]
+fn posicao_conta_as_tabelas_fora_do_escopo() {
+    let dir = dir_temp("posic-escopo");
+    let (s, ses) = servidor(
+        &dir,
+        cadastro(
+            r#"{"*":{"ler":true,"replicar":true,
+                     "tabelas":{"folha":{"ler":true}}}}"#,
+        ),
+    );
+    let r = pede(&s, &ses, r#""op":"posicao","database":"b""#).unwrap();
+    assert_eq!(
+        r.inteiro_ou(crate::replica::CAMPO_FORA_DO_ESCOPO, -1),
+        1,
+        "{}",
+        r.escrever()
+    );
+}
+
 /// E o teste que mais importa nas duas mudancas acima: a REPLICA de sempre
 /// nao tem regra por tabela, e continua vendo tudo. Guarda nova que quebra
 /// quem ja funcionava nao e guarda, e estrago.
@@ -781,6 +806,7 @@ fn sem_regra_de_tabela_posicao_e_sequencias_veem_tudo() {
         panic!("posicao sem o objeto tabelas: {}", r.escrever());
     };
     assert_eq!(pares.len(), 2, "posicao perdeu uma tabela");
+    assert_eq!(r.inteiro_ou(crate::replica::CAMPO_FORA_DO_ESCOPO, -1), 0);
 }
 
 /// `duplicar_tabela` cria uma tabela com o nome do campo `destino`, e o

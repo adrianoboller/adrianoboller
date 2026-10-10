@@ -557,12 +557,31 @@ pub struct EnsaioDaTabela {
     nascidas: u64,
     /// Rowids que uma exclusao do grupo ja teria liberado.
     livres: HashSet<RowId>,
+    /// O diario ensaiado e DESTE servidor (o PITR, pedido 299, F3): a recusa
+    /// da tabela marcada sem cofre (613) nao cabe. Ver
+    /// [`EnsaioDaTabela::do_proprio_diario`].
+    proprio_diario: bool,
 }
 
 impl EnsaioDaTabela {
     pub fn novo(unicidade: bool) -> EnsaioDaTabela {
         EnsaioDaTabela {
             unicidade,
+            ..EnsaioDaTabela::default()
+        }
+    }
+
+    /// O ensaio da reaplicacao do PROPRIO diario -- o PITR (pedido 299, F3).
+    ///
+    /// A mesma excecao do [`Table::reaplicar_evento_do_proprio_diario`], e
+    /// pelo mesmo motivo: o vivo e o restaurado moram no mesmo disco, com o
+    /// mesmo cofre (ou a falta dele). Sem ela o ensaio recusaria o grupo que
+    /// o aplicador aceita, e um servidor sem cofre deixaria de restaurar toda
+    /// tabela com anexo marcado. Sem unicidade: o palco e copia fiel, e
+    /// ninguem escreveu nele por fora.
+    pub fn do_proprio_diario() -> EnsaioDaTabela {
+        EnsaioDaTabela {
+            proprio_diario: true,
             ..EnsaioDaTabela::default()
         }
     }
@@ -8401,7 +8420,9 @@ impl Table {
         imagem: &[u8],
         ensaio: &mut EnsaioDaTabela,
     ) -> Result<()> {
-        self.recusar_marcada_sem_cofre()?;
+        if !ensaio.proprio_diario {
+            self.recusar_marcada_sem_cofre()?;
+        }
         if operacao != Operacao::Exclusao && imagem.is_empty() {
             return Err(PhxError::Esquema(format!(
                 "evento de {} no rowid {rowid} veio sem imagem: o source gravou o diario com `imagem_da_linha` desligada",

@@ -329,7 +329,7 @@ reaplicação lê o diário vivo a partir dali.
 Começar por «o primeiro evento cujo carimbo passou da hora da cópia» seria
 pedir ao relógio a única coisa que ele não sabe responder — ver a seguir.
 
-### 7.3 O carimbo NÃO é monotônico, e por isso o filtro é evento a evento
+### 7.3 O carimbo NÃO é monotônico, e por isso o corte é por TRANSAÇÃO, na ordem dos ids
 
 Medido, num diário de três eventos:
 
@@ -344,15 +344,44 @@ no outro servidor (`Table::forcar_proximo_evento`), porque é esse instante que
 decide o conflito lá. E há a segunda causa, mais banal: o `agora_ms` é relógio
 de parede (`SystemTime::now`), que anda para trás num acerto de NTP.
 
-Consequência de projeto: **o corte de cima é aplicado evento a evento**
-(`carimbo <= ate`), e nunca «corte a lista no primeiro que passou». Cortar por
-posição jogaria fora os eventos bons que vêm depois de um carimbo torto.
+Até 10/10/2026 a consequência tirada daqui era **cortar evento a evento**
+(`carimbo <= ate`). Ela tinha o furo que o pedido 299 (R3) achou: um commit de
+três tabelas cujo relógio atravessa um milissegundo, com o `ate` dentro dele,
+voltava como **meia venda** — medido `(vendas, itens, pagamentos) = (1, 1, 0)`
+no restaurado.
 
-E pular um evento no meio **não é silencioso**: o `aplicar_evento` confere o
-rowid, então pular uma inclusão e aplicar a seguinte para na hora, com «o
-source diz rowid 2 e aqui saiu 1». Isso vira o `parou_em` da resposta, em vez
-de gravar a linha errada no slot errado. *A guarda que já existia para a
-réplica é a mesma que segura o PITR.*
+**Desde a F3 do pedido 299 o PITR passa pelo `replica::Juntador`**, o mesmo
+motor que junta as tabelas na réplica: o diário vivo de cada tabela é uma
+fila, a transação chega inteira (de todas as tabelas que ela tocou), e a regra
+é a do PostgreSQL, que «só considera parar antes de um registro de COMMIT»
+(`xlogrecovery.c`):
+
+- a transação **entra** se o **maior** carimbo dela for `<= ate` (o *commit
+  time*);
+- a **primeira** que não entra vira a **barreira**: ela e todas as de id maior
+  ficam fora, em todas as tabelas.
+
+A ordem é a do **id de transação** — estritamente crescente e semeado do
+disco —, não a do relógio: o carimbo torto do bidirecional só decide se a
+transação dele passa do `ate`, nunca onde ela mora na fila. Por que barreira e
+não «pule a que passou e siga»: pular uma transação e aplicar a seguinte que
+toca a mesma tabela para no rowid (a inclusão pulada não gerou o slot), e a
+seguinte entraria pela metade nas outras tabelas dela.
+
+O evento sem id (volume 2/3, anterior ao 676) é uma transação de um evento, e
+sem id não há ordem entre tabelas: o primeiro deles que passa do `ate` para
+tudo dali em diante — perde restauração, nunca entrega metade.
+
+E o que o aplicador recusaria é visto **antes**: o grupo passa pelo mesmo
+ensaio da réplica fiel (`Table::ensaiar_evento`, com a exceção do 613 — o
+diário é deste servidor), e a transação que pararia vira a barreira sem nada
+dela gravado. O que escapa do ensaio e falha **no meio** de uma transação
+derruba a restauração inteira: desfazer a metade devolveria slot, e o palco
+nunca entra na raiz com meia transação.
+
+Cada transação reaplicada grava sob a **própria unidade** do diário e adota o
+id da original: o restaurado sai com as mesmas fronteiras do vivo (o F10 do
+⏸ 717).
 
 ### 7.4 O que ele NÃO refaz, e por quê
 
@@ -428,11 +457,19 @@ resposta.
 | imagem desligada | `replicacao.imagem_da_linha` está `false`: o evento diz que o rowid 42 mudou e não diz para quê |
 | origem sumiu | o database de dentro do backup não existe mais neste servidor |
 
-**Por tabela, na resposta** — a continuidade só se confere com o diário da
-cópia na mão, ou seja, com a cópia já extraída. Ela sai **nomeada** no
-`parou_em`, dizendo que aquela tabela ficou no instante da cópia. Ela não
-aborta porque não é fracasso da restauração: é uma tabela que ficou onde
-estava, e quem pediu precisa saber **qual**.
+**Na resposta, segurando o database inteiro** — a continuidade só se confere
+com o diário da cópia na mão, ou seja, com a cópia já extraída. A tabela cujo
+diário vivo não continua o da cópia sai **nomeada** no `parou_em` dela, e
+desde o pedido 299 (F3) ela **segura todas as outras no instante da cópia**:
+as transações que a tocaram depois da cópia são exatamente as que o diário
+recriado ou expurgado não mostra mais, e reaplicar as outras tabelas sem ela
+entregaria meia transação. As outras dizem «segurada pela tabela X» no
+`parou_em`, e `parou_na_transacao.motivo` é `continuidade`. Não aborta: o
+database entra no instante da cópia, dito.
+
+A tabela da cópia que não existe mais viva (`sem_diario_vivo`) **não** segura:
+apagar tabela não deixa evento, e as transações que a tocaram depois da cópia
+entram sem ela. É o limite escrito, e a resposta a nomeia.
 
 ### 7.9 A reaplicação acontece no PALCO, e o `fsync` fica fora da trava
 
@@ -488,6 +525,11 @@ tabela que nem foi tocada.
    "copia_ms": 1787972404132, "copia": "2026-08-29 03:00:04,132",
    "ate_ms": 1788015600000,   "ate":   "2026-08-29 15:00:00,000",
    "reaplicados": 2,
+   "transacoes": 2, "transacoes_em_pedacos": 0,
+   "parou_na_transacao": {"tx": "117257231622356992", "motivo": "relogio",
+                          "tabela": "clientes",
+                          "carimbo_ms": 1788015600001,
+                          "carimbo": "2026-08-29 15:00:00,001"},
    "tabelas": [{"tabela": "clientes", "reaplicados": 2, "pulados": 1,
                 "ultimo_carimbo_ms": 1788015000123,
                 "ultimo": "2026-08-29 14:50:00,123"}],
@@ -497,7 +539,13 @@ tabela que nem foi tocada.
 
 `pulados` são os eventos que existem no diário e ficaram **depois** do corte —
 e é o número que prova que o corte aconteceu. `parou_em` só aparece quando
-aquela tabela não foi até o fim, com o motivo escrito.
+aquela tabela não foi até o fim, com o motivo escrito. `parou_na_transacao` é
+a primeira transação que ficou fora (`null` quando o diário inteiro coube), e
+o motivo: `relogio` (passou do `ate`), `recusa` (o ensaio ou o aplicador a
+recusaria) ou `continuidade` (uma tabela segurou tudo no instante da cópia).
+O `tx` vai em texto, como no fio da réplica: ele passa de 2^53, e um número
+JSON o arredondaria. (O exemplo acima é ilustrativo — os números de uma
+corrida saem do `tests`/`testes_pitr`, não daqui.)
 
 `ate` é **inclusivo**: quem pede «até as 15:00:00» quer o que aconteceu às
 15:00:00,000. O instante que a tela mostra é o instante que se digita de volta.

@@ -805,14 +805,17 @@ fn o_restaurado_so_aparece_com_o_diario_ja_reaplicado() {
 /// grande atravessa o milissegundo sozinha (a prova confere que atravessou, e
 /// dobra a venda se nao). O corte vai no carimbo do PRIMEIRO item.
 ///
-/// Vermelho medido no HEAD `edbd6180`: `(1, k, 0)` no restaurado, com
-/// `0 < k < itens`. O conserto e a F3 do desenho
-/// (`docs/propostas/atomicidade-na-replica-299.md` §6: o PITR pelo
-/// `Juntador`, a transacao entra se o MAIOR carimbo dela <= `ate`) -- fora
-/// da frente F1+F2, e por isso a prova fica `ignore` ate la: ela e o aceite
-/// da F3, e roda com `--ignored`.
+/// Vermelho medido no HEAD `edbd6180` (`(1, 15, 0)`) e de novo no
+/// `2e10a6b7`, antes da F3: `(1, 1, 0)` -- a venda e o primeiro item, sem o
+/// pagamento. O conserto e a F3 do desenho
+/// (`docs/propostas/atomicidade-na-replica-299.md` §6): o PITR passa pelo
+/// `Juntador`, e a transacao entra se o MAIOR carimbo dela <= `ate`. Com o
+/// corte por evento reposto, ela volta a cair (guarda
+/// `pitr-corta-evento-a-evento` do catalogo).
+///
+/// Alem da tupla, a prova confere que a resposta DIZ o corte: a transacao
+/// que ficou fora, pelo relogio.
 #[test]
-#[ignore = "RED do R3 (pedido 299): o conserto e a F3, fora da frente F1+F2"]
 fn o_pitr_nao_restaura_meia_venda() {
     let dir = DirTemp::novo("pitr-meia-venda");
     let s = servidor(&dir.0, true);
@@ -881,7 +884,7 @@ fn o_pitr_nao_restaura_meia_venda() {
     );
     let corte = carimbos[0];
 
-    pede(&format!(
+    let resposta = pede(&format!(
         r#""op":"restaurar_backup","origem":"{zip}","database":"b_meia","ate_ms":{corte}"#
     ));
     let conta = |tabela: &str| {
@@ -903,4 +906,205 @@ fn o_pitr_nao_restaura_meia_venda() {
         carimbos[0],
         carimbos[carimbos.len() - 1]
     );
+    let parada = resposta
+        .campo("pitr")
+        .and_then(|p| p.campo("parou_na_transacao"))
+        .cloned()
+        .unwrap_or(Json::Nulo);
+    assert_eq!(
+        parada.texto_ou("motivo", ""),
+        "relogio",
+        "a resposta nao diz o corte: {}",
+        resposta.escrever()
+    );
+}
+
+/// O despacho de um pedido com sessao de transacao -- o `BEGIN`/`COMMIT`
+/// precisa da ligacao, que o `executar` nao tem.
+fn pedir(s: &Arc<Servidor>, corpo: &str) -> Json {
+    let mut ses = Sessao {
+        ligacao: 2990,
+        ip: "127.0.0.1".into(),
+        ..Sessao::default()
+    };
+    let (_, _, r) = s.despachar(
+        &format!(r#"{{"token":"t",{corpo}}}"#),
+        &mut ses,
+        "127.0.0.1",
+    );
+    r.unwrap_or_else(|e| panic!("{corpo}: {e}"))
+}
+
+/// Os ids de transacao do diario de `database/tabela`, em ordem.
+fn txs_do_diario(s: &Arc<Servidor>, database: &str, tabela: &str) -> Vec<u64> {
+    let trava = s.travar_dados().unwrap();
+    let db = trava.abrir_database(database).unwrap();
+    let mut t = db.abrir_qualificada(tabela).unwrap();
+    let n = t.eventos().unwrap();
+    t.diario(0, n).unwrap().iter().map(|e| e.tx).collect()
+}
+
+fn criar_duas(s: &Arc<Servidor>, a: &str, b: &str) {
+    pedir(s, r#""op":"criar_database","database":"b""#);
+    for tabela in [a, b] {
+        pedir(
+            s,
+            &format!(
+                r#""op":"criar_tabela","database":"b","tabela":"{tabela}",
+                   "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}}],
+                   "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}}]"#
+            ),
+        );
+    }
+}
+
+/// **Pedido 299, F3 -- a continuidade rompida numa tabela segura o database
+/// INTEIRO no instante da copia.**
+///
+/// `c` e apagada e recriada depois do backup; `d` so cresce. As transacoes
+/// que tocaram a `c` velha entre a copia e a exclusao nao se reconhecem mais
+/// -- e uma delas podia ter tocado a `d` tambem. Reaplicar a `d` sozinha era
+/// o comportamento de ate 10/10/2026, e e a meia venda pela porta da
+/// continuidade.
+///
+/// Com o defeito reposto (a parada por tabela: as outras andam), a `d` volta
+/// com `reaplicados: 1` e o teste cai na primeira asserção.
+#[test]
+fn a_tabela_que_nao_continua_segura_as_outras_no_instante_da_copia() {
+    let dir = DirTemp::novo("pitr-segura-todas");
+    let s = servidor(&dir.0, true);
+    criar_duas(&s, "c", "d");
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"c","linha":{"id":1}"#,
+    );
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"d","linha":{"id":1}"#,
+    );
+    passa_um_ms();
+    let zip = backup(&s, &dir.0);
+    passa_um_ms();
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"d","linha":{"id":2}"#,
+    );
+    s.executar(
+        "excluir_tabela",
+        &ped(r#"{"database":"b","tabela":"c","confirmar":"c"}"#),
+        &Sessao::default(),
+    )
+    .unwrap();
+    pedir(
+        &s,
+        r#""op":"criar_tabela","database":"b","tabela":"c",
+           "colunas":[{"nome":"id","tipo":"Int8","obrigatoria":true}],
+           "indices":[{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}]"#,
+    );
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"c","linha":{"id":9}"#,
+    );
+
+    let r = s
+        .executar(
+            "restaurar_backup",
+            &ped(&format!(
+                r#"{{"origem":"{zip}","database":"b_segura","ate":"2099-01-01T00:00:00Z"}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+    let pitr = r.campo("pitr").unwrap();
+    let tabelas = pitr.campo("tabelas").and_then(Json::lista).unwrap();
+    let d = tabelas
+        .iter()
+        .find(|t| t.texto_ou("tabela", "") == "d")
+        .unwrap();
+    assert_eq!(
+        d.campo("reaplicados").and_then(Json::inteiro),
+        Some(0),
+        "a d andou sem a c: {}",
+        pitr.escrever()
+    );
+    assert!(
+        d.texto_ou("parou_em", "")
+            .contains("segurada no instante da copia pela tabela"),
+        "{}",
+        d.escrever()
+    );
+    let parada = pitr.campo("parou_na_transacao").unwrap();
+    assert_eq!(parada.texto_ou("motivo", ""), "continuidade");
+    assert_eq!(parada.texto_ou("tabela", ""), "c");
+    let conta = |tabela: &str| {
+        s.executar(
+            "varrer",
+            &ped(&format!(r#"{{"database":"b_segura","tabela":"{tabela}"}}"#)),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("linhas")
+        .and_then(Json::lista)
+        .map_or(0, <[Json]>::len)
+    };
+    assert_eq!((conta("c"), conta("d")), (1, 1), "o instante da copia");
+}
+
+/// **Pedido 299, F3 (o F10 do ⏸ 717) -- o restaurado guarda um id por
+/// transacao, o MESMO da original.**
+///
+/// Uma venda de duas tabelas num `COMMIT`, e um autocommit depois. No
+/// diario vivo a venda tem um id nas duas tabelas e o autocommit outro; o
+/// restaurado tem de sair igual, senao uma replica tirada dele recebe a
+/// venda juntada com o que veio depois -- ou partida.
+///
+/// Com o defeito reposto (a reaplicacao inteira sob a unidade da tomada),
+/// os tres eventos saem com UM id so, novo, e a comparacao cai.
+#[test]
+fn o_restaurado_guarda_o_id_de_cada_transacao() {
+    let dir = DirTemp::novo("pitr-um-id-por-transacao");
+    let s = servidor(&dir.0, true);
+    criar_duas(&s, "vendas", "pagamentos");
+    passa_um_ms();
+    let zip = backup(&s, &dir.0);
+    passa_um_ms();
+    pedir(&s, r#""op":"begin","database":"b""#);
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"vendas","linha":{"id":1}"#,
+    );
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"pagamentos","linha":{"id":1}"#,
+    );
+    pedir(&s, r#""op":"commit""#);
+    pedir(
+        &s,
+        r#""op":"inserir","database":"b","tabela":"vendas","linha":{"id":2}"#,
+    );
+
+    let r = s
+        .executar(
+            "restaurar_backup",
+            &ped(&format!(
+                r#"{{"origem":"{zip}","database":"b_ids","ate":"2099-01-01T00:00:00Z"}}"#
+            )),
+            &Sessao::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        r.campo("pitr")
+            .and_then(|p| p.campo("transacoes"))
+            .and_then(Json::inteiro),
+        Some(2),
+        "{}",
+        r.escrever()
+    );
+    let vendas = txs_do_diario(&s, "b", "vendas");
+    let pagamentos = txs_do_diario(&s, "b", "pagamentos");
+    assert_eq!(vendas.len(), 2);
+    assert_eq!(vendas[0], pagamentos[0], "a venda e uma transacao so");
+    assert_ne!(vendas[0], vendas[1]);
+    assert_eq!(txs_do_diario(&s, "b_ids", "vendas"), vendas);
+    assert_eq!(txs_do_diario(&s, "b_ids", "pagamentos"), pagamentos);
 }

@@ -1493,6 +1493,7 @@ impl Servidor {
         let db = _trava.abrir_database(&database)?;
         let com_esquema = p.booleano_ou("com_esquema", false);
         let mut posicoes = Vec::new();
+        let mut fora_do_escopo = 0u64;
         for nome in db.todas_as_tabelas()? {
             // `posicao` tambem varre a base inteira sem campo `tabela`, e o
             // portao geral so ve o de cima -- a mesma familia do `juntar`, do
@@ -1506,6 +1507,7 @@ impl Servidor {
             // `replicar` na base e nenhuma regra por tabela, e continua vendo
             // todas -- e uma sessao interna (sem usuario) tambem.
             if !replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
+                fora_do_escopo += 1;
                 continue;
             }
             let mut t = db.abrir_qualificada(&nome)?;
@@ -1595,6 +1597,15 @@ impl Servidor {
             // que a origem e velha e diz isso.
             ("tx_no_diario", Json::Bool(true)),
             ("tabelas", Json::Objeto(posicoes)),
+            // Pedido 299, R5: QUANTAS tabelas deste database ficaram fora do
+            // alcance de quem pede -- o numero, e nunca o nome (o nome seria
+            // o que a regra de tabela existe para nao mostrar). A replica o
+            // diz como limite: a transacao que toca uma delas chega la so
+            // com a parte visivel.
+            (
+                crate::replica::CAMPO_FORA_DO_ESCOPO,
+                Json::de_u64(fora_do_escopo),
+            ),
             ("usuario", Json::de_u64(sessao.id() as u64)),
         ]))
     }

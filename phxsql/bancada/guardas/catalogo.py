@@ -588,6 +588,7 @@ GUARDAS = [
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
         "trecho": """            if !replica_alcanca(sessao.usuario.as_ref(), &database, &nome) {
+                fora_do_escopo += 1;
                 continue;
             }
             let mut t = db.abrir_qualificada(&nome)?;
@@ -21831,9 +21832,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "volta."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
-        "trecho": """                                td.reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &i)""",
+        "trecho": """                                .reaplicar_evento_do_proprio_diario(e.operacao, e.rowid, &e.imagem)""",
         "troca": """                                // DEFEITO REPOSTO (613): a restauracao recusa como replica.
-                                td.aplicar_evento(e.operacao, e.rowid, &i)""",
+                                .aplicar_evento(e.operacao, e.rowid, &e.imagem)""",
         "pacote": "phxsql-server",
         "alvo": ["--lib"],
         "caem": [
@@ -26560,7 +26561,7 @@ fn anotar(""",
         ],
         "seguem": [
             "log::tests::evento_adulterado_falha_no_crc",
-            "log::tests::o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes",
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_vira_no_primeiro_evento",
         ],
     },
     {
@@ -26655,7 +26656,7 @@ fn anotar(""",
             "log::tests::o_maior_id_vai_ao_cabecalho_e_o_volume_novo_o_herda",
         ],
         "seguem": [
-            "log::tests::o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes",
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_vira_no_primeiro_evento",
         ],
     },
     {
@@ -26680,7 +26681,7 @@ fn anotar(""",
             "log::tests::o_commit_que_mistura_volume_sem_id_e_com_id_e_contado",
         ],
         "seguem": [
-            "log::tests::o_diario_da_versao_2_continua_abrindo_e_crescendo_com_44_bytes",
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_vira_no_primeiro_evento",
         ],
     },
     {
@@ -29697,6 +29698,189 @@ fn anotar(""",
             "a_inclusao_que_diverge_nao_grava_no_rowid_errado",
         ],
         "seguem": ["a_tabela_rompida_segura_a_transacao_inteira_e_as_seguintes"],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-pitr-corta-evento-a-evento",
+        "titulo": "o PITR voltava a cortar evento a evento pelo carimbo: um commit de varias tabelas com o `ate` no meio do relogio dele restaurava meia venda (pedido 299, F3)",
+        "porque": (
+            "pedido 299, R3: medido no HEAD 2e10a6b7, (vendas, itens, "
+            "pagamentos) = (1, 1, 0) no restaurado -- a venda e um item, sem o "
+            "pagamento. O conserto passa o PITR pelo Juntador da replica e deixa "
+            "a transacao entrar so se o MAIOR carimbo dela <= ate. Reposto o "
+            "filtro por evento, a tupla volta a sair partida."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
+        "trecho": """                            .filter(|(_, e)| limite.is_none_or(|l| e.tx < l))
+""",
+        "troca": """                            // DEFEITO REPOSTO (299, R3): o corte evento a evento.
+                            .filter(|(_, e)| e.carimbo_ms <= ate_ms)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_pitr::o_pitr_nao_restaura_meia_venda"],
+        "seguem": ["servidor::testes_pitr::restaura_ate_um_instante_no_meio_do_diario"],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-pitr-rompida-so-para-a-tabela",
+        "titulo": "a continuidade rompida no PITR voltava a parar so a tabela: as outras andavam, e as transacoes que tocaram a rompida entravam pela metade (pedido 299, F3)",
+        "porque": (
+            "pedido 299, F3: o diario recriado ou expurgado e o que nao mostra "
+            "mais quem tocou a tabela depois da copia, entao a barreira possivel "
+            "e a primeira transacao depois da copia -- o database inteiro fica "
+            "no instante dela. Reposta a parada por tabela, a outra tabela volta "
+            "com reaplicados 1."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
+        "trecho": """            if continua.is_err() && rompida.is_none() {
+                rompida = Some(filas.len());
+            }
+            filas.push(FilaDoPitr {
+                nome: nome.clone(),
+                td,
+                tv,
+                posicao,
+                alvo: vivos,
+""",
+        "troca": """            // DEFEITO REPOSTO (299, F3): a rompida nao segura ninguem, e so
+            // ela fica no instante da copia.
+            let _ = rompida.is_none();
+            filas.push(FilaDoPitr {
+                nome: nome.clone(),
+                td,
+                tv,
+                posicao,
+                alvo: if continua.is_err() { posicao } else { vivos },
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_pitr::a_tabela_que_nao_continua_segura_as_outras_no_instante_da_copia",
+        ],
+        "seguem": [
+            "servidor::testes_pitr::diario_que_nao_continua_a_copia_para_nomeando_a_tabela",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-pitr-uma-unidade-so",
+        "titulo": "o PITR voltava a gravar a reaplicacao inteira sob a unidade da tomada: o restaurado saia com UM id de transacao para tudo (pedido 299, F3; o F10 do 717)",
+        "porque": (
+            "pedido 299, F3 / 717 F10: o diario do restaurado tem de guardar as "
+            "fronteiras do vivo, senao uma replica tirada dele recebe a venda "
+            "juntada com o que veio depois. Cada transacao reaplicada abre a "
+            "propria unidade e adota o id da original. Reposto, os eventos saem "
+            "com um id so, novo."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
+        "trecho": """                                phxsql_store::log::fechar_unidade();
+                                phxsql_store::log::abrir_unidade();
+                                phxsql_store::log::adotar_tx_na_unidade(e.tx);
+""",
+        "troca": """                                // DEFEITO REPOSTO (299, F3): uma unidade so.
+                                let _ = e.tx;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_pitr::o_restaurado_guarda_o_id_de_cada_transacao"],
+        "seguem": ["servidor::testes_pitr::o_pitr_nao_restaura_meia_venda"],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-volume-sem-id-nao-vira",
+        "titulo": "o volume 2/3 do diario voltava a receber evento novo sem id: a tomada que tocava tabela velha e nova partia o commit na replica (pedido 299, R4)",
+        "porque": (
+            "pedido 299, R4: o commit misto do 684 so se contava. A virada "
+            "forcada abre o volume 4 no primeiro evento que chegaria ao velho, "
+            "e o evento leva o id da tomada. Reposto, o evento da tabela velha "
+            "sai com tx zero."
+        ),
+        "arquivo": "crates/phxsql-store/src/log.rs",
+        "trecho": """        if !atual.com_tx && !vazio {
+""",
+        "troca": """        // DEFEITO REPOSTO (299, R4): o volume velho nao vira.
+        if false && !atual.com_tx && !vazio {
+""",
+        "pacote": "phxsql-store",
+        "alvo": ["--lib"],
+        "caem": [
+            "log::tests::o_volume_sem_id_vira_e_o_commit_sai_com_um_id_so",
+            "log::tests::o_diario_da_versao_2_continua_abrindo_e_vira_no_primeiro_evento",
+        ],
+        "seguem": ["log::tests::o_commit_que_mistura_volume_sem_id_e_com_id_e_contado"],
+    },
+    {
+        "id": "299-ultima-transacao-calada",
+        "titulo": "a replica voltava a nao dizer em que transacao da origem esta: `ultima_transacao_inteira` vazio (pedido 299, R6)",
+        "porque": (
+            "pedido 299, R6: os tres maduros expoem a ultima transacao aplicada "
+            "(remote_lsn, gtid_slave_pos, gtid_executed). A anotacao e UMA "
+            "funcao, chamada pela replica fiel, pelo quorum e pelo "
+            "bidirecional. Reposta a anotacao calada, as duas provas pelo "
+            "soquete esgotam o prazo."
+        ),
+        "arquivo": "crates/phxsql-server/src/bidirecional.rs",
+        "trecho": """        if tx == 0 {
+            return;
+        }
+        let atual = self
+            .ultima_transacao_inteira""",
+        "troca": """        // DEFEITO REPOSTO (299, R6): a ultima transacao nao se anota.
+        if tx == 0 || tx > 0 {
+            return;
+        }
+        let atual = self
+            .ultima_transacao_inteira""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "ultima-transacao-na-replica"],
+        "caem": [
+            "a_replica_fiel_diz_a_ultima_transacao_que_entrou_inteira",
+            "o_bidirecional_diz_a_ultima_transacao_que_entrou_inteira",
+        ],
+        "seguem": [],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-escopo-parcial-calado",
+        "titulo": "o `posicao` voltava a esconder a tabela fora do escopo sem dizer QUANTAS: a replica recebia a transacao parcial sem saber que o escopo a parte (pedido 299, R5)",
+        "porque": (
+            "pedido 299, R5: replicar um subconjunto de tabelas entrega meia "
+            "transacao nos tres maduros (publicacao por tabela, replicate-do-"
+            "table) -- limite declarado, so contar e dizer. A origem diz o "
+            "numero, e nunca o nome. Reposto, o contador fica zero."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_telemetria_01.rs",
+        "trecho": """                fora_do_escopo += 1;
+""",
+        "troca": """                // DEFEITO REPOSTO (299, R5): a escondida nao se conta.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_direito_por_tabela::posicao_conta_as_tabelas_fora_do_escopo"],
+        "seguem": [
+            "servidor::testes_direito_por_tabela::posicao_esconde_a_tabela_negada",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-pitr-ensaia-como-replica",
+        "titulo": "o ensaio do PITR recusava como a replica sem cofre: o servidor sem cofre deixava de restaurar toda tabela com anexo marcado (pedido 299, F3; o irmao do 613)",
+        "porque": (
+            "pedido 299, F3: o ensaio do grupo entrou ANTES do aplicador, e o "
+            "aplicador da restauracao tem a excecao do 613 (o diario e do "
+            "proprio servidor). O ensaio e o irmao -- chama as mesmas "
+            "conferencias na mesma ordem -- e precisa da mesma excecao. "
+            "Reposto o ensaio de replica, a tabela para no instante da copia "
+            "com «Falta o cofre»."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_backup_01.rs",
+        "trecho": """phxsql_store::table::EnsaioDaTabela::do_proprio_diario();""",
+        "troca": """phxsql_store::table::EnsaioDaTabela::novo(false); // DEFEITO REPOSTO (299/613)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["servidor::testes_pitr::restaurar_sem_cofre_reaplica_o_anexo_marcado"],
+        "seguem": ["servidor::testes_pitr::restaura_ate_um_instante_no_meio_do_diario"],
         "prazo": 1800,
     },
 ]

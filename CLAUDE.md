@@ -372,9 +372,13 @@ O que existe hoje:
   READ` no SQL, a via (b) do `docs/SOMBRA.md` §5b; a Sombra/MVCC continua
   parada).
 
-E o que ainda não fecha: a atomicidade de um commit entre tabelas **não
-atravessa o fio da réplica** (preço declarado, pedido 299). A conclusão
-prática não mudou: **não se escreve *ACID compliant* em documento técnico
+E o que fechou em 10/10/2026 (pedido 299, decisão do dono de atualizar esta
+lei): a atomicidade de um commit entre tabelas **atravessa o fio da réplica**
+— a transação chega inteira ou não chega, com o fio caído, na queda do
+processo, no erro de dado e no PITR, e onde algo para, a parada é por
+transação e não por tabela. O limite que fica, declarado: a tabela fora do
+alcance do usuário da replicação chega só com a parte visível, como nos três
+maduros. A conclusão prática não mudou: **não se escreve *ACID compliant* em documento técnico
 enquanto a prova de cada letra, no nível declarado, não existir**, e
 `SERIALIZABLE` não se reivindica sem prova. Ver `docs/ACID.md`
 §2.4/§3.3/§4.4 e `docs/PENDENCIAS.md` #189, #246 e #337.

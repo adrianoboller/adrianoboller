@@ -903,6 +903,23 @@ pub struct EstadoOrigem {
     /// replica aplica evento a evento, e a venda de varias tabelas nao chega
     /// inteira.
     pub origem_sem_id_de_transacao: bool,
+    /// "database" -> `(tx, quando_ms)`: a ULTIMA transacao da origem que
+    /// esta replica aplicou INTEIRA, desde o arranque -- pedido 299, R6. E o
+    /// `remote_lsn` do `pg_replication_origin_status`, o `gtid_slave_pos` do
+    /// MariaDB e o `gtid_executed` do MySQL, daqui: o numero que responde «em
+    /// que transacao da origem esta replica esta». Em memoria, e nao no
+    /// disco, de proposito: a posicao de cada tabela ja e o diario dela, e
+    /// depois da recuperacao toda posicao esta numa fronteira de transacao.
+    pub ultima_transacao_inteira: BTreeMap<String, (u64, i64)>,
+    /// "database" -> quantas tabelas dele a origem NAO serve a esta replica,
+    /// porque estao fora do alcance do usuario da replicacao -- pedido 299,
+    /// R5. Limite declarado, e nao defeito: a transacao que toca uma delas
+    /// chega aqui so com a parte visivel, como numa publicacao por tabela do
+    /// PostgreSQL ou num `replicate-do-table` do MySQL e do MariaDB. So o
+    /// database com alguma aparece. Conta TABELAS, e nao transacoes: saber
+    /// quais transacoes tocaram a tabela escondida exigiria a origem ler o
+    /// diario dela para quem nao pode le-lo.
+    pub tabelas_fora_do_escopo: BTreeMap<String, u64>,
 }
 
 impl EstadoOrigem {
@@ -938,6 +955,33 @@ impl EstadoOrigem {
             crate::previsao::Vigia::SoTendencia
         } else {
             crate::previsao::Vigia::Completo
+        }
+    }
+
+    /// A transacao `tx` da origem entrou INTEIRA em `database` -- pedido 299,
+    /// R6. Zero (evento sem id) nao diz transacao nenhuma e nao entra; o
+    /// numero so anda para a frente.
+    pub fn anotar_inteira(&mut self, database: &str, tx: u64) {
+        if tx == 0 {
+            return;
+        }
+        let atual = self
+            .ultima_transacao_inteira
+            .get(database)
+            .map_or(0, |u| u.0);
+        if tx > atual {
+            self.ultima_transacao_inteira
+                .insert(database.to_string(), (tx, crate::agora_ms()));
+        }
+    }
+
+    /// Quantas tabelas de `database` a origem deixou de fora por escopo --
+    /// pedido 299, R5. Zero tira o database do mapa.
+    pub fn anotar_fora_do_escopo(&mut self, database: &str, n: u64) {
+        if n == 0 {
+            self.tabelas_fora_do_escopo.remove(database);
+        } else {
+            self.tabelas_fora_do_escopo.insert(database.to_string(), n);
         }
     }
 
@@ -1043,6 +1087,35 @@ impl EstadoOrigem {
             (
                 "origem_sem_id_de_transacao",
                 Json::Bool(self.origem_sem_id_de_transacao),
+            ),
+            (
+                "ultima_transacao_inteira",
+                Json::Objeto(
+                    self.ultima_transacao_inteira
+                        .iter()
+                        .map(|(k, &(tx, ms))| {
+                            (
+                                k.clone(),
+                                Json::objeto(vec![
+                                    ("tx", crate::replica::tx_para_o_fio(tx)),
+                                    (
+                                        "quando",
+                                        Json::texto_de(phxsql_core::datahora::instante_iso(ms)),
+                                    ),
+                                ]),
+                            )
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                crate::replica::CAMPO_FORA_DO_ESCOPO,
+                Json::Objeto(
+                    self.tabelas_fora_do_escopo
+                        .iter()
+                        .map(|(k, &n)| (k.clone(), Json::de_u64(n)))
+                        .collect(),
+                ),
             ),
             (
                 "falhas_de_rede_seguidas",

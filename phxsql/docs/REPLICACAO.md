@@ -197,12 +197,18 @@ número por tabela e pede o que falta:
 
 Equivale ao `SOURCE_AUTO_POSITION=1`, sem campo novo no formato.
 
-**Por que por tabela e não por servidor?** Porque o PhxSql ainda não tem
-transações entre tabelas. Sem transação, não existe ordem global que precise
-ser preservada — e uma sequência por tabela deixa as tabelas replicarem em
-paralelo. Quando as transações entrarem, entra junto um número de sequência do
-database inteiro; o campo reservado do cabeçalho do evento já está guardado
-para isso.
+**Por que por tabela e não por servidor?** A posição continua por tabela, e
+continua sem GTID — mas a frase que estava aqui («o PhxSql ainda não tem
+transações entre tabelas… o campo reservado do cabeçalho já está guardado
+para isso») envelheceu duas vezes: as transações entraram (pedido 162), e os
+bytes reservados foram gastos pela `origem` do bidirecional. A ordem entre
+tabelas que a transação pede entrou **sem** posição global: o evento ganhou o
+**id de transação** (`.log` versão 4, pedido 676, o cabeçalho do evento
+cresceu de 44 para 52 bytes), e o `posicao` — contado com a trava de escrita da
+origem na mão — é a fronteira de commit. A §8.2 conta como a réplica junta as
+tabelas pelo id e aplica a transação inteira; aqui fica o princípio, que não
+mudou: **o evento N é a posição N, por tabela**, e nenhum número global
+precisou nascer.
 
 ---
 
@@ -408,6 +414,13 @@ restauração a um instante (`docs/RESTAURACAO.md` § 7) reaplica o diário vivo
 sobre a cópia recém-restaurada **pelo mesmo método**, com a mesma marca de
 `como_replica` — e isso foi escolha, não coincidência: *o segundo caminho é o
 que um dia esquece uma conferência*.
+
+Desde o pedido 299 (F3, 10/10/2026) o PITR também puxa pelo mesmo
+`replica::Juntador` da réplica: o diário vivo de cada tabela é uma fila, a
+transação chega inteira, entra se o **maior** carimbo dela ≤ `ate` (o *commit
+time* do PostgreSQL) e passa pelo mesmo ensaio. Até ali o corte era evento a
+evento, e um commit de três tabelas com o `ate` no meio do relógio dele
+voltava como meia venda — medido `(1, 1, 0)`.
 
 Consequência a escrever antes que alguém a descubra pelo defeito: **quem mexer
 no `aplicar_evento` mexe nos dois**. A guarda do rowid, a recusa do evento sem
@@ -797,8 +810,11 @@ KiB.
 `replicacao_estado.id_de_transacao`: o relógio que recua entre dois arranques
 (o piso do disco o segura — `docs/FORMATO.md` §4 — e `recuos_do_relogio`
 conta) e o commit que grava numa tabela ainda em volume 2/3 (sem id) e noutra
-já na versão 4 (`commits_mistos`): a réplica recebe esse commit partido, e só
-a virada do volume velho fecha isso.
+já na versão 4 (`commits_mistos`). **Desde o pedido 299 (R4) a virada do
+volume velho é forçada**: o primeiro evento que chegaria a um volume 2/3 abre
+o seguinte, já na 4, e leva o id da tomada (`docs/FORMATO.md` §4). O contador
+fica, para o único caso que sobra — o diário paginado já no teto de volumes,
+que não tem para onde virar.
 
 **Origem e réplica sobem juntas.** A réplica anterior ao 676 ignora o campo
 `tx` e continua aplicando evento a evento (não há como ela recusar: ela não
@@ -808,14 +824,51 @@ no log, deixando `origem_sem_id_de_transacao: true` no `replicacao_estado`. E
 o binário anterior que abrir um `.log` da versão 4 — uma cópia, um backup
 restaurado — recusa com `VERSAO_NAO_SUPORTADA` nomeando o arquivo.
 
+**O que mudou depois do 676, e fechou o pedido 299 (10/10/2026):** onde algo
+PARA, a parada é por **transação**, e não por tabela — os três maduros param o
+fluxo, e não a tabela (o `worker.c` do PostgreSQL, a thread SQL do MySQL e do
+MariaDB). O desenho e as hipóteses mortas estão em
+`docs/propostas/atomicidade-na-replica-299.md`.
+
+- **A queda do processo** no meio de um grupo não deixa metade: o grupo grava
+  a marca `.tx` antes do primeiro evento, e o arranque completa **para a
+  frente** antes de a porta abrir (pedidos 682, 698, 699, 701). A frase que
+  estava aqui («a queda deixa o grupo pela metade até a próxima rodada») era
+  de antes deles.
+- **A continuidade rompida** numa tabela (escrita local na réplica, tabela de
+  outra história) segura a transação que a toca **e todas as seguintes**, em
+  todas as tabelas; as de antes que não a tocam entram (`Juntador::barrar`,
+  F2). A parada vai em `replicacao_estado.origens.<o>.transacoes_paradas`,
+  com o `tx`, as tabelas e o motivo.
+- **A divergência determinística** (rowid que não bate, carimbo que não
+  confere, linha que não existe) é vista **antes do primeiro evento**: a
+  réplica fiel ensaia o grupo (`Table::ensaiar_evento`, sem reservar slot) e,
+  se algum evento pararia, nenhum entra (F1). O aplicador confere o rowid da
+  inclusão **antes** de gravar (achado R2' da F0: conferia depois, e a linha
+  ficava no slot errado). O que escapa do ensaio (E/S, a partição por letra)
+  cai no aplicador como antes — o cinto.
+- **O PITR passa pelo mesmo `Juntador`** (F3): a transação entra se o maior
+  carimbo dela ≤ `ate`, a primeira que não entra é a barreira, e o restaurado
+  guarda o id de cada transação (§6, «O `aplicar_evento` ganhou um segundo
+  dono»; `docs/RESTAURACAO.md` §7).
+- **A réplica diz onde está** (R6): `ultima_transacao_inteira.<database>` no
+  `replicacao_estado`, com o `tx` (em texto, como no fio) e o instante — a
+  última transação da origem aplicada inteira desde o arranque, o
+  `remote_lsn`/`gtid_slave_pos`/`gtid_executed` daqui. Em memória: a posição
+  de cada tabela já é o diário dela.
+
+**O limite que fica, declarado (R5):** a tabela fora do alcance do usuário da
+replicação não viaja, e a transação que a toca chega **só com a parte
+visível** — como a publicação por tabela do PostgreSQL e o `replicate-do-table`
+do MySQL e do MariaDB (os três convergem, aceite automático). A origem diz
+QUANTAS ficaram de fora (`posicao.tabelas_fora_do_escopo`, o número e nunca o
+nome) e a réplica mostra em `replicacao_estado.origens.<o>.tabelas_fora_do_escopo`.
+Conta tabelas, e não transações: saber quais transações tocaram a escondida
+pediria à origem ler, para quem não pode lê-la, o diário dela. O lote barrado
+pela cifra do 342 na entrega do quórum é o mesmo limite.
+
 **O que NÃO mudou, e é de propósito:**
 
-- o `aplicar_evento` que falha no meio do grupo (rowid que não bate — a
-  réplica já divergiu) deixa o que entrou antes dele: é o *fail-stop* de
-  sempre, e desfazer pediria a Sombra, parada por decisão do dono;
-- a **queda do processo** da réplica no meio de um grupo deixa o grupo pela
-  metade no disco até a próxima rodada completá-lo — a garantia comprada aqui é
-  a do fio, não a da queda;
 - **os caminhos irmãos juntaram-se no pedido 681** (08/10/2026), pelo MESMO
   `replica::Juntador`: o lote do quórum (`aplicar_lotes_do_quorum`) junta os
   lotes de uma resposta por database e aplica cada grupo por
@@ -2449,7 +2502,10 @@ volta: o master voltou ao síncrono em **2,02 s**, e o commit seguinte confirmou
   `fsync` local acontece a cada lote — o ganho de não sincronizar até o
   `BULKINSERT(false)` some com o quórum ligado;
 - a atomicidade **entre tabelas** atravessa o fio do PULL desde o pedido 676
-  (§8.2), mas **não** o lote do quórum, que ainda se aplica tabela a tabela;
+  e o lote do quórum desde o 681, pelo mesmo `Juntador` (§8.2); a frase que
+  estava aqui («não o lote do quórum, que ainda se aplica tabela a tabela»)
+  era de antes do 681. O lote **barrado** na entrega (alcance do usuário,
+  cifra do 342) continua não indo — o limite declarado do R5 do pedido 299;
 - a recusa da **época velha** tem prova só da regra pura
   (`aceita_a_epoca`); o chamador no laço da réplica não tem prova pelo
   soquete — montar um master de época velha vivo pede uma partição.

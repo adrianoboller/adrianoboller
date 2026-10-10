@@ -573,7 +573,17 @@ pub struct PosicaoDoSource {
     /// O primeiro evento que a origem ainda guarda de cada tabela -- pedido
     /// 706. Zero, ou ausente numa origem anterior, e «tudo desde o comeco».
     pub bases: Vec<(String, u64)>,
+    /// Quantas tabelas do database a origem deixou de fora porque o usuario
+    /// da replicacao nao as alcanca -- pedido 299, R5. Zero numa origem
+    /// anterior ao campo.
+    pub fora_do_escopo: u64,
 }
+
+/// O nome do campo que diz quantas tabelas ficaram fora do escopo -- pedido
+/// 299, R5. UM nome para quem escreve (o `posicao` da origem), quem le (a
+/// replica) e quem mostra (`replicacao_estado`): dois literais divergiriam no
+/// dia em que alguem renomeasse um.
+pub const CAMPO_FORA_DO_ESCOPO: &str = "tabelas_fora_do_escopo";
 
 /// Le a resposta de `posicao`.
 pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource> {
@@ -610,6 +620,7 @@ pub fn posicao(cliente: &mut Cliente, database: &str) -> Result<PosicaoDoSource>
         numero_servidor: u16::try_from(r.inteiro_ou("numero_servidor", 0)).unwrap_or(0),
         tabelas: saida,
         bases,
+        fora_do_escopo: r.inteiro_ou(CAMPO_FORA_DO_ESCOPO, 0).max(0) as u64,
     })
 }
 
@@ -776,6 +787,20 @@ pub fn eventos_do_fio(lista: Option<&Json>) -> Result<Vec<EventoRecebido>> {
 // 685: a ORIGEM recusa no COMMIT a transacao que passaria dele, e a constante
 // tem de ser UMA so dos dois lados. Reexportados para os chamadores de sempre.
 pub use phxsql_store::log::{CUSTO_DO_EVENTO, TETO_DA_TRANSACAO};
+
+/// O maior id de transacao de um grupo do [`Juntador`] -- a ultima
+/// transacao da origem que ele leva. Zero quando so ha evento sem id.
+///
+/// UMA conta para quem diz «a ultima transacao aplicada inteira» (pedido 299,
+/// R6) nos tres caminhos que aplicam grupo (a replica fiel, o quorum e o
+/// bidirecional).
+pub fn maior_tx(grupo: &[(usize, Vec<EventoRecebido>)]) -> u64 {
+    grupo
+        .iter()
+        .flat_map(|(_, v)| v.iter().map(|e| e.tx))
+        .max()
+        .unwrap_or(0)
+}
 
 /// Quantos eventos uma tomada da trava aplica de uma vez, somando as
 /// transacoes inteiras que cabem: o mesmo [`LOTE`] de antes, para que o
@@ -971,6 +996,17 @@ impl Juntador {
             Some(_) => f.proximo - f.eventos.len() as u64,
             None => f.proximo,
         }
+    }
+
+    /// A tabela `fila` nao se puxa mais nesta rodada, e o que JA esta na mao
+    /// dela fica -- pedido 299, F3. E a irma do [`Juntador::largar`] para
+    /// quem parou num evento conhecido: os eventos de antes dele sao de
+    /// transacoes MENORES que a barreira (cada diario esta em ordem de id), e
+    /// descarta-los deixaria essas transacoes entrarem sem esta tabela -- a
+    /// meia venda pela porta do proprio conserto. Quem chama poe a barreira
+    /// no id do evento que parou ([`Juntador::barrar`]).
+    pub fn encerrar(&mut self, fila: usize) {
+        self.filas[fila].esgotada = true;
     }
 
     /// A tabela rompeu (a continuidade nao confere): o que esta na mao dela
