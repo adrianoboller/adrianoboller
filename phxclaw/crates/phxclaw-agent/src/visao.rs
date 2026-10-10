@@ -988,6 +988,10 @@ pub struct TranscribeTool {
     /// Provedor ElevenLabs (scribe) no lugar do whisper, no MESMO `transcrever` -- que e o
     /// que a conversa `phxclaw voz` chama. `Err`: escolhido e indisponivel (sem chave).
     pub elevenlabs: Option<Result<crate::elevenlabs::OuvidoElevenLabs, String>>,
+    /// O perfil de voz, no MESMO ponto de decisao do `speak` e do `voice_list`: em `Offline`
+    /// a transcricao pela nuvem recusa a rede por nome, antes de tocar o provedor. O motor
+    /// local (whisper) nao depende do perfil -- ele ja e offline.
+    pub perfil: crate::voz::PerfilDeVoz,
 }
 
 impl TranscribeTool {
@@ -996,15 +1000,15 @@ impl TranscribeTool {
     pub fn do_ambiente(raiz_do_agente: &Path) -> Self {
         let var = crate::config::texto_de;
         let perfil = crate::voz::PerfilDeVoz::ler(var("voz.perfil").as_deref());
-        let elevenlabs = match (perfil, var("voz.stt.provedor").as_deref()) {
-            // Perfil offline FORCA o whisper local: a nuvem configurada e ignorada, a rede nao
-            // e chamada. E o mesmo perfil que, na fala, recusa a ElevenLabs por nome.
-            (crate::voz::PerfilDeVoz::Offline, _) => None,
-            (_, None | Some("whisper")) => None,
-            (_, Some("elevenlabs")) => Some(crate::elevenlabs::OuvidoElevenLabs::do_ambiente(
+        // O perfil nao escolhe o provedor; quem escolhe e `voz.stt.provedor`. Offline nao e
+        // tratado aqui: ele recusa a NUVEM no `transcrever` (por nome, como o speak), e o
+        // whisper local roda offline sem reparo. Tratar offline aqui silenciava a recusa.
+        let elevenlabs = match var("voz.stt.provedor").as_deref() {
+            None | Some("whisper") => None,
+            Some("elevenlabs") => Some(crate::elevenlabs::OuvidoElevenLabs::do_ambiente(
                 raiz_do_agente,
             )),
-            (_, Some(o)) => Some(Err(format!(
+            Some(o) => Some(Err(format!(
                 "{} desconhecido: {o} (whisper ou elevenlabs)",
                 crate::config::variavel("voz.stt.provedor")
             ))),
@@ -1014,6 +1018,7 @@ impl TranscribeTool {
             model: var("voz.whisper.modelo").map(PathBuf::from),
             model_sha256: var("voz.whisper.modelo_sha256"),
             elevenlabs,
+            perfil,
         }
     }
 }
@@ -1096,6 +1101,14 @@ impl TranscribeTool {
         idioma: Option<String>,
         prazo: Duration,
     ) -> Result<String, ToolError> {
+        // Offline recusa a NUVEM por nome, antes de conferir ou tocar o provedor -- o mesmo
+        // ponto de decisao do `speak`/`voice_list`. O whisper local (elevenlabs None) nao
+        // passa por aqui: ele ja e offline, entao segue mesmo no perfil offline.
+        if self.elevenlabs.is_some()
+            && let Some(e) = self.perfil.recusa_rede("elevenlabs")
+        {
+            return Err(e);
+        }
         self.configurado()?;
         if let Some(Ok(el)) = &self.elevenlabs {
             let el = el.clone();

@@ -52,10 +52,10 @@ pub const CSP: &str = concat!(
     "form-action 'self'"
 );
 
-/// O que a pagina pode pedir ao navegador. Medido: a tela nao usa camera, microfone nem
-/// localizacao (a voz roda no agente, nao no navegador); a area de transferencia fica
-/// porque o phx-grid copia a selecao e o IDE cola no terminal.
-pub const PERMISSOES: &str = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), \
+/// O que a pagina pode pedir ao navegador. Medido: a Conversa grava voz pela propria tela
+/// (getUserMedia/MediaRecorder), entao o microfone fica liberado SO para a propria origem
+/// (`(self)`, nunca `*` nem terceiros). Camera e localizacao seguem negadas: a tela nao usa.
+pub const PERMISSOES: &str = "camera=(), microphone=(self), geolocation=(), payment=(), usb=(), \
 serial=(), hid=(), midi=(), display-capture=()";
 
 /// Os cabecalhos de seguranca de toda resposta deste servidor, num lugar so. Rota que ja

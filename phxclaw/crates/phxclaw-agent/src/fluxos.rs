@@ -2317,7 +2317,7 @@ velhas a passos novos; rode de novo"
         mae.orcamento.clone(),
         mae.gasto.clone().unwrap_or_default(),
     );
-    mae.status = TaskStatus::Running;
+    mae.mudar_estado(TaskStatus::Running);
     mae.error = None;
     mae.question = None;
     agente
@@ -3094,7 +3094,9 @@ velhas a passos novos; rode de novo"
         sem_orcamento = Some(e.0);
     }
     mae.gasto = Some(conta.gasto());
-    mae.status = if parou_esperando {
+    // Pelo ponto unico (`Task::mudar_estado`): a transicao final da tarefa-mae entra no
+    // historico, senao a trilha do Kanban perde o ultimo salto (de `Running` para o desfecho).
+    let desfecho = if parou_esperando {
         TaskStatus::AwaitingInput
     } else if sem_orcamento.is_some() {
         TaskStatus::BudgetExceeded
@@ -3103,6 +3105,7 @@ velhas a passos novos; rode de novo"
     } else {
         TaskStatus::Failed
     };
+    mae.mudar_estado(desfecho);
     if parou_esperando {
         // O alicerce da SP000029: `AwaitingInput` com a pergunta em `question` e o que a
         // API, a tela e os canais ja sabem mostrar. A definicao vai para a pasta da tarefa:

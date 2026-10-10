@@ -158,6 +158,51 @@ async fn sem_token_e_401_e_com_token_a_tarefa_roda_e_o_artefato_baixa() {
 }
 
 #[tokio::test]
+async fn historico_e_progresso_no_fio() {
+    // A trilha de estados sai do caminho real do motor (nao de um helper chamado a parte):
+    // uma transicao que escape do `mudar_estado` some desta lista.
+    let (base, _) = subir(vec![]).await;
+    let id = cli()
+        .post(format!("{base}/v1/tasks"))
+        .bearer_auth(TOKEN)
+        .json(&json!({"objective": "escreva um relatorio"}))
+        .send()
+        .await
+        .unwrap()
+        .json::<Value>()
+        .await
+        .unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let t = esperar(&base, &id, "completed").await;
+    let estados: Vec<&str> = t["historico"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| h["estado"].as_str().unwrap())
+        .collect();
+    assert_eq!(estados, vec!["pending", "running", "completed"], "{t}");
+    assert!(!t["historico"][0]["em"].as_str().unwrap().is_empty());
+    // Sem plano e concluida: progresso medido = 100.
+    assert_eq!(t["progresso"], 100);
+    // A lista (TaskSummary, o que o kanban le) carrega os mesmos campos.
+    let l: Value = cli()
+        .get(format!("{base}/v1/tasks"))
+        .bearer_auth(TOKEN)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let item = &l.as_array().unwrap()[0];
+    assert_eq!(item["progresso"], 100);
+    assert_eq!(item["historico"].as_array().unwrap().len(), 3);
+    assert!(item["ajustes"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn plan_mode_espera_aprovacao_aceita_edicao_e_so_entao_executa() {
     let (base, _) = subir(vec![]).await;
     let id = cli()
@@ -596,10 +641,15 @@ fn a_csp_da_tela_fecha_script_em_linha_objeto_base_e_moldura() {
     let k = phxclaw_agent::config::catalogo_do_config::por_chave("ui.bloquear_inspecao")
         .expect("ui.bloquear_inspecao no catalogo");
     assert_eq!(k.padrao, Some("true"));
-    // Camera, microfone e localizacao fechados: a tela nao usa (medido no fonte da UI).
-    for f in ["camera=()", "microphone=()", "geolocation=()"] {
+    // Camera e localizacao fechadas (a tela nao usa); o microfone fica liberado SO para a
+    // propria origem, porque a Conversa grava voz pela tela (getUserMedia), e nunca aberto.
+    for f in ["camera=()", "geolocation=()"] {
         assert!(phxclaw_agent::pwa::PERMISSOES.contains(f), "{f}");
     }
+    assert!(phxclaw_agent::pwa::PERMISSOES.contains("microphone=(self)"));
+    assert!(!phxclaw_agent::pwa::PERMISSOES.contains("microphone=()"));
+    assert!(!phxclaw_agent::pwa::PERMISSOES.contains("microphone=(*)"));
+    assert!(!phxclaw_agent::pwa::PERMISSOES.contains("microphone=*"));
 }
 
 fn diretivas(csp: &str) -> std::collections::BTreeMap<String, Vec<String>> {

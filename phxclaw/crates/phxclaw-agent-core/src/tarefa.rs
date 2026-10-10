@@ -119,6 +119,23 @@ pub struct StepRecord {
     pub summary: String,
 }
 
+/// Uma troca de estado da tarefa, com a hora em que aconteceu. O historico e a trilha que o
+/// cartao do Kanban mostra no detalhe: quando a tarefa saiu de Pending, quando comecou a
+/// rodar, quando parou. Nasce no `Task::new` com o estado inicial em `created_at`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransicaoEstado {
+    pub estado: TaskStatus,
+    pub em: DateTime<Utc>,
+}
+
+/// Uma resposta do usuario a uma pergunta do agente, guardada com a hora. E dado do usuario,
+/// gravado como veio -- o mesmo texto que ja seguia para o modelo, nada novo exposto.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ajuste {
+    pub texto: String,
+    pub em: DateTime<Utc>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -177,6 +194,13 @@ pub struct Task {
     /// O gasto desta tarefa somado ao das descendentes: e o numero que o orcamento confere.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gasto: Option<Gasto>,
+    /// A trilha das trocas de estado, empilhada SO por `mudar_estado`: um ponto unico loga a
+    /// transicao, para nenhum `status = X` cru escapar sem data.
+    #[serde(default)]
+    pub historico: Vec<TransicaoEstado>,
+    /// As respostas do usuario as perguntas do agente, na ordem em que chegaram.
+    #[serde(default)]
+    pub ajustes: Vec<Ajuste>,
 }
 
 impl Task {
@@ -205,6 +229,55 @@ impl Task {
             orcamento: None,
             custo: None,
             gasto: None,
+            // O estado inicial entra no historico com `created_at`: a trilha comeca cheia,
+            // nao com a primeira transicao.
+            historico: vec![TransicaoEstado {
+                estado: TaskStatus::Pending,
+                em: agora,
+            }],
+            ajustes: vec![],
+        }
+    }
+
+    /// O UNICO ponto que troca o estado da tarefa: se mudou, empilha a transicao com a hora
+    /// e adianta `updated_at`. Existe para que a trilha seja de um lugar so -- espalhar
+    /// `status = X` por api.rs, motor.rs e fila.rs deixaria uma transicao sem data por fora.
+    /// Troca para o mesmo estado nao vira linha: nada mudou.
+    pub fn mudar_estado(&mut self, novo: TaskStatus) {
+        if self.status == novo {
+            return;
+        }
+        let agora = Utc::now();
+        self.status = novo;
+        self.updated_at = agora;
+        self.historico.push(TransicaoEstado {
+            estado: novo,
+            em: agora,
+        });
+    }
+
+    /// Guarda a resposta do usuario a uma pergunta do agente. Vem do texto que ja ia ao
+    /// modelo: nada de segredo novo entra aqui.
+    pub fn registrar_ajuste(&mut self, texto: &str) {
+        self.ajustes.push(Ajuste {
+            texto: texto.to_string(),
+            em: Utc::now(),
+        });
+    }
+
+    /// O progresso MEDIDO, nunca inventado: 100 no fim, 0 em Pending, e, com plano, a fracao
+    /// de passos ja dados sobre os passos do plano (travada em 100). Sem plano e ainda
+    /// rodando nao ha fracao honesta -- `None`, e a UI mostra «em andamento» sem numero.
+    pub fn progresso(&self) -> Option<u8> {
+        match self.status {
+            TaskStatus::Completed => Some(100),
+            TaskStatus::Pending => Some(0),
+            _ if self.plan.is_empty() => None,
+            _ => {
+                let total = self.plan.len() as u64;
+                let feitos = (self.steps.len() as u64).min(total);
+                Some((feitos * 100 / total) as u8)
+            }
         }
     }
 }
@@ -225,6 +298,15 @@ pub struct TaskSummary {
     pub artifacts: Vec<Artifact>,
     pub usage: Usage,
     pub parent: Option<String>,
+    /// O que o cartao do Kanban mostra no detalhe: a trilha de estados, as respostas do
+    /// usuario e o progresso medido. Sao pequenos (uma linha por transicao e por resposta),
+    /// ao contrario de `steps`, que vira contagem.
+    #[serde(default)]
+    pub historico: Vec<TransicaoEstado>,
+    #[serde(default)]
+    pub ajustes: Vec<Ajuste>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progresso: Option<u8>,
 }
 
 impl From<&Task> for TaskSummary {
@@ -242,6 +324,9 @@ impl From<&Task> for TaskSummary {
             artifacts: t.artifacts.clone(),
             usage: t.usage.clone(),
             parent: t.parent.clone(),
+            historico: t.historico.clone(),
+            ajustes: t.ajustes.clone(),
+            progresso: t.progresso(),
         }
     }
 }
@@ -291,4 +376,78 @@ pub struct ErroDaApi {
     pub error: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub retry_after: Option<u64>,
+}
+
+#[cfg(test)]
+mod testes {
+    use super::*;
+
+    fn passo(n: u32) -> StepRecord {
+        StepRecord {
+            n,
+            at: Utc::now(),
+            kind: "ferramenta".into(),
+            tool: Some("x".into()),
+            arguments: Value::Null,
+            outcome: "ok".into(),
+            summary: String::new(),
+        }
+    }
+
+    #[test]
+    fn transicao_grava_data() {
+        let mut t = Task::new("x", "m");
+        // O estado inicial ja nasce no historico, com `created_at`.
+        assert_eq!(t.historico.len(), 1);
+        assert_eq!(t.historico[0].estado, TaskStatus::Pending);
+        assert_eq!(t.historico[0].em, t.created_at);
+
+        t.mudar_estado(TaskStatus::Running);
+        t.mudar_estado(TaskStatus::Completed);
+
+        let estados: Vec<TaskStatus> = t.historico.iter().map(|h| h.estado).collect();
+        assert_eq!(
+            estados,
+            vec![
+                TaskStatus::Pending,
+                TaskStatus::Running,
+                TaskStatus::Completed
+            ]
+        );
+        // As datas nao recuam, e `updated_at` acompanha a ultima.
+        assert!(t.historico[0].em <= t.historico[1].em);
+        assert!(t.historico[1].em <= t.historico[2].em);
+        assert_eq!(t.updated_at, t.historico[2].em);
+
+        // Troca para o mesmo estado nao vira linha nova.
+        t.mudar_estado(TaskStatus::Completed);
+        assert_eq!(t.historico.len(), 3);
+    }
+
+    #[test]
+    fn progresso_medido() {
+        let mut t = Task::new("x", "m");
+        // Pending = 0.
+        assert_eq!(t.progresso(), Some(0));
+        // Sem plano e rodando: nao ha fracao honesta.
+        t.mudar_estado(TaskStatus::Running);
+        assert_eq!(t.progresso(), None);
+        // 2 de 4 passos do plano = 50.
+        t.plan = vec!["a".into(), "b".into(), "c".into(), "d".into()];
+        t.steps = vec![passo(1), passo(2)];
+        assert_eq!(t.progresso(), Some(50));
+        // Completed = 100 mesmo com plano so pela metade.
+        t.mudar_estado(TaskStatus::Completed);
+        assert_eq!(t.progresso(), Some(100));
+    }
+
+    #[test]
+    fn ajuste_guarda_texto_e_data() {
+        let mut t = Task::new("x", "m");
+        assert!(t.ajustes.is_empty());
+        t.registrar_ajuste("Maria Ltda");
+        assert_eq!(t.ajustes.len(), 1);
+        assert_eq!(t.ajustes[0].texto, "Maria Ltda");
+        assert!(t.ajustes[0].em >= t.created_at);
+    }
 }

@@ -5,6 +5,7 @@
 use phxclaw_agent::visao::{
     ImageInfoTool, ImageRenderTool, OcrTool, TranscribeTool, info_jpeg, info_png, info_svg,
 };
+use phxclaw_agent::voz::PerfilDeVoz;
 use phxclaw_agent_core::{Tool, ToolContext, ToolError};
 use phxclaw_test_support::pulado;
 use serde_json::json;
@@ -402,6 +403,7 @@ async fn transcribe_ouve_o_jfk() {
         model: Some(modelo),
         model_sha256: Some(sha),
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let r = t.run(json!({"path":"audio/fala.wav"}), &c).await.unwrap();
     assert!(
@@ -421,6 +423,7 @@ async fn transcribe_recusa_sem_configuracao_e_com_modelo_adulterado() {
         model: None,
         model_sha256: None,
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let e = nada.run(json!({"path":"a.wav"}), &c).await.unwrap_err();
     let m = e.to_string();
@@ -437,6 +440,7 @@ async fn transcribe_recusa_sem_configuracao_e_com_modelo_adulterado() {
         model: None,
         model_sha256: Some(SHA_TINY_EN.into()),
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let m = so_bin
         .run(json!({"path":"a.wav"}), &c)
@@ -456,6 +460,7 @@ async fn transcribe_recusa_sem_configuracao_e_com_modelo_adulterado() {
         model: Some(modelo),
         model_sha256: Some("0".repeat(64)),
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     };
     let m = t
         .run(json!({"path":"a.wav"}), &c)

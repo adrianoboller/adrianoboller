@@ -109,6 +109,7 @@ pub mod ui;
 pub mod visao;
 pub mod voz;
 pub mod voz_memoria;
+pub mod voz_rest;
 pub mod workspace;
 pub mod xai;
 

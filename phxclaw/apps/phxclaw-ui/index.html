@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./assets/app.css" />
   <link rel="stylesheet" href="./assets/tarefas.css" />
   <link rel="stylesheet" href="./assets/fluxos.css" />
+  <link rel="stylesheet" href="./assets/conversa.css" />
   <!-- phx-grid (do dono, JS puro, sem dependencia): versao e origem em assets/vendor/phx-grid/VERSAO.
        Carrega sob demanda (grades.carregar), na primeira tela com grade. -->
   <link rel="stylesheet" href="./assets/grades.css" />
@@ -82,6 +83,14 @@
       <button id="abrirPaleta" type="button" class="cmd-bar" aria-haspopup="dialog" aria-keyshortcuts="Control+K"
         aria-label="Buscar e comandos (Ctrl+K)" data-txt-al="paleta.abrir" title="Buscar e comandos (Ctrl+K)" data-txt-tt="paleta.abrir"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg></span><span class="cmd-dica" data-txt="casca.busca">Buscar, ir para uma tela ou comando</span><kbd aria-hidden="true" data-txt="casca.atalho">Ctrl K</kbd></button>
       <div class="top-actions">
+        <!-- Portao de projeto (conversa.js): toda solicitacao nasce dentro de um projeto. O
+             seletor mostra o projeto ATIVO (o nome e DADO, escrito pelo JS -- nunca data-txt) e
+             abre o dialogo para trocar ou criar. Abre um dialogo SEM campo de texto no estado de
+             repouso (o campo de criar so nasce ao clicar «criar novo»), para a sonda G6 do topo
+             nao o confundir com a paleta de busca. -->
+        <button id="projetoSeletor" type="button" class="proj-seletor" aria-haspopup="dialog"
+          aria-label="Projeto ativo — trocar ou criar" data-txt-al="projeto.seletor_al"
+          title="Projeto ativo — trocar ou criar" data-txt-tt="projeto.seletor_al"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 11v6.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg></span><b id="projetoSeletorNome">—</b></button>
         <!-- Tema: o icone mostra para onde o clique leva (sol no escuro, lua no claro); o nome
              acessivel vem da fabrica e diz o mesmo (tema.js). -->
         <button id="trocarTema" type="button" class="icone" aria-label="Mudar para o tema claro" title="Mudar para o tema claro"><svg class="ico-sol" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg><svg class="ico-lua" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></button>
@@ -98,6 +107,23 @@
       <p class="paleta-dica" data-txt="paleta.dica">Setas escolhem • Enter abre • Esc fecha</p>
     </dialog>
 
+    <!-- Dialogo do portao de projeto (conversa.js): escolher um projeto existente ou criar um
+         novo. No repouso NAO ha <input> (so a lista de projetos e os botoes); o campo de criar
+         nasce ao clicar «criar novo». Nome de projeto e DADO (escrito pelo JS). -->
+    <dialog id="projetoDialogo" class="proj-dialogo" aria-label="Escolher projeto" data-txt-al="projeto.titulo">
+      <header class="proj-dlg-head">
+        <h2 data-txt="projeto.dialogo_titulo">Projeto</h2>
+        <button id="projetoFechar" type="button" class="icone" aria-label="Fechar" data-txt-al="projeto.fechar" title="Fechar" data-txt-tt="projeto.fechar"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m6 6 12 12M18 6 6 18"/></svg></span></button>
+      </header>
+      <p class="proj-dlg-dica" data-txt="projeto.escolher">Escolha um projeto ou crie um novo para começar.</p>
+      <h3 class="proj-dlg-sub" data-txt="projeto.existentes">Projetos</h3>
+      <ul id="projetoLista" class="proj-lista" aria-label="Projetos" data-txt-al="projeto.existentes"></ul>
+      <div id="projetoCriarArea" class="proj-criar"></div>
+      <div class="proj-dlg-acoes">
+        <button id="projetoCriarNovo" type="button" class="acao inclui" data-txt="projeto.criar_novo">+ CRIAR NOVO PROJETO</button>
+      </div>
+    </dialog>
+
     <aside class="sidebar">
       <nav>
         <!-- Cada botao nomeia a tela que abre (data-tela); o selo so aparece quando um
@@ -108,6 +134,7 @@
         <span class="nav-grupo" data-txt="casca.menu.painel">PAINEL</span>
         <button class="nav active" data-tela="geral" aria-current="page"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span><em data-txt="menu.geral">Visão geral</em></button>
         <span class="nav-grupo" data-txt="casca.menu.trabalho">TRABALHO</span>
+        <button class="nav" data-tela="conversa"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9A1.5 1.5 0 0 1 18.5 16H9l-4 3.5V16H5.5A1.5 1.5 0 0 1 4 14.5z"/></svg></span><em data-txt="menu.conversa">Conversa</em></button>
         <button class="nav" data-tela="tarefas"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L7.5 5M3.5 12l1.5 1.5 2.5-2.5M3.5 18l1.5 1.5 2.5-2.5"/></svg></span><em data-txt="menu.tarefas">Tarefas</em></button>
         <button class="nav" data-tela="fluxos"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="2.5" y="4" width="6" height="5" rx="1.2"/><rect x="15.5" y="3" width="6" height="5" rx="1.2"/><rect x="15.5" y="16" width="6" height="5" rx="1.2"/><path d="M8.5 6.5c3.5 0 3.5-1 7-1M8.5 6.5c3.5 0 3.5 12 7 12"/></svg></span><em data-txt="menu.fluxos">Fluxos</em></button>
         <button class="nav" data-tela="insights"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3.5 20.5h17"/><rect x="5" y="12" width="3.2" height="6" rx=".8"/><rect x="10.4" y="7" width="3.2" height="11" rx=".8"/><rect x="15.8" y="4" width="3.2" height="14" rx=".8"/></svg></span><em data-txt="menu.insights">Insights</em></button>
@@ -348,6 +375,53 @@
       <div id="absorcaoCubo" class="grade-alvo" data-fonte="absorcao.json" hidden></div>
      </section>
 
+     <!-- Conversa (conversa.js): o espaco de trabalho de UM projeto. Portao de projeto
+          obrigatorio; em cima o Kanban fixo e retratil (cartoes compactos do projeto ativo),
+          embaixo a area de realizacao -- o detalhe do cartao clicado (solicitacao, linha do
+          tempo, ajustes, artefatos, agentes, inicio/fim, progresso e a pizza da atividade), os
+          baloes da conversa, e a barra com o campo, ENVIAR e o microfone. Conteudo da conversa
+          (pedido, resposta, nomes de arquivo) e DADO: entra por textContent, nunca traduzido. -->
+     <section class="tela tela-conversa" id="tela-conversa" data-tela="conversa" aria-label="Conversa" data-txt-al="menu.conversa" hidden>
+      <!-- Portao: enquanto nao ha projeto ativo, a conversa e o envio ficam bloqueados. -->
+      <div id="conversaGate" class="conversa-gate" hidden>
+        <div class="gate-cartao">
+          <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2.5h8.5A1.5 1.5 0 0 1 21 11v6.5A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/></svg></span>
+          <h2 data-txt="conversa.gate_titulo">Escolha um projeto para começar</h2>
+          <p data-txt="conversa.gate_texto">Toda solicitação acontece dentro de um projeto. Escolha um existente ou crie um novo para liberar a conversa.</p>
+          <button id="conversaGateBotao" type="button" class="acao consulta" data-txt="conversa.gate_botao">ESCOLHER PROJETO</button>
+        </div>
+      </div>
+      <!-- Espaco de trabalho: so com projeto ativo. -->
+      <div id="conversaCorpo" class="conversa-corpo" hidden>
+       <!-- ZONA 1: Kanban fixo e retratil. -->
+       <section id="kanban" class="kanban" data-recolhido="0" aria-label="Kanban do projeto" data-txt-al="kanban.titulo">
+        <header class="kanban-head">
+          <button id="kanbanAlternar" type="button" class="kanban-alca" aria-expanded="true" aria-controls="kanbanQuadro"
+            aria-label="Recolher ou expandir o quadro" data-txt-al="kanban.recolher_al" title="Recolher ou expandir o quadro" data-txt-tt="kanban.recolher_al">
+            <span class="chevron" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><path d="m6 9 6 6 6-6"/></svg></span>
+            <b data-txt="kanban.titulo">Kanban do projeto</b>
+          </button>
+          <!-- Faixa de contadores: so aparece recolhido (CSS). Numeros sao DADO (contados do JS). -->
+          <div id="kanbanContadores" class="kanban-contadores" aria-hidden="true"></div>
+        </header>
+        <div id="kanbanQuadro" class="kanban-quadro" role="group" aria-label="Kanban do projeto" data-txt-al="kanban.titulo">
+          <p class="vazio" id="kanbanAviso" role="status" aria-live="polite"></p>
+        </div>
+       </section>
+       <!-- ZONA 2: realizacao da tarefa clicada (ou nova). -->
+       <section class="conversa-realizacao" aria-label="Conversa" data-txt-al="menu.conversa">
+        <div id="conversaHistorico" class="conversa-historico" role="log" aria-live="polite" aria-label="Conversa" data-txt-al="menu.conversa"></div>
+        <form id="conversaEntrada" class="conversa-entrada">
+          <textarea id="conversaCampo" rows="1" placeholder="Digite seu pedido… (ou use o microfone)" data-txt-ph="conversa.campo_ph" aria-label="Seu pedido" data-txt-al="conversa.campo_al"></textarea>
+          <button id="conversaMic" type="button" class="conversa-mic acao consulta" aria-pressed="false"
+            aria-label="Falar em vez de digitar" data-txt-al="conversa.mic_al" title="Falar em vez de digitar" data-txt-tt="conversa.mic_al"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" focusable="false"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg></span></button>
+          <button id="conversaEnviar" type="submit" class="acao inclui" data-txt="conversa.enviar">ENVIAR</button>
+        </form>
+        <p id="conversaStatus" class="conversa-status" role="status" aria-live="polite"></p>
+       </section>
+      </div>
+     </section>
+
      <section class="tela" id="tela-tarefas" data-tela="tarefas" aria-label="Tarefas" data-txt-al="menu.tarefas" hidden>
       <header class="tela-head">
         <div><span class="eyebrow" data-txt="tarefas.sobretitulo">TAREFAS / API DO AGENTE</span><h1 data-txt="menu.tarefas">Tarefas</h1>
@@ -509,6 +583,12 @@
   <script src="./assets/fluxos.js"></script>
   <script src="./assets/insights.js"></script>
   <script src="./assets/config.js"></script>
+  <!-- Conversa: depois de tarefas.js (reusa window.tarefas: o cliente de /v1, o token e o
+       formatador de estado) e de app.js (reusa mostrarTela, carregadores, dataHora). -->
+  <script src="./assets/conversa.js"></script>
+  <!-- Aurora: o HUD retratil do assistente, camada ADICIONAL sobre a Conversa. Depois do
+       conversa.js e do idiomas.js: observa o DOM que a Conversa desenha e usa txt(). -->
+  <script src="./assets/aurora.js"></script>
   <!-- async: o IDE e os paineis ficam fora do caminho do DOMContentLoaded do celular. -->
   <script src="./assets/ide.js" async></script>
   <script src="./assets/paineis.js" async></script>

@@ -3968,6 +3968,7 @@ dependencies = [
  "ed25519-dalek",
  "futures-util",
  "getrandom 0.3.4",
+ "http-body",
  "lettre",
  "phxclaw-agent-catalog",
  "phxclaw-agent-core",

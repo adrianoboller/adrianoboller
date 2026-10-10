@@ -202,6 +202,10 @@ pub const MATRIZ: &[Regra] = &[
     r("POST", "/v1/plugins/instalar", DO, I),
     r("POST", crate::tunel::ROTA_TERMINAL, DO, I),
     r("POST", crate::tunel::ROTA_LSP, DO, I),
+    // Transcrever voz e uma OPERACAO (gasta o motor local ou a nuvem), nao leitura: do membro
+    // para cima, como criar tarefa. O escopo e a instancia -- a transcricao da Conversa nao e
+    // de projeto nenhum. O leitor nao alcanca, e e o que o teste `sem_capacidade` trava.
+    r("POST", crate::voz_rest::ROTA, ME, I),
     r("*", "/mcp", AD, I),
 ];
 

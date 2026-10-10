@@ -357,6 +357,14 @@ pub const ROTAS: &[Rota] = &[
         "consulta: periodo (24h|7d|30d|tudo), fluxo",
         None,
     ),
+    // --- voz_rest::rotas ---
+    r(
+        "POST",
+        "/v1/voz/transcrever",
+        "Transcreve (STT) o audio do microfone da Conversa",
+        "corpo: audio cru (audio/webm;codecs=opus ou audio/wav)",
+        None,
+    ),
     // --- gatilhos::router (juntado pelo `servir`) ---
     r(
         "POST",

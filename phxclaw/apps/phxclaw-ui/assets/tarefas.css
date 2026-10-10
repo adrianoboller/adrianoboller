@@ -63,4 +63,8 @@
 @media(max-width:480px){
   .sidebar .nav em{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
   .sidebar .nav span{margin-bottom:0}
+  /* So o icone: as DEZ telas dividem a largura por igual (min-width:0 deixa o flex encolher
+     abaixo de 44 px). Com 10 botoes a 390 px, 44 px cada somava 440 e dois caiam fora da
+     tela (qualificacao G1); o alvo continua alto (64 px) e a area toca legivel. */
+  .sidebar .nav{min-width:0}
 }

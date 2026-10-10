@@ -482,9 +482,15 @@ async fn continuar_em_erro() {
     ]}));
     let r = fluxos::rodar(&a, &f).await.unwrap();
     assert!(r.sucesso, "{r:#?}");
+    let mae = a.store.load(&r.tarefa).unwrap();
+    assert_eq!(mae.status, TaskStatus::Completed);
+    // B1: a transicao final da tarefa-mae do fluxo entra no historico, pelo ponto unico
+    // `Task::mudar_estado`. RED medido: com `mae.status =` cru, o historico para em
+    // [Pending, Running] e o ultimo salto (para Completed) some da trilha do Kanban.
     assert_eq!(
-        a.store.load(&r.tarefa).unwrap().status,
-        TaskStatus::Completed
+        mae.historico.last().unwrap().estado,
+        mae.status,
+        "a transicao final nao entrou no historico da mae"
     );
 }
 

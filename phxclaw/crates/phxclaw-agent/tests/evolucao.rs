@@ -236,6 +236,21 @@ async fn ciclo_verde_gera_ramo_e_relatorio_e_nao_faz_merge() {
     for t in mae.list().unwrap() {
         assert!(!mae.workdir(&t.id).join("repo").exists());
     }
+    // B1: a transicao final da tarefa-mae de evolucao entra no historico, pelo ponto unico
+    // `Task::mudar_estado`. RED medido: com `mae.status =` cru, o historico para em
+    // [Pending, Running] e o ultimo salto (para Completed) some da trilha do Kanban.
+    let evo = mae
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|t| t.objective.starts_with("evolucao "))
+        .expect("a tarefa-mae de evolucao no store");
+    assert_eq!(evo.status, TaskStatus::Completed, "verde => mae Completed");
+    assert_eq!(
+        evo.historico.last().unwrap().estado,
+        evo.status,
+        "a transicao final nao entrou no historico da mae"
+    );
     let _ = std::fs::remove_dir_all(&raiz);
 }
 

@@ -262,7 +262,7 @@ pub fn enfileirar_ou_falhar(
         chave(tipo, &t.id),
     );
     if let Err(e) = fila.com_cliente(|c| PostgresTaskJournal::enqueue(c, &s)) {
-        t.status = TaskStatus::Failed;
+        t.mudar_estado(TaskStatus::Failed);
         t.error = Some(format!("fila: {e}"));
         t.updated_at = chrono::Utc::now();
         let _ = store.save(&t);
@@ -307,7 +307,7 @@ fn esperar_fim(store: TaskStore, id: String) -> tokio::task::JoinHandle<Task> {
                     if faltas > 10 {
                         let mut t = Task::new("?", "");
                         t.id = id;
-                        t.status = TaskStatus::Failed;
+                        t.mudar_estado(TaskStatus::Failed);
                         t.error = Some(format!("tarefa sumiu do disco: {e}"));
                         return t;
                     }
@@ -391,7 +391,7 @@ async fn executar_tomada(state: &ApiState, fila: &Arc<Fila>, c: QueueClaim) -> F
             if let Ok(mut t) = state.store.load(&id)
                 && !t.status.is_final()
             {
-                t.status = TaskStatus::Failed;
+                t.mudar_estado(TaskStatus::Failed);
                 t.error = Some(format!("fila: {}", d.error));
                 t.updated_at = chrono::Utc::now();
                 let _ = state.store.save(&t);
@@ -425,7 +425,7 @@ async fn executar_tomada(state: &ApiState, fila: &Arc<Fila>, c: QueueClaim) -> F
             if let Ok(mut t) = state.store.load(&id)
                 && !t.status.is_final()
             {
-                t.status = TaskStatus::Failed;
+                t.mudar_estado(TaskStatus::Failed);
                 t.error = Some(e.clone());
                 t.updated_at = chrono::Utc::now();
                 let _ = state.store.save(&t);

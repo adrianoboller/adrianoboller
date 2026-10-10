@@ -123,6 +123,8 @@ pub fn servidor(state: ApiState, extras: impl IntoIterator<Item = Router>) -> Ro
         .merge(crate::fluxos_tela::rotas())
         // O painel de insights (execucoes por estado, p50/p95, custo, falhas), do disco.
         .merge(crate::insights::rotas())
+        // A transcricao de voz (STT) do microfone da Conversa, pelo MESMO motor do `transcribe`.
+        .merge(crate::voz_rest::rotas())
         // O portao do RBAC, por ULTIMO: `route_layer` cobre so as rotas que ja existem, e e
         // assim que nenhuma das acima escapa dele. Sem usuarios, ele nao faz nada.
         .route_layer(axum::middleware::from_fn_with_state(
@@ -340,7 +342,7 @@ fn criar_tarefa_em(
         .and_then(|_| preparo(&work));
     if let Err(e) = pronto {
         // A tarefa ja esta no disco: fica FALHA, dizendo por que, e nao `pending` para sempre.
-        t.status = TaskStatus::Failed;
+        t.mudar_estado(TaskStatus::Failed);
         t.error = Some(format!("preparo da pasta: {e}"));
         let _ = s.store.save(&t);
         return Err(recusa(
@@ -360,7 +362,7 @@ fn criar_tarefa_em(
             }
             Ok(_) => agente,
             Err(e) => {
-                t.status = TaskStatus::Failed;
+                t.mudar_estado(TaskStatus::Failed);
                 t.error = Some(format!("gravacao: {e}"));
                 let _ = s.store.save(&t);
                 return Err(recusa(
@@ -395,9 +397,9 @@ fn criar_tarefa_em(
 pub async fn planejar_aqui(s: ApiState, agente: Agent, t: Task) -> Task {
     let mut t = t;
     match agente.plan(&mut t).await {
-        Ok(()) => t.status = TaskStatus::AwaitingApproval,
+        Ok(()) => t.mudar_estado(TaskStatus::AwaitingApproval),
         Err(e) => {
-            t.status = TaskStatus::Failed;
+            t.mudar_estado(TaskStatus::Failed);
             t.error = Some(format!("plano: {e}"));
         }
     }
@@ -481,7 +483,7 @@ pub fn criar_fluxo_ate(
     let _ = std::fs::create_dir_all(&work);
     if let Err(e) = preparo(&work) {
         let mut t = mae;
-        t.status = TaskStatus::Failed;
+        t.mudar_estado(TaskStatus::Failed);
         t.error = Some(format!("preparo da pasta: {e}"));
         let _ = s.store.save(&t);
         return Err(recusa(
@@ -571,7 +573,7 @@ pub async fn rodar_fluxo_aqui(
             if let Err(e) = r {
                 // Recusa antes do primeiro passo (ciclo, variavel sem config): a tarefa
                 // ja esta no disco e nao pode ficar `Pending` para sempre.
-                t.status = TaskStatus::Failed;
+                t.mudar_estado(TaskStatus::Failed);
                 t.error = Some(e);
                 let _ = store.save(&t);
             }
@@ -580,7 +582,7 @@ pub async fn rodar_fluxo_aqui(
         Err(e) => {
             let mut t = Task::new(format!("{}?", crate::fluxos::PREFIXO_TAREFA), "");
             t.id = id;
-            t.status = TaskStatus::Failed;
+            t.mudar_estado(TaskStatus::Failed);
             t.error = Some(format!("tarefa do fluxo sumiu do disco: {e}"));
             t
         }
@@ -626,7 +628,7 @@ pub async fn retomar_fluxo_aqui(store: &crate::tarefa::TaskStore, agente: &Agent
         && let Ok(mut t) = store.load(id)
         && t.status == TaskStatus::AwaitingInput
     {
-        t.status = TaskStatus::Failed;
+        t.mudar_estado(TaskStatus::Failed);
         t.error = Some(e.clone());
         t.updated_at = Utc::now();
         let _ = store.save(&t);
@@ -683,7 +685,7 @@ pub fn executar(s: ApiState, agente: Agent, t: Task) -> tokio::task::JoinHandle<
             store.load(&id).unwrap_or_else(|_| {
                 let mut t = Task::new("?", "");
                 t.id = id;
-                t.status = TaskStatus::Failed;
+                t.mudar_estado(TaskStatus::Failed);
                 t
             })
         })
@@ -755,6 +757,17 @@ fn resumo(t: &Task) -> Value {
     json!(TaskSummary::from(t))
 }
 
+/// A tarefa inteira como a UI a le, com o `progresso` medido ao lado dos campos gravados. O
+/// numero sai de `Task::progresso` (ponto unico); aqui so se injeta no corpo, porque e
+/// derivado de `status`, `plan` e `steps` e guarda-lo no disco envelheceria calado.
+fn corpo_tarefa(t: &Task) -> Value {
+    let mut v = json!(t);
+    if let Value::Object(m) = &mut v {
+        m.insert("progresso".into(), json!(t.progresso()));
+    }
+    v
+}
+
 async fn listar(
     State(s): State<ApiState>,
     h: HeaderMap,
@@ -779,7 +792,7 @@ fn carregar(s: &ApiState, id: &str) -> Result<Task, (StatusCode, Json<Value>)> {
 
 async fn obter(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String>) -> Resp {
     auth(&s, &h)?;
-    Ok(Json(carregar(&s, &id)?).into_response())
+    Ok(Json(corpo_tarefa(&carregar(&s, &id)?)).into_response())
 }
 
 #[derive(Deserialize)]
@@ -812,7 +825,7 @@ async fn editar_plano(
     s.store
         .save(&t)
         .map_err(|e| erro(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(t).into_response())
+    Ok(Json(corpo_tarefa(&t)).into_response())
 }
 
 /// O agente que executa uma tarefa ja gravada: o modelo dela e, se ela nasceu com `gravar`,
@@ -936,8 +949,7 @@ async fn cancelar(State(s): State<ApiState>, h: HeaderMap, Path(id): Path<String
         }
     }
     // plano esperando aprovacao (ou execucao que saiu da fila antes de comecar): cancela direto
-    t.status = TaskStatus::Cancelled;
-    t.updated_at = Utc::now();
+    t.mudar_estado(TaskStatus::Cancelled);
     let _ = s.store.save(&t);
     Ok(Json(json!({"id": id, "status": "cancelled"})).into_response())
 }
