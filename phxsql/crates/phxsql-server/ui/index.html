@@ -8419,7 +8419,10 @@ async function verConfigServidor() {
   // Some da lista seria a tela envelhecendo calada — que é o defeito que esta
   // rodada inteira existe para não repetir.
   const agrupados = new Set(GRUPOS_AJUSTE.flatMap(([, campos]) => campos));
-  const sobrando = editaveis.filter(e => !agrupados.has(e.campo));
+  // O perfil do aquario (783) tem editor proprio, com a pre-visualizacao:
+  // no formulario generico ele viraria vinte e sete campos soltos.
+  const sobrando = editaveis.filter(e => !agrupados.has(e.campo) && !e.campo.startsWith("aquario."));
+  const temAquario = editaveis.some(e => e.campo.startsWith("aquario."));
 
   // O título passa pela fábrica ANTES de ser escrito, e a chave é o próprio
   // primeiro item do grupo: título que já é chave (`tela.…`) sai traduzido, e
@@ -8495,6 +8498,10 @@ async function verConfigServidor() {
      ${GRUPOS_AJUSTE.map(([t, campos, extra]) => grupo(t, campos, extra)).join("")}
      ${sobrando.length ? grupo("Outros ajustes que este servidor aceita",
         sobrando.map(e => e.campo)) : ""}
+
+     ${temAquario ? `<h3 class="secao" id="cfAquarioTit">${esc(txt("tela.aq_pf_titulo", "Aparência do aquário"))}</h3>
+     <p class="leg">${esc(txt("tela.aq_pf_sub", "o tom das cores, o tamanho e o movimento das bolhas e a letra — vale para o aquário e para a TV, e grava no config.json"))}</p>
+     <div id="cfAquario"></div>` : ""}
 
      <h3 class="secao">Só pelo arquivo <em>— e por quê</em></h3>
      ${grupoDeAjustes("", [
@@ -8583,6 +8590,7 @@ async function verConfigServidor() {
   $("#cfDescartar").onclick = () => verConfigServidor();
   $("#cfSalvar").onclick = salvarConfigServidor;
   ligarCoresDaTelemetria();
+  if ($("#cfAquario") && window.PhxAquario) PhxAquario.editor($("#cfAquario"), { api });
   desenharIdiomas("#idiomasAqui");
   // Trocar o idioma AQUI repinta esta tela, e nao leva ninguem embora: o
   // gancho e limpo por `folha()` e reposto por quem sabe se redesenhar.

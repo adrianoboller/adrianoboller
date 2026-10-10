@@ -50,6 +50,16 @@ function config(base, hash, portaDados, portaWeb, hostWeb, webExtra = {}, extra 
     // entao o escape ESCRITO e o caminho certo -- o mesmo que o config.rs
     // oferece. Tirar esta linha volta a matar a bateria inteira.
     cifra_fio: { exigir: false },
+    // O LOOPBACK DESTA BATERIA PODE SER BLOQUEADO, E DE PROPOSITO.
+    //
+    // A P9 do 766 fez o banco poupar 127.0.0.0/8 de fabrica, para nao se
+    // trancar para fora. Mas os casos de bloqueio (42 e o das ocorrencias)
+    // bloqueiam o 127.0.0.2 de verdade -- nao ha outro endereco nesta maquina
+    // --, e com o loopback poupado o preparo do IP bloqueado nunca acontece.
+    // O 127.0.0.1 do navegador continua salvo pela guarda do admin logado. O
+    // escape ESCRITO e o caminho que o 766 oferece; tirar esta linha volta a
+    // derrubar os dois casos nos dois temas (medido em 10/10/2026).
+    seguranca: { poupar_loopback: false },
     recursos: { durabilidade: 'sistema', cache_paginas: 512 },
     // A sonda de saude do disco a cada 2 s, e nao a cada 300 (5 min, padrao
     // do pedido 249): o caso `saude-do-disco` espera o EVENTO da proxima

@@ -524,6 +524,11 @@ impl Servidor {
         servidor
             .telemetria
             .definir_pintura(servidor.config.telemetria.clone());
+        // O leitor do bloco `aquario` (pedido 783), pelo mesmo motivo: perfil
+        // gravado que ninguem le seria configuracao que mente.
+        servidor
+            .telemetria
+            .definir_perfil_do_aquario(&servidor.config.aquario);
         // O `aquario.log` (pedido 707, A6), ao lado do `acessos.log`: grava
         // sem ninguem perguntar, entao abre aqui e nao na primeira consulta.
         // Falhar AVISA e sobe -- o aquario e acessorio, e a consulta devolve o

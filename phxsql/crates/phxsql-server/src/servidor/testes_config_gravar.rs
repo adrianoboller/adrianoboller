@@ -1662,3 +1662,156 @@ fn sem_gravar_nada_o_servidor_e_o_de_antes() {
     assert!(!s.somente_leitura());
     assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
 }
+
+// ------------------------------------------------- o perfil do aquario (783)
+
+/// O perfil do aquario grava pelo `config_gravar`, vale A QUENTE no retrato e
+/// fica na trilha. O de fabrica (comportamento velho) e o que o retrato
+/// devolve antes de qualquer gravacao.
+#[test]
+fn o_perfil_do_aquario_grava_vale_no_retrato_e_fica_na_trilha() {
+    let (s, caminho, _guarda) = servidor_de_arquivo("aq-perfil", Cadastro::default());
+    let sessao = Sessao::default();
+    // antes: o de fabrica, e o retrato sem digital pedida nao traz o perfil
+    let r0 = s
+        .executar("aquario_retrato", &pedido("{}"), &sessao)
+        .unwrap();
+    let fab = crate::aquario::perfil::Perfil::default();
+    assert_eq!(r0.texto_ou("perfil_versao", ""), fab.versao());
+    assert!(
+        r0.campo("perfil").is_none(),
+        "cliente velho recebeu o perfil inteiro"
+    );
+    let r1 = s
+        .executar(
+            "aquario_retrato",
+            &pedido(r#"{"perfil_versao":""}"#),
+            &sessao,
+        )
+        .unwrap();
+    assert_eq!(r1.campo("perfil"), Some(&fab.para_tela()));
+
+    s.executar(
+        "config_gravar",
+        &pedido(r##"{"campos":{"aquario.cor_vermelho":"#ff3030","aquario.raio_max":52}}"##),
+        &sessao,
+    )
+    .unwrap();
+    // o arquivo guarda
+    let relido = Json::analisar(&std::fs::read_to_string(&caminho).unwrap()).unwrap();
+    assert_eq!(
+        crate::config::valor_em(&relido, "aquario.cor_vermelho"),
+        Some(Json::texto_de("#ff3030"))
+    );
+    // o retrato com a digital VELHA traz o perfil novo; com a nova, nao
+    let r2 = s
+        .executar(
+            "aquario_retrato",
+            &pedido(&format!(r#"{{"perfil_versao":"{}"}}"#, fab.versao())),
+            &sessao,
+        )
+        .unwrap();
+    let p = r2
+        .campo("perfil")
+        .expect("a digital mudou e o perfil nao veio");
+    let nova = r2.texto_ou("perfil_versao", "").to_string();
+    assert_ne!(nova, fab.versao());
+    let vermelho = p
+        .campo("cores")
+        .and_then(Json::lista)
+        .and_then(|l| l.iter().find(|c| c.texto_ou("cor", "") == "vermelho"))
+        .unwrap();
+    assert_eq!(vermelho.texto_ou("escuro", ""), "#ff3030");
+    let r3 = s
+        .executar(
+            "aquario_retrato",
+            &pedido(&format!(r#"{{"perfil_versao":"{nova}"}}"#)),
+            &sessao,
+        )
+        .unwrap();
+    assert!(
+        r3.campo("perfil").is_none(),
+        "reenviou o perfil que a tela ja tem"
+    );
+    // a configuracao viva nao acusa divergencia no campo recem-gravado
+    let c = s.executar("config", &pedido("{}"), &sessao).unwrap();
+    assert!(
+        c.campo("no_arquivo").is_none()
+            && crate::config::valor_em(&c, "aquario.raio_max") == Some(Json::Numero(52.0)),
+        "{}",
+        c.escrever()
+    );
+    // a trilha: um registro por campo, com o valor novo
+    let linhas = s.diario.ultimas(10);
+    assert!(
+        linhas
+            .iter()
+            .any(|l| l.recurso == "aquario.cor_vermelho"
+                && l.valor_novo == Json::texto_de("#ff3030")),
+        "o perfil mudou sem rastro"
+    );
+}
+
+/// A gravacao RECUSA, com o motivo, e o arquivo nao muda: contraste abaixo de
+/// 3:1 nos dois temas, tom fora da familia, raio acima do teto, fonte fora da
+/// lista, par de raios torto.
+#[test]
+fn o_perfil_do_aquario_ruim_e_recusado_na_gravacao() {
+    let (s, caminho, _guarda) = servidor_de_arquivo("aq-recusa", Cadastro::default());
+    let antes = std::fs::read_to_string(&caminho).unwrap();
+    let sessao = Sessao::default();
+    for (campos, diz) in [
+        (r##"{"aquario.cor_vermelho":"#2a0606"}"##, "contraste"),
+        (r##"{"aquario.cor_amarelo_claro":"#fff2b0"}"##, "tema claro"),
+        (
+            r##"{"aquario.cor_vermelho":"#30ff30"}"##,
+            "familia do vermelho",
+        ),
+        (r#"{"aquario.raio_max":300}"#, "fora da faixa"),
+        (r#"{"aquario.estouro_ms":5}"#, "aquario.estouro_ms"),
+        (r#"{"aquario.fonte":"Comic Sans MS"}"#, "Exo 2"),
+        (r#"{"aquario.raio_min":20,"aquario.raio_max":30}"#, "dobro"),
+    ] {
+        let e = s
+            .executar(
+                "config_gravar",
+                &pedido(&format!(r#"{{"campos":{campos}}}"#)),
+                &sessao,
+            )
+            .expect_err(campos);
+        assert!(e.to_string().contains(diz), "{campos}: {e}");
+    }
+    assert_eq!(
+        std::fs::read_to_string(&caminho).unwrap(),
+        antes,
+        "o arquivo mudou"
+    );
+    assert_eq!(
+        s.telemetria.perfil_do_aquario().0,
+        crate::aquario::perfil::Perfil::default().versao(),
+        "a recusa mudou o perfil vivo"
+    );
+}
+
+/// So quem administra grava o perfil.
+#[test]
+fn sem_administrar_nao_grava_o_perfil_do_aquario() {
+    let mut cadastro = Cadastro::default();
+    cadastro.usuarios.push(operador());
+    let usuario = cadastro.usuarios[0].clone();
+    let (s, caminho, _guarda) = servidor_de_arquivo("aq-portao", cadastro);
+    let antes = std::fs::read_to_string(&caminho).unwrap();
+    let sessao = Sessao {
+        usuario: Some(usuario),
+        ..Sessao::default()
+    };
+    let e = s
+        .executar(
+            "config_gravar",
+            &pedido(r#"{"campos":{"aquario.raio_max":50}}"#),
+            &sessao,
+        )
+        .unwrap_err();
+    assert!(e.to_string().contains("administrar"), "{e}");
+    assert_eq!(std::fs::read_to_string(&caminho).unwrap(), antes);
+}

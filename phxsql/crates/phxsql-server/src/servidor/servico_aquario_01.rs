@@ -66,12 +66,28 @@ impl Servidor {
     /// telemetria -- administrador, ou o token de servico sem cadastro -- ja
     /// ve login e IP la, e ve aqui tambem: a pergunta «quem ve o login?" e a
     /// MESMA, e por isso e o mesmo portao que a responde.
-    pub(super) fn op_aquario_retrato(&self, _p: &Json, sessao: &Sessao) -> Result<Json> {
+    ///
+    /// # O perfil visual (pedido 783)
+    ///
+    /// Todo retrato diz a digital do perfil (`perfil_versao`); o perfil
+    /// inteiro so vem quando a tela manda uma digital diferente -- a tela
+    /// normal e a TV leem o MESMO perfil pelo mesmo pedido que ja fazem, e de
+    /// dois em dois segundos so viaja a digital. Quem nao manda o campo (um
+    /// cliente de antes do 783) recebe o retrato de sempre, mais a digital.
+    pub(super) fn op_aquario_retrato(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
         self.portao_do_aquario(sessao)?;
         let completo = self.portao_da_telemetria(sessao).is_ok();
-        Ok(self
+        let mut r = self
             .telemetria
-            .retrato_do_aquario(crate::agora_ms(), completo))
+            .retrato_do_aquario(crate::agora_ms(), completo);
+        let perfil = self.telemetria.perfil_do_aquario();
+        r.definir("perfil_versao", Json::texto_de(perfil.0.as_str()));
+        if let Some(tem) = p.campo("perfil_versao").and_then(Json::texto) {
+            if tem != perfil.0 {
+                r.definir("perfil", perfil.1.clone());
+            }
+        }
+        Ok(r)
     }
 
     /// A classe de um pedido que TERMINOU, para as linhas `estourou` e

@@ -5044,6 +5044,9 @@ pub struct Config {
     pub protecao: Protecao,
     /// As cores e os limiares do painel de bolhas. Ver [`Painel`].
     pub telemetria: Painel,
+    /// O perfil visual do aquario (pedido 783). Ver
+    /// [`crate::aquario::perfil`].
+    pub aquario: crate::aquario::perfil::Perfil,
     /// O rodizio do `.txt` do Profiler. Ver [`PerfilEmDisco`].
     pub profiler: PerfilEmDisco,
     /// O rodizio do `acessos.log`. Pedido 228 -- mesmo tipo do Profiler, e
@@ -5117,6 +5120,7 @@ impl std::fmt::Debug for Config {
             diario,
             protecao,
             telemetria,
+            aquario,
             profiler,
             acessos,
             diretivas,
@@ -5157,6 +5161,7 @@ impl std::fmt::Debug for Config {
             .field("diario", diario)
             .field("protecao", protecao)
             .field("telemetria", telemetria)
+            .field("aquario", aquario)
             .field("profiler", profiler)
             .field("acessos", acessos)
             .field("diretivas", diretivas)
@@ -5177,7 +5182,7 @@ impl std::fmt::Debug for Config {
 // no primeiro nivel -- quem a escrevesse no arquivo levava um "campo que este
 // servidor nao conhece" sobre um campo que ele le e obedece. Aviso falso gasta
 // a confianca do aviso verdadeiro.
-const CAMPOS_CONHECIDOS: [&str; 36] = [
+const CAMPOS_CONHECIDOS: [&str; 37] = [
     "bind",
     "tls",
     "tls_certificado",
@@ -5214,6 +5219,7 @@ const CAMPOS_CONHECIDOS: [&str; 36] = [
     "acessos",
     "diretivas",
     "protecao",
+    "aquario",
 ];
 
 /// O que cada secao conhecida aceita por dentro.
@@ -5225,7 +5231,7 @@ const CAMPOS_CONHECIDOS: [&str; 36] = [
 /// as duas primeiras estao ganhando campos novos por outras frentes nesta
 /// rodada, e um aviso falso de "campo desconhecido" seria pior que a lacuna;
 /// as duas ultimas tem chaves livres (bases, tabelas).
-const SECOES_CONHECIDAS: [(&str, &[&str]); 19] = [
+const SECOES_CONHECIDAS: [(&str, &[&str]); 20] = [
     (
         "recursos",
         &[
@@ -5421,6 +5427,9 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 19] = [
     // campos do `profiler` acima.
     ("acessos", &["arquivo_mib", "arquivos"]),
     ("diretivas", &["arquivo_mib", "arquivos"]),
+    // Pedido 783: a lista sai do proprio leitor do perfil, e nao de uma
+    // copia aqui.
+    ("aquario", crate::aquario::perfil::CAMPOS),
 ];
 
 /// O `replicacao.inicio_da_sequencia`, recusando o que nao for inteiro >= 0.
@@ -5500,6 +5509,7 @@ impl Default for Config {
             diario: ExpurgoDoDiario::default(),
             protecao: Protecao::default(),
             telemetria: Painel::default(),
+            aquario: crate::aquario::perfil::Perfil::default(),
             profiler: PerfilEmDisco::default(),
             acessos: PerfilEmDisco::default(),
             diretivas: PerfilEmDisco::default(),
@@ -5766,6 +5776,7 @@ impl Config {
             diario: ExpurgoDoDiario::de_json(j)?,
             protecao: Protecao::de_json(j, &mut avisos),
             telemetria: Painel::de_json(j, &mut avisos),
+            aquario: crate::aquario::perfil::Perfil::de_json(j, &mut avisos),
             profiler: PerfilEmDisco::de_json(j),
             acessos: PerfilEmDisco::de_secao(j, "acessos", PerfilEmDisco::default()),
             diretivas: PerfilEmDisco::de_secao(j, "diretivas", PerfilEmDisco::default()),
@@ -6622,6 +6633,7 @@ impl Config {
             // o painel de bolhas as recebe na propria resposta da telemetria,
             // ao lado dos limiares que decidiram o nivel.
             ("telemetria", self.telemetria.para_json()),
+            ("aquario", self.aquario.para_json()),
             ("profiler", self.profiler.para_json()),
             ("acessos", self.acessos.para_json()),
             ("diretivas", self.diretivas.para_json()),
@@ -6849,6 +6861,37 @@ pub const CAMPOS_EDITAVEIS: &[(&str, TipoDoCampo, bool)] = &[
     // carregam credencial -- e credencial se edita no arquivo.
     ("cluster.quorum_minimo", TipoDoCampo::Inteiro, true),
     ("cluster.quorum_prazo_ms", TipoDoCampo::Inteiro, true),
+    // O perfil visual do aquario (pedido 783). A quente pelo mesmo motivo das
+    // cores do painel: aparencia se escolhe VENDO. A faixa, o contraste e a
+    // familia de cada campo sao conferidos em `gravar_arvore`, pela mesma
+    // `aquario::perfil::Perfil::ler` que o arranque usa.
+    ("aquario.cor_verde", TipoDoCampo::Cor, true),
+    ("aquario.cor_verde_claro", TipoDoCampo::Cor, true),
+    ("aquario.cor_azul_claro", TipoDoCampo::Cor, true),
+    ("aquario.cor_azul_claro_claro", TipoDoCampo::Cor, true),
+    ("aquario.cor_azul_escuro", TipoDoCampo::Cor, true),
+    ("aquario.cor_azul_escuro_claro", TipoDoCampo::Cor, true),
+    ("aquario.cor_amarelo", TipoDoCampo::Cor, true),
+    ("aquario.cor_amarelo_claro", TipoDoCampo::Cor, true),
+    ("aquario.cor_vermelho", TipoDoCampo::Cor, true),
+    ("aquario.cor_vermelho_claro", TipoDoCampo::Cor, true),
+    ("aquario.cor_rosa", TipoDoCampo::Cor, true),
+    ("aquario.cor_rosa_claro", TipoDoCampo::Cor, true),
+    ("aquario.raio_min", TipoDoCampo::Inteiro, true),
+    ("aquario.raio_max", TipoDoCampo::Inteiro, true),
+    ("aquario.ocupacao", TipoDoCampo::Numero, true),
+    ("aquario.cresce", TipoDoCampo::Numero, true),
+    ("aquario.mola_faixa", TipoDoCampo::Numero, true),
+    ("aquario.atrito", TipoDoCampo::Numero, true),
+    ("aquario.quique", TipoDoCampo::Numero, true),
+    ("aquario.estouro_ms", TipoDoCampo::Inteiro, true),
+    ("aquario.rotulo_min", TipoDoCampo::Inteiro, true),
+    ("aquario.espessura", TipoDoCampo::Numero, true),
+    ("aquario.traco_escala", TipoDoCampo::Numero, true),
+    ("aquario.preenchimento", TipoDoCampo::Numero, true),
+    ("aquario.fonte_rotulo_px", TipoDoCampo::Inteiro, true),
+    ("aquario.fonte_faixa_px", TipoDoCampo::Inteiro, true),
+    ("aquario.fonte", TipoDoCampo::Texto, true),
 ];
 
 /// O valor de `"secao.campo"` dentro de um JSON, ou `None` se nao existe.
@@ -6979,6 +7022,15 @@ impl Config {
                     arvore.definir(secao, s);
                 }
             }
+        }
+
+        // O perfil do aquario RECUSA na gravacao (pedido 783): o leitor do
+        // arranque so avisa, e sem esta conferencia um contraste ilegivel
+        // entraria no arquivo e cairia calado no de fabrica. Confere o bloco
+        // INTEIRO como vai ficar, porque as regras cruzadas (raio_max contra
+        // raio_min) olham o par, e nao so o campo que mudou.
+        if mudancas.iter().any(|(c, _)| c.starts_with("aquario.")) {
+            crate::aquario::perfil::conferir_secao(&arvore)?;
         }
 
         let caminhos: Vec<Vec<String>> = mudancas

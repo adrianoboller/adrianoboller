@@ -778,6 +778,69 @@ monitora — toca na bolha e lê o que o `<title>` diz: no toque não há hover)
 da linha do tempo. Custo com o aquário fechado: zero na tela (o desenho só roda no laço); no
 servidor, uma leitura de relógio e um atômico por tarefa viva por segundo.
 
+## 13. Pedido 783 — o PERFIL VISUAL configurável (09/10/2026, papel E)
+
+Ordem do dono: *«configuração de cores, tamanhos, texturas, efeitos de animação, tipografia de
+fontes, cores e tamanhos para não serem valores fixos».* O que era `CORES`/`M`/folha cravados no
+`ui/aquario.js` passa a ter um perfil, com os valores de hoje como fábrica.
+
+**Onde mora — e por quê.** No bloco `aquario` do `config.json`, gravado pelo `config_gravar`, o
+mesmo caminho das cores do painel da telemetria (`telemetria.cor_*`), que é a preferência de
+tela que a casa já guardava no servidor. Uma tabela `phxsys` pediria de novo o portão
+(`administrar`), a trilha (diário das diretivas, com valor de antes e de depois) e a escrita
+atômica; o `config_gravar` já tem os três. O perfil é do **servidor** (a TV e o administrador
+veem o mesmo aquário); preferência por pessoa continua no `localStorage` (a altura da alça).
+
+**Um motor só.** A regra mora em `crates/phxsql-server/src/aquario/perfil.rs`: a `Perfil::ler`
+devolve o perfil **e** as recusas; o arranque transforma recusa em aviso e cai no de fábrica
+campo a campo (cor torta não derruba o servidor, a mesma decisão do `telemetria.cor_*`); a
+gravação (`Config::gravar_arvore`, quando muda algum `aquario.*`) recusa com todos os motivos e
+o arquivo não muda. O retrato (`aquario_retrato`) traz sempre a digital (`perfil_versao`, FNV-1a
+do bloco) e o perfil inteiro **só** quando a tela manda uma digital diferente — a tela normal, a
+alça e a TV leem pelo pedido que já fazem, e a TV aberta muda sozinha no retrato seguinte.
+Digital e não contador: contador recomeçaria no arranque e a TV acharia que já tem o perfil.
+
+**O que se configura, com a faixa** (fábrica entre parênteses; um teste lê cada literal do `M`):
+
+| campo | faixa | por que o teto |
+|---|---|---|
+| `cor_<cor>` / `cor_<cor>_claro` (6 × 2) | `#rrggbb` ou vazio (= a do tema) | ≥ **3:1** contra `#010418` / `#f7f5f2`, e matiz na **família** da cor |
+| `raio_min` (9) | 4–20 px | a nova tem de ser vista e não nascer grande |
+| `raio_max` (46) | 24–64 px, e ≥ 2× `raio_min` | no menor tanque da TV (320 px, 5 faixas de 64) a maior não passa de duas faixas — é o que o 780 protege |
+| `ocupacao` (0,46) | 0,2–0,6 | acima, sem água para as bolhas se moverem |
+| `cresce` (2,2) · `mola_faixa` (5) · `atrito` (1,6) | 0,5–6 · 1–12 · 0,3–4 | física legível |
+| `quique` (0,35) | 0–0,9 | 1 = colisão sem perda, as bolhas nunca assentam |
+| `estouro_ms` (380) | 120–1500 | abaixo não se vê; acima a que acabou parece viva |
+| `rotulo_min` (15) | 10–30 px, e < `raio_max` | senão nenhuma bolha mostra o nome |
+| `espessura` · `traco_escala` (1 · 1) | 0,5–2 × | escalam o traço; o **padrão** do tracejado é sinal e não muda |
+| `preenchimento` (0,14) | 0,05–0,4 | acima vira fundo cheio — a casa pinta contorno |
+| `fonte_rotulo_px` (10) · `fonte_faixa_px` (11) | 8–16 · 9–18 | — |
+| `fonte` (Exo 2) | Exo 2, IBM Plex Mono, Helvetica Neue, Arial, system-ui | só o nome na bolha e o das faixas; título é Exo 2, é marca |
+
+**O que NÃO se configura:** o **significado** da cor (vermelho é alarme e afunda — a janela de
+matiz recusa um «vermelho» verde ou cinza); a **forma** e o **padrão** do traço; o `msGrande`
+(= `TETO_DO_RAIO_MS` do 780 — duas fórmulas se um lado mudasse); `passagens` e `folga` (a
+garantia de não sobrepor, não aparência).
+
+**A tela.** Configurações → Gerais do servidor → «Aparência do aquário», com **dois tanques de
+pré-visualização** (escuro e claro, porque a regra do contraste vale nos dois) que leem o
+**rascunho** por `op.perfil` — o aquário de verdade aberto ao lado, na multitela, não muda antes
+de salvar. Salvar é amarelo (altera), contorno. A faixa de cada controle vem do servidor.
+
+**Provas.** Rust: `aquario::perfil::testes` (fábrica = literais do `M` e do CSS do `index.html`;
+recusa de contraste nos dois temas, de família, de faixa, de fonte, do par de raios; sem bloco
+nada muda; arranque avisa) e `testes_config_gravar` (grava, vale no retrato pela digital, fica no
+diário; recusa sem tocar no arquivo; sem `administrar` não grava). RED medido: sem a
+`conferir_secao` na gravação, `#2a0606` grava e o arranque o descarta calado (`no_arquivo`
+acusa); sem o `definir_perfil_do_aquario` no `config_gravar`, o retrato continua no de fábrica.
+Navegador: o caso `perfil-do-aquario` da bateria (TV aberta antes de salvar muda sozinha para o
+tom e o raio 60; aquário normal igual; contraste ruim recusado pelo servidor com o motivo) e
+`testes-web/prova-783-fabrica.mjs`, que roda o `aquario.js` de antes e o de agora com as mesmas
+tarefas e semente: o SVG de fábrica sai **idêntico** (5.872 × 5.872 caracteres).
+
+**Custo com o aquário fechado:** zero na tela (o perfil só é lido no retrato); no servidor, uma
+`String` de 16 bytes comparada por retrato, e o perfil montado uma vez por gravação.
+
 ## Apêndice B — os medidores da A0 (refazer: `python3 regras.py`, `python3 nmin.py`, `rustc -O --edition 2021 bench.rs && ./bench`)
 
 Vão para `bancada/aquario/` pela A1 (script que resolveu não morre com a sessão).

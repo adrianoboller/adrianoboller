@@ -64,8 +64,17 @@ fn a_janela_do_padrao_antigo_deixa_qualquer_um_tomar_a_porta() {
     // `u16` solto, e nao um soquete preso. Qualquer chamador desta funcao,
     // neste instante, tem exatamente a mesma chance que o "servidor" de
     // pegar o numero -- e este teste ocupa essa chance no lugar dele.
-    let ocupante = TcpListener::bind(("127.0.0.1", porta))
-        .expect("a porta tinha de estar mesmo solta -- se isto falhar, o passo 1 nao soltou nada");
+    //
+    // Com a suite inteira rodando, as vezes outro processo chega ANTES deste
+    // ocupante (AddrInUse aqui, 10/10/2026). Isso nao e falha da prova: e o
+    // proprio defeito acontecendo por conta propria -- a porta foi tomada por
+    // um terceiro na janela. Nos dois casos o passo 3 tem de achar a porta
+    // ocupada, que e o que esta prova mede.
+    let ocupante = match TcpListener::bind(("127.0.0.1", porta)) {
+        Ok(l) => Some(l),
+        Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => None,
+        Err(e) => panic!("o ocupante nao ligou por outro motivo: {e}"),
+    };
 
     // 3. O "servidor" tenta ligar no numero que `porta_livre_antiga()`
     // escolheu -- e encontra a porta OCUPADA por quem chegou primeiro na

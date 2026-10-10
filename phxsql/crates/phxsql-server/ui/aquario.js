@@ -182,7 +182,76 @@ window.PhxAquario = (function () {
     estouroMs: 380,
     folga: 0.2,         // px entre bordas depois de resolver
     rotuloMin: 15,      // so escreve dentro da bolha acima deste raio
+    espessura: 1,       // escala da espessura do traco de cada cor (783)
+    tracoEscala: 1,     // escala do tracejado: o PADRAO e sinal, o tamanho nao (783)
+    preenchimento: 0.14, // opacidade do miolo: contorno, nunca fundo cheio (783)
+    fonteRotulo: 10,    // px, o nome dentro da bolha (783)
+    fonteFaixa: 11,     // px, o nome da faixa (783)
   };
+
+  /* O PERFIL VISUAL (pedido 783). O valor de cada medida, o tom de cada cor
+   * nos dois temas e a letra vem do SERVIDOR (`aquario/perfil.rs`), no
+   * retrato, so quando a digital muda; a faixa e a validacao sao de la. Aqui
+   * so se APLICA. O `M` acima e o de fabrica -- um teste do servidor le os
+   * literais dele e compara com o perfil de fabrica --, e e o que vale na
+   * bancada da A9, que roda sem servidor.
+   *
+   * Cada aquario le o perfil por `perfilDe(op)`: o da pagina (o do servidor)
+   * ou, na pre-visualizacao do editor, o rascunho dele -- assim o rascunho
+   * nao vaza para o aquario de verdade aberto ao lado, na multitela. */
+  const FABRICA = Object.assign({}, M);
+  const GLOBAL = { versao: "", M: M, cores: {}, fonte: "" };
+  const VIVOS = new Set();
+
+  function perfilDe(op) { return (op && op.perfil) || GLOBAL; }
+
+  /* O perfil da resposta do servidor -> { M, cores, fonte }. Medida que esta
+   * tela nao conhece (servidor mais novo) e ignorada; a que o servidor nao
+   * mandou fica de fabrica. */
+  function lerPerfil(p) {
+    const m = Object.assign({}, FABRICA);
+    for (const x of (p && p.medidas) || []) {
+      if (x.js in m && Number.isFinite(+x.valor)) m[x.js] = +x.valor;
+    }
+    const cores = {};
+    for (const c of (p && p.cores) || []) cores[c.cor] = c;
+    return { versao: String((p && p.versao) || ""), M: m, cores: cores, fonte: String((p && p.fonte) || "") };
+  }
+
+  /* Aplica o perfil do servidor a pagina inteira: a tela, a alca e a TV. */
+  function aplicarPerfil(p) {
+    const novo = lerPerfil(p);
+    GLOBAL.versao = novo.versao;
+    Object.assign(M, novo.M);
+    GLOBAL.cores = novo.cores;
+    GLOBAL.fonte = novo.fonte;
+    for (const v of VIVOS) v.reestilizar();
+  }
+
+  function temaDaPagina() {
+    return document.documentElement.getAttribute("data-tema") === "claro" ? "claro" : "escuro";
+  }
+
+  /* A tinta de uma cor. Sem tom escolhido, a de sempre: a variavel do tema,
+   * com a reserva de fabrica -- o desenho de antes do 783, byte a byte. Com
+   * `tema` forcado (a pre-visualizacao, que mostra os dois temas lado a lado),
+   * o tom de fabrica DAQUELE tema, que a variavel da pagina nao sabe dizer. */
+  function tinta(perfil, cor, tema) {
+    const c = CORES[cor] || CORES.verde;
+    const t = perfil.cores[cor] || {};
+    const qual = tema || temaDaPagina();
+    const escolhido = qual === "claro" ? t.claro : t.escuro;
+    if (escolhido) return escolhido;
+    if (tema) return (qual === "claro" ? t.fabrica_claro : t.fabrica_escuro) || c.fb;
+    return `var(${c.v},${c.fb})`;
+  }
+
+  /* O tracejado na escala do perfil: o PADRAO fica (e sinal), so o tamanho
+   * muda. */
+  function traco(padrao, escala) {
+    if (!padrao || escala === 1) return padrao;
+    return padrao.split(" ").map(n => +(n * escala).toFixed(1)).join(" ");
+  }
 
   /* Gerador deterministico: a prova precisa repetir. */
   function prng(semente) {
@@ -202,7 +271,7 @@ window.PhxAquario = (function () {
 
   /* Raio-alvo: logaritmico, porque o que interessa e a diferenca entre 5 ms e
    * 5 s, nao entre 30 s e 31 s. */
-  function raioAlvo(ms) {
+  function raioAlvo(ms, M) {
     const f = Math.min(1, Math.log(1 + Math.max(0, ms || 0)) / Math.log(1 + M.msGrande));
     return M.rMin + (M.rMax - M.rMin) * f;
   }
@@ -229,7 +298,7 @@ window.PhxAquario = (function () {
 
   /* Uma passada de resolucao de contatos, com grade espacial (150 bolhas
    * fariam 11 mil pares; com a grade fazem algumas centenas). */
-  function resolver(vivas, caixa) {
+  function resolver(vivas, caixa, M) {
     const cel = M.rMax * 2 + 2;
     const grade = new Map();
     for (let i = 0; i < vivas.length; i++) {
@@ -285,6 +354,7 @@ window.PhxAquario = (function () {
   /* O motor, separado do DOM: o teste o roda sem desenhar nada. */
   function criarMotor(caixa, opcoes) {
     const op = opcoes || {};
+    const P = () => perfilDe(op).M;
     const e = {
       caixa: caixa,
       colisao: op.colisao !== false,
@@ -301,6 +371,7 @@ window.PhxAquario = (function () {
     }
 
     e.atualizar = function (tarefas) {
+      const M = P();
       const vistos = new Set();
       for (const t of tarefas || []) {
         const id = String(t.id);
@@ -337,7 +408,7 @@ window.PhxAquario = (function () {
         // aqui seria a segunda formula.
         b.aneis = Math.max(0, Math.floor(+t.aneis || 0));
         b.anel = b.aneis ? Math.min(b.aneis, Math.max(0, Math.floor(+t.anel || 0))) : 0;
-        b.bruto = raioAlvo(b.ms);
+        b.bruto = raioAlvo(b.ms, M);
       }
       for (const b of e.bolhas) {
         if (!b.estourando && !vistos.has(b.id)) {
@@ -352,12 +423,13 @@ window.PhxAquario = (function () {
     function recalcularEscala(vivas) {
       let area = 0;
       for (const b of vivas) area += Math.PI * b.bruto * b.bruto;
-      const livre = e.caixa.w * e.caixa.h * M.ocupacaoMax;
+      const livre = e.caixa.w * e.caixa.h * P().ocupacaoMax;
       const alvo = area > livre ? Math.sqrt(livre / area) : 1;
       e.escala += (alvo - e.escala) * 0.2;   // sem tranco quando a lista muda
     }
 
     e.passo = function (dt) {
+      const M = P();
       dt = Math.min(dt, 1 / 30);
       e.tempo += dt;
       const vivas = [];
@@ -376,7 +448,7 @@ window.PhxAquario = (function () {
         b.x += b.vx * dt; b.y += b.vy * dt;
       }
       if (e.colisao) {
-        for (let k = 0; k < M.passagens; k++) if (!resolver(vivas, e.caixa)) break;
+        for (let k = 0; k < M.passagens; k++) if (!resolver(vivas, e.caixa, M)) break;
       } else {
         for (const b of vivas) {   // sem colisao ainda ha parede
           b.x = Math.min(Math.max(b.x, b.r), e.caixa.w - b.r);
@@ -400,14 +472,14 @@ window.PhxAquario = (function () {
   const CSS = `
 .aq{position:relative;width:100%;height:100%;min-height:240px;overflow:hidden;background:var(--fundo,#010418);
   font-family:"Exo 2",system-ui,sans-serif;color:var(--texto,#e6ecf7)}
-.aq svg{display:block;width:100%;height:100%}
+.aq svg{display:block;width:100%;height:100%;font-family:var(--aq-fonte,"Exo 2"),system-ui,sans-serif}
 .aq .aq-faixa{stroke:var(--realce,#152238);stroke-width:1;stroke-dasharray:2 6}
-.aq .aq-faixa-nome{fill:var(--mudo,#8b98b4);font-size:11px;letter-spacing:.04em;text-transform:none;
+.aq .aq-faixa-nome{fill:var(--mudo,#8b98b4);font-size:var(--aq-fonte-faixa,11px);letter-spacing:.04em;text-transform:none;
   paint-order:stroke;stroke:var(--fundo,#010418);stroke-width:3px;stroke-linejoin:round;pointer-events:none}
 .aq .aq-b{text-transform:none}
-.aq .aq-b .aq-forma{fill-opacity:.14}
+.aq .aq-b .aq-forma{fill-opacity:var(--aq-preench,.14)}
 .aq .aq-b .aq-dupla{fill:none}
-.aq .aq-b .aq-rot{fill:var(--texto,#e6ecf7);text-anchor:middle;font-size:10px;pointer-events:none;
+.aq .aq-b .aq-rot{fill:var(--texto,#e6ecf7);text-anchor:middle;font-size:var(--aq-fonte-rotulo,10px);pointer-events:none;
   paint-order:stroke;stroke:var(--fundo,#010418);stroke-width:2px;text-transform:none}
 .aq .aq-b.aq-fim .aq-forma{fill-opacity:0}
 /* Os ANEIS (780): cada um e a forma da bolha em ponto menor, com um traco
@@ -533,6 +605,38 @@ window.PhxAquario = (function () {
 .aq-alca>summary{cursor:pointer;padding:8px 12px;font-size:13px;font-weight:600;color:var(--texto-2,#a8b0c0)}
 .aq-alca-caixa{height:360px;min-height:220px;max-height:92vh;resize:vertical;overflow:hidden;padding:0 10px 10px}
 .aq-alca-caixa .aqt-tanque{height:auto;flex:1;min-height:0}
+/* O EDITOR do perfil (783), na tela de Configuracoes. Sem <label>: o
+   «label{text-transform:uppercase}» da pagina gritaria o nome; e o
+   «input{width:100%}» desfeito no seletor de cor, que viraria uma barra. */
+.aqe{display:flex;flex-direction:column;gap:12px;text-transform:none;min-width:0}
+.aqe *{text-transform:none}
+.aqe-previa{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px}
+.aqe-tanque{display:flex;flex-direction:column;gap:4px;min-width:0}
+.aqe-tanque>span{font-size:11.5px;color:var(--texto-2,#a8b0c0)}
+.aqe-agua{height:230px;border:1px solid var(--linha,#1e2940);border-radius:8px;overflow:hidden}
+.aqe-grupo{display:flex;flex-direction:column;gap:6px;min-width:0}
+.aqe-grupo h4{margin:6px 0 2px;font-size:13px;font-weight:600;color:var(--texto,#e6ecf7)}
+/* Uma cor por linha, os dois temas em colunas fixas: o par escuro/claro se
+   le lado a lado, e o botao «de fabrica» nunca quebra em cima do vizinho. */
+.aqe-cores{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-width:720px}
+.aqe-cores li{display:grid;grid-template-columns:minmax(150px,240px) auto auto;justify-content:start;gap:4px 18px;
+  align-items:center;font-size:12.5px;min-width:0;padding:3px 0;border-bottom:1px solid var(--linha,#1e2940)}
+.aqe-cores li.aqe-cab{border-bottom:0;font-size:11px;color:var(--texto-3,#848da0);padding:0}
+.aqe-tom{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--texto-3,#848da0)}
+.aqe .botao.aqe-zero{white-space:nowrap}
+.aqe input[type=color]{width:38px;height:26px;padding:0;border:1px solid var(--linha-forte,#2b3a56);border-radius:4px;background:none;flex:none}
+.aqe .botao.aqe-zero{width:auto;padding:2px 7px;font-size:11px}
+.aqe-medidas{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:8px 16px}
+.aqe-m{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;align-items:center;font-size:12.5px;min-width:0}
+.aqe-m input[type=range]{grid-column:1/-1;width:100%;padding:0;accent-color:var(--acao-alterar,#ffc43d)}
+.aqe-m output{font-variant-numeric:tabular-nums;color:var(--texto,#e6ecf7)}
+.aqe-m small{grid-column:1/-1;color:var(--texto-3,#848da0);font-size:11px}
+.aqe select.aqe-fonte{width:auto;min-width:200px;align-self:flex-start}
+.aqe-acoes{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.aqe-acoes .botao{width:auto}
+.aqe-res{font-size:12.5px;margin:0;min-height:1.3em;color:var(--texto,#e6ecf7)}
+.aqe-res.aqe-mal{color:var(--vermelho,#ff5f5f)}
+.aqe-nota{font-size:12px;line-height:1.45;color:var(--texto-2,#a8b0c0);margin:0}
 `;
 
   function el(nome, attrs) {
@@ -590,6 +694,20 @@ window.PhxAquario = (function () {
 
     const caixa = { w: host.clientWidth || 800, h: host.clientHeight || 400 };
     const motor = criarMotor(caixa, op);
+    const perfil = () => perfilDe(op);
+    /* O que o perfil muda FORA do laco de quadros: a letra e o miolo por
+     * variavel do CSS no proprio tanque. Sem tom ou letra escolhidos, nada e
+     * escrito -- a folha de fabrica continua mandando. */
+    function reestilizar() {
+      const p = perfil(), m = p.M;
+      const v = (nome, valor, fab) => {
+        if (valor === fab) host.style.removeProperty(nome); else host.style.setProperty(nome, valor);
+      };
+      v("--aq-fonte", p.fonte && p.fonte !== "Exo 2" ? JSON.stringify(p.fonte) : "", "");
+      v("--aq-fonte-rotulo", m.fonteRotulo + "px", FABRICA.fonteRotulo + "px");
+      v("--aq-fonte-faixa", m.fonteFaixa + "px", FABRICA.fonteFaixa + "px");
+      v("--aq-preench", String(m.preenchimento), String(FABRICA.preenchimento));
+    }
     const nos = new Map();     // id -> { g, forma, dupla, rot, tit }
     const stats = { quadros: 0, msFrame: 0 };
     // A bolha CLICAVEL so existe quando quem esta olhando pode encerrar: a
@@ -626,6 +744,7 @@ window.PhxAquario = (function () {
       });
     }
     medir();
+    reestilizar();
     let observador = null;
     if (window.ResizeObserver) { observador = new ResizeObserver(medir); observador.observe(host); }
 
@@ -691,6 +810,7 @@ window.PhxAquario = (function () {
     }
 
     function desenhar() {
+      const P = perfil(), M = P.M;
       const vivas = new Set();
       for (const b of motor.bolhas) {
         let n = noDe(b);
@@ -708,11 +828,11 @@ window.PhxAquario = (function () {
         if (r <= 0.3) { n.g.style.display = "none"; continue; }
         n.g.style.display = "";
         n.g.setAttribute("transform", `translate(${b.x.toFixed(1)} ${b.y.toFixed(1)})`);
-        const cor = `var(${c.v},${c.fb})`;
+        const cor = tinta(P, b.cor, op.tema);
         n.forma.setAttribute("stroke", cor);
         n.forma.setAttribute("fill", cor);
-        n.forma.setAttribute("stroke-width", c.esp);
-        if (c.traco) n.forma.setAttribute("stroke-dasharray", c.traco);
+        n.forma.setAttribute("stroke-width", +(c.esp * M.espessura).toFixed(2));
+        if (c.traco) n.forma.setAttribute("stroke-dasharray", traco(c.traco, M.tracoEscala));
         else n.forma.removeAttribute("stroke-dasharray");
         if (c.forma === "circulo") n.forma.setAttribute("r", r.toFixed(1));
         else n.forma.setAttribute("points", pontos(c.forma, r));
@@ -727,7 +847,7 @@ window.PhxAquario = (function () {
           n.dupla.style.display = "";
         } else if (c.dupla) {
           n.dupla.setAttribute("r", Math.max(0, r - 5).toFixed(1));
-          n.dupla.setAttribute("stroke", cor); n.dupla.setAttribute("stroke-width", 1.5);
+          n.dupla.setAttribute("stroke", cor); n.dupla.setAttribute("stroke-width", +(1.5 * M.espessura).toFixed(2));
           n.dupla.removeAttribute("stroke-dasharray");
           n.dupla.style.display = "";
         } else n.dupla.style.display = "none";
@@ -740,7 +860,9 @@ window.PhxAquario = (function () {
           // o nome inteiro esta no <title>. Encolher a letra ou mudar a caixa
           // seria mexer na aparencia do dado; cortar dizendo que cortou, nao.
           const nome = String(b.tabela || b.op || "");
-          const cabe = Math.floor(2 * r / 5.6);
+          // 0,56 em da letra media: com a letra de fabrica (10 px), os 5,6 px
+          // de sempre
+          const cabe = Math.floor(2 * r / (0.56 * M.fonteRotulo));
           n.rot.textContent = r < M.rotuloMin ? ""
             : nome.length <= cabe ? nome : nome.slice(0, Math.max(1, cabe - 1)) + "…";
           const tx = String(b.op || "") + " " + String(b.tabela || "") +
@@ -783,7 +905,15 @@ window.PhxAquario = (function () {
       parar: function () { cancelAnimationFrame(raf); raf = 0; },
       iniciar: function () { if (!raf) { ultimo = 0; raf = requestAnimationFrame(quadro); } },
       rodando: function () { return raf !== 0; },
-      soltar: function () { api.parar(); if (observador) observador.disconnect(); },
+      soltar: function () { api.parar(); VIVOS.delete(api); if (observador) observador.disconnect(); },
+      /* O perfil mudou: a letra e o miolo agora; a cor, o traco e o tamanho
+       * no quadro seguinte, que ja os le. A bolha nao renasce. */
+      reestilizar: function () {
+        if (!host.isConnected && stats.quadros > 0) { VIVOS.delete(api); return; }
+        reestilizar(); medir();
+        for (const b of motor.bolhas) if (!b.estourando) b.bruto = raioAlvo(b.ms, perfil().M);
+        if (!raf) desenhar();
+      },
       clicavel: function (sim) {
         if (clic === !!sim) return;
         clic = !!sim;
@@ -792,6 +922,9 @@ window.PhxAquario = (function () {
       },
       selecionar: function (id) { selecionada = id || ""; },
     };
+    // So o aquario que segue o perfil da pagina se inscreve: a
+    // pre-visualizacao tem o rascunho dela.
+    if (!op.perfil) VIVOS.add(api);
     if (op.auto !== false) api.iniciar();
     return api;
   }
@@ -799,12 +932,12 @@ window.PhxAquario = (function () {
   /* ------------------------------------------------- a ligacao (A10, A11) */
 
   /* O desenho miudo da cor, para o log e o fundo: a mesma forma da bolha. */
-  function chip(cor) {
+  function chip(cor, perfil, tema) {
     const c = CORES[cor] || CORES.verde;
     const s = el("svg", { viewBox: "-8 -8 16 16", "aria-hidden": "true" });
     const f = c.forma === "circulo" ? el("circle", { r: 6 }) : el("polygon", { points: pontos(c.forma, 6.5) });
-    const tinta = `var(${c.v},${c.fb})`;
-    f.setAttribute("stroke", tinta); f.setAttribute("fill", tinta);
+    const t = tinta(perfil || GLOBAL, CORES[cor] ? cor : "verde", tema);
+    f.setAttribute("stroke", t); f.setAttribute("fill", t);
     f.setAttribute("fill-opacity", ".18"); f.setAttribute("stroke-width", "1.6");
     s.append(f);
     const span = document.createElement("span");
@@ -1446,7 +1579,11 @@ window.PhxAquario = (function () {
       if (!ativo() || emVoo) return;
       emVoo = true;
       try {
-        const r = await pedir("aquario_retrato");
+        // A digital do perfil que a pagina tem: o servidor so manda o perfil
+        // de volta quando ela mudou (783) -- a TV que ficou aberta pega a
+        // cor nova no retrato seguinte, sem recarregar.
+        const r = await pedir("aquario_retrato", { perfil_versao: GLOBAL.versao });
+        if (r.perfil) aplicarPerfil(r.perfil);
         okEm = Date.now(); falhou = false;
         pintarRetrato(r);
         pintarSelo();
@@ -1528,6 +1665,266 @@ window.PhxAquario = (function () {
     return ctl;
   }
 
+
+  /* ======================================== o EDITOR do perfil (pedido 783)
+   *
+   * Mora na tela de Configuracoes, e grava pelo `config_gravar` -- o portao
+   * (`administrar`), a trilha (o diario das diretivas) e a escrita atomica
+   * sao os de todo campo do config.json. A VALIDACAO e do servidor: a tela
+   * nao decide contraste nem faixa, so mostra a faixa que o servidor mandou
+   * e o motivo da recusa que ele devolveu.
+   *
+   * A pre-visualizacao sao DOIS tanques, o escuro e o claro, porque a regra
+   * do contraste vale nos dois temas e quem escolhe um tom num ve o outro no
+   * escuro. Eles leem o RASCUNHO (`op.perfil`), e nao o perfil da pagina: um
+   * aquario de verdade aberto ao lado, na multitela, nao muda antes de
+   * alguem salvar. */
+
+  /* O nome de cada medida, por CHAVE literal (o laco da fabrica procura o
+   * literal; chave montada seria chave morta para ele). */
+  const ROTULO_DA_MEDIDA = {
+    raio_min: () => txt("tela.aq_pf_raio_min", "raio da bolha nova (px)"),
+    raio_max: () => txt("tela.aq_pf_raio_max", "raio da maior bolha (px)"),
+    ocupacao: () => txt("tela.aq_pf_ocupacao", "quanto do tanque as bolhas podem cobrir"),
+    cresce: () => txt("tela.aq_pf_cresce", "velocidade de crescer"),
+    mola_faixa: () => txt("tela.aq_pf_mola_faixa", "puxão até a faixa"),
+    atrito: () => txt("tela.aq_pf_atrito", "atrito da água"),
+    quique: () => txt("tela.aq_pf_quique", "quique na colisão"),
+    estouro_ms: () => txt("tela.aq_pf_estouro_ms", "duração do estouro (ms)"),
+    rotulo_min: () => txt("tela.aq_pf_rotulo_min", "raio a partir do qual a bolha mostra o nome (px)"),
+    espessura: () => txt("tela.aq_pf_espessura", "espessura do traço (×)"),
+    traco_escala: () => txt("tela.aq_pf_traco_escala", "tamanho do tracejado (×)"),
+    preenchimento: () => txt("tela.aq_pf_preenchimento", "opacidade do miolo"),
+    fonte_rotulo_px: () => txt("tela.aq_pf_fonte_rotulo_px", "letra do nome na bolha (px)"),
+    fonte_faixa_px: () => txt("tela.aq_pf_fonte_faixa_px", "letra do nome da faixa (px)"),
+  };
+
+  /* As tarefas da pre-visualizacao: uma por cor, em tempos que dao tamanhos
+   * diferentes. O nome dentro da bolha e o rotulo da cor, pela fabrica. */
+  const AMOSTRAS = [
+    ["verde", "select", 40], ["azul_claro", "insert", 8000], ["azul_escuro", "update", 30000],
+    ["amarelo", "delete", 2500], ["vermelho", "outras", 12000], ["rosa", "select", 600],
+  ];
+
+  /* As variaveis do tema que o tanque da pre-visualizacao precisa, e que a
+   * pagina so define para o tema dela. O fundo vem do servidor -- e o fundo
+   * contra o qual ele mede o contraste. */
+  const TEMA_DA_PREVIA = {
+    escuro: { "--texto": "#dde2eb", "--mudo": "#848da0", "--realce": "#152238" },
+    claro: { "--texto": "#1a1210", "--mudo": "#6b5e57", "--realce": "#e9e4de" },
+  };
+
+  function editor(host, cfg) {
+    const c = cfg || {};
+    const api = c.api;
+    garantirCss();
+    host.classList.add("aqe");
+    host.textContent = txt("tela.aq_pf_lendo", "lendo o perfil do aquário…");
+    let servidor = null;      // o perfil como o servidor o tem
+    const rasc = { cores: {}, valores: {}, fonte: "" };
+    const previa = { versao: "", M: Object.assign({}, FABRICA), cores: {}, fonte: "" };
+    let tanques = [];
+
+    function doServidor(p) {
+      servidor = p;
+      for (const x of p.cores || []) rasc.cores[x.cor] = { escuro: x.escuro || "", claro: x.claro || "" };
+      for (const m of p.medidas || []) rasc.valores[m.campo] = +m.valor;
+      rasc.fonte = p.fonte || "";
+    }
+
+    /* O rascunho como perfil que o desenho le. */
+    function montarPrevia() {
+      const p = lerPerfil({
+        medidas: (servidor.medidas || []).map(m => Object.assign({}, m, { valor: rasc.valores[m.campo] })),
+        cores: (servidor.cores || []).map(x => Object.assign({}, x, rasc.cores[x.cor])),
+        fonte: rasc.fonte,
+      });
+      Object.assign(previa.M, p.M); previa.cores = p.cores; previa.fonte = p.fonte;
+      for (const t of tanques) t.reestilizar();
+      pintarChips();
+    }
+    function pintarChips() {
+      for (const span of host.querySelectorAll("[data-chip]")) {
+        span.textContent = "";
+        span.append(chip(span.dataset.cor, previa, span.dataset.chip));
+      }
+    }
+
+    function hexDe(cor, tema) {
+      const r = rasc.cores[cor] || {};
+      const x = (servidor.cores || []).find(y => y.cor === cor) || {};
+      return r[tema] || (tema === "claro" ? x.fabrica_claro : x.fabrica_escuro) || "#000000";
+    }
+
+    function linhaDeCor(x) {
+      const nome = ROTULO_DA_COR[x.cor] ? ROTULO_DA_COR[x.cor]() : x.cor;
+      const tom = tema => {
+        const rot = preencher(txt("tela.aq_pf_cor_al", "tom de «{cor}» no {tema}"),
+          { cor: nome, tema: tema === "claro" ? txt("tela.aq_pf_tema_claro", "tema claro") : txt("tela.aq_pf_tema_escuro", "tema escuro") });
+        return `<span class="aqe-tom" data-tema="${tema}">
+            <span data-chip="${tema}" data-cor="${esc(x.cor)}"></span>
+            <input type="color" data-cor="${esc(x.cor)}" data-tema="${tema}" value="${esc(hexDe(x.cor, tema))}"
+                   aria-label="${esc(rot)}" title="${esc(rot)}">
+            <button type="button" class="botao secundario aqe-zero" data-cor="${esc(x.cor)}" data-tema="${tema}"
+                    title="${esc(txt("tela.aq_pf_de_fabrica_al", "volta este tom ao de fábrica, que segue o tema"))}">${esc(txt("tela.aq_pf_de_fabrica", "de fábrica"))}</button>
+          </span>`;
+      };
+      return `<li data-cor="${esc(x.cor)}"><span>${esc(nome)}</span>${tom("escuro")}${tom("claro")}</li>`;
+    }
+
+    function passo(m) {
+      if (m.inteiro) return 1;
+      const d = (m.max - m.min) / 100;
+      return d >= 0.1 ? 0.1 : 0.01;
+    }
+    function linhaDeMedida(m) {
+      const nome = ROTULO_DA_MEDIDA[m.campo] ? ROTULO_DA_MEDIDA[m.campo]() : m.campo;
+      const v = rasc.valores[m.campo];
+      // `data-aqe-campo`, e nao `data-campo`: o «Salvar no config.json» da
+      // mesma pagina coleta todo `#painel [data-campo]` como campo do
+      // formulario, e um <div> ali derrubava o salvar com `value` indefinido
+      // (achado pela bateria, caso `botoes-de-configuracao`).
+      return `<div class="aqe-m" data-aqe-campo="${esc(m.campo)}">
+          <span>${esc(nome)}</span><output>${esc(String(v))}</output>
+          <input type="range" min="${m.min}" max="${m.max}" step="${passo(m)}" value="${v}"
+                 data-medida="${esc(m.campo)}" aria-label="${esc(nome)}">
+          <small>${esc(preencher(txt("tela.aq_pf_faixa", "de {min} a {max} · de fábrica {fab}"),
+            { min: m.min, max: m.max, fab: m.fabrica }))}</small>
+        </div>`;
+    }
+
+    function montar() {
+      host.innerHTML = `
+        <div class="aqe-previa">
+          <div class="aqe-tanque"><span>${esc(txt("tela.aq_pf_previa_escuro", "pré-visualização · tema escuro"))}</span><div class="aqe-agua" data-tema="escuro"></div></div>
+          <div class="aqe-tanque"><span>${esc(txt("tela.aq_pf_previa_claro", "pré-visualização · tema claro"))}</span><div class="aqe-agua" data-tema="claro"></div></div>
+        </div>
+        <div class="aqe-grupo"><h4>${esc(txt("tela.aq_pf_cores", "Tom das cores"))}</h4>
+          <ul class="aqe-cores">
+            <li class="aqe-cab" aria-hidden="true"><span></span><span>${esc(txt("tela.aq_pf_tema_escuro", "tema escuro"))}</span><span>${esc(txt("tela.aq_pf_tema_claro", "tema claro"))}</span></li>
+            ${(servidor.cores || []).map(linhaDeCor).join("")}</ul>
+          <p class="aqe-nota">${esc(txt("tela.aq_pf_nota_cor", "Configura-se o TOM, e não o significado: vermelho continua sendo alarme e afunda, amarelo continua aviso, e o servidor recusa o tom fora da família da cor."))}</p>
+          <p class="aqe-nota">${esc(txt("tela.aq_pf_nota_forma", "A forma e o traço (círculo, losango, octógono, tracejado) continuam sendo sinal. O tom precisa de 3:1 de contraste contra o fundo do aquário no tema dele."))}</p>
+        </div>
+        <div class="aqe-grupo"><h4>${esc(txt("tela.aq_pf_medidas", "Tamanho, movimento e traço"))}</h4>
+          <div class="aqe-medidas">${(servidor.medidas || []).map(linhaDeMedida).join("")}</div>
+        </div>
+        <div class="aqe-grupo"><h4>${esc(txt("tela.aq_pf_letra", "Letra"))}</h4>
+          <select class="aqe-fonte" aria-label="${esc(txt("tela.aq_pf_fonte_al", "letra dos nomes dentro do aquário"))}">${
+            (servidor.fontes || []).map(f => `<option value="${esc(f)}" ${f === rasc.fonte ? "selected" : ""}>${esc(f)}</option>`).join("")}</select>
+          <p class="aqe-nota">${esc(txt("tela.aq_pf_nota_letra", "Vale para o nome dentro da bolha e o nome das faixas. Os títulos continuam em Exo 2, que é a marca."))}</p>
+        </div>
+        <div class="aqe-acoes">
+          <button type="button" class="botao alterar aqe-salvar">${esc(txt("tela.aq_pf_salvar", "Salvar o perfil do aquário"))}</button>
+          <button type="button" class="botao secundario aqe-fabrica">${esc(txt("tela.aq_pf_tudo_de_fabrica", "Voltar tudo ao de fábrica"))}</button>
+          <button type="button" class="botao secundario aqe-descartar">${esc(txt("tela.cfg_descartar", "Descartar as mudanças"))}</button>
+        </div>
+        <p class="aqe-res" role="status" aria-live="polite"></p>`;
+
+      for (const t of tanques) t.soltar();
+      tanques = [];
+      for (const agua of host.querySelectorAll(".aqe-agua")) {
+        const tema = agua.dataset.tema;
+        agua.style.setProperty("--fundo", (servidor.fundos || {})[tema] || (tema === "claro" ? "#f7f5f2" : "#010418"));
+        for (const [k, v] of Object.entries(TEMA_DA_PREVIA[tema])) agua.style.setProperty(k, v);
+        const t = criar(agua, { perfil: previa, tema: tema, semente: 783 });
+        t.atualizar(AMOSTRAS.map(([cor, faixa, ms], i) => ({ id: "previa-" + i, op: faixa, faixa: faixa, cor: cor,
+          ms: ms, tabela: ROTULO_DA_COR[cor]() })));
+        tanques.push(t);
+      }
+
+      host.querySelectorAll("input[type=color]").forEach(i => i.addEventListener("input", () => {
+        rasc.cores[i.dataset.cor][i.dataset.tema] = i.value.toLowerCase();
+        montarPrevia();
+      }));
+      host.querySelectorAll(".aqe-zero").forEach(b => b.addEventListener("click", () => {
+        rasc.cores[b.dataset.cor][b.dataset.tema] = "";
+        const i = host.querySelector(`input[type=color][data-cor="${b.dataset.cor}"][data-tema="${b.dataset.tema}"]`);
+        if (i) i.value = hexDe(b.dataset.cor, b.dataset.tema);
+        montarPrevia();
+      }));
+      host.querySelectorAll("input[data-medida]").forEach(i => i.addEventListener("input", () => {
+        rasc.valores[i.dataset.medida] = +i.value;
+        i.parentNode.querySelector("output").textContent = i.value;
+        montarPrevia();
+      }));
+      host.querySelector(".aqe-fonte").addEventListener("change", e => { rasc.fonte = e.target.value; montarPrevia(); });
+      host.querySelector(".aqe-salvar").addEventListener("click", salvar);
+      host.querySelector(".aqe-descartar").addEventListener("click", () => { doServidor(servidor); montar(); });
+      host.querySelector(".aqe-fabrica").addEventListener("click", () => {
+        for (const k of Object.keys(rasc.cores)) rasc.cores[k] = { escuro: "", claro: "" };
+        for (const m of servidor.medidas || []) rasc.valores[m.campo] = +m.fabrica;
+        rasc.fonte = (servidor.fontes || [""])[0];
+        montar();
+        dizer(txt("tela.aq_pf_fabrica_dito", "tudo de fábrica na pré-visualização — e ainda é preciso salvar"), false);
+      });
+      montarPrevia();
+    }
+
+    function dizer(texto, mal) {
+      const r = host.querySelector(".aqe-res");
+      if (!r) return;
+      r.textContent = texto;
+      r.classList.toggle("aqe-mal", !!mal);
+      r.dataset.estado = mal ? "recusado" : "ok";
+    }
+
+    /* So o que MUDOU vai ao servidor: um clique em salvar nao reescreve
+     * vinte e sete campos que ninguem tocou, e a trilha diz o que mudou. */
+    function mudancas() {
+      const campos = {};
+      for (const x of servidor.cores || []) {
+        const r = rasc.cores[x.cor] || {};
+        if ((r.escuro || "") !== (x.escuro || "")) campos["aquario.cor_" + x.cor] = r.escuro || "";
+        if ((r.claro || "") !== (x.claro || "")) campos["aquario.cor_" + x.cor + "_claro"] = r.claro || "";
+      }
+      for (const m of servidor.medidas || []) {
+        if (rasc.valores[m.campo] !== +m.valor) campos["aquario." + m.campo] = rasc.valores[m.campo];
+      }
+      if (rasc.fonte !== servidor.fonte) campos["aquario.fonte"] = rasc.fonte;
+      return campos;
+    }
+
+    async function salvar() {
+      const campos = mudancas();
+      if (!Object.keys(campos).length) return dizer(txt("tela.g_nada_mudou", "nada mudou — nenhum campo foi gravado"), false);
+      const bt = host.querySelector(".aqe-salvar");
+      bt.disabled = true;
+      try {
+        await api("config_gravar", { campos: campos });
+        const r = await api("aquario_retrato", { perfil_versao: "" });
+        // A pagina inteira passa a valer o perfil gravado agora; a TV de
+        // outra maquina pega no retrato seguinte, pela digital.
+        if (r.perfil) { aplicarPerfil(r.perfil); doServidor(r.perfil); }
+        montar();
+        dizer(preencher(txt("tela.aq_pf_gravado", "{n} ajuste(s) gravado(s) — o aquário e a TV mudam no próximo retrato"),
+          { n: Object.keys(campos).length }), false);
+      } catch (e) {
+        // O motivo e do servidor, que e quem decide: a tela nao reescreve.
+        dizer(preencher(txt("tela.aq_pf_recusado", "o servidor recusou: {erro}"), { erro: String(e && e.message || e) }), true);
+      } finally {
+        const b = host.querySelector(".aqe-salvar");
+        if (b) b.disabled = false;
+      }
+    }
+
+    (async () => {
+      try {
+        const r = await api("aquario_retrato", { perfil_versao: "" });
+        if (!r.perfil) throw new Error(txt("tela.aq_pf_sem_perfil", "este servidor não tem perfil do aquário"));
+        doServidor(r.perfil);
+        montar();
+      } catch (e) {
+        host.textContent = preencher(txt("tela.aq_falhou", "o servidor não respondeu: {erro}"), { erro: String(e && e.message || e) });
+      }
+    })();
+
+    return {
+      soltar: () => { for (const t of tanques) t.soltar(); tanques = []; },
+      _rascunho: rasc,
+    };
+  }
+
   // A folha entra ja no carregamento: a alca da telemetria e pintada antes
   // de qualquer aquario existir, e sem o estilo o resumo dela nasceria cru.
   if (typeof document !== "undefined" && document.head) garantirCss();
@@ -1540,7 +1937,8 @@ window.PhxAquario = (function () {
   }
 
   return { criar: criar, criarMotor: criarMotor, sobreposicoes: sobreposicoes, tela: tela,
-           desfecho: desfecho,
+           desfecho: desfecho, editor: editor, aplicarPerfil: aplicarPerfil,
+           perfil: () => GLOBAL,
            FAIXAS: FAIXAS, MOTIVOS: MOTIVOS, LIMITE_VELHO_MS: LIMITE_VELHO_MS,
            _somar: somar, _meiaNoite: meiaNoite };
 })();

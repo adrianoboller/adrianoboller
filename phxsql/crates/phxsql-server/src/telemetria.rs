@@ -1406,6 +1406,10 @@ pub struct Telemetria {
     /// E lida uma vez por retrato -- de dois em dois segundos, quando alguem
     /// tem o painel aberto --, e nao no caminho quente de pedido nenhum.
     pintura: Mutex<crate::config::Painel>,
+    /// O perfil visual do aquario (pedido 783), JA na forma da tela e com a
+    /// digital: o retrato compara a digital que a tela mandou e so copia o
+    /// perfil quando ela mudou. Montado na gravacao, e nao por retrato.
+    perfil_do_aquario: Mutex<Arc<(String, Json, Json)>>,
     /// O aquario (pedido 707). Privado de proposito: para ANOTAR, so se chega
     /// a ele pelo [`Telemetria::aquario_se_ligada`], que e o portao.
     aquario: crate::aquario::Aquario,
@@ -1462,6 +1466,9 @@ impl Telemetria {
             encerramentos: AtomicU64::new(0),
             fios_vivos: AtomicUsize::new(0),
             pintura: Mutex::new(crate::config::Painel::default()),
+            perfil_do_aquario: Mutex::new(Arc::new(Telemetria::montar_perfil(
+                &crate::aquario::perfil::Perfil::default(),
+            ))),
             aquario: crate::aquario::Aquario::default(),
             ocorrencias: Mutex::new(std::sync::Weak::new()),
             sal_do_pseudonimo: std::sync::OnceLock::new(),
@@ -1493,6 +1500,28 @@ impl Telemetria {
         match self.pintura.lock() {
             Ok(mut v) => *v = p,
             Err(e) => *e.into_inner() = p,
+        }
+    }
+
+    fn montar_perfil(p: &crate::aquario::perfil::Perfil) -> (String, Json, Json) {
+        (p.versao(), p.para_tela(), p.para_json())
+    }
+
+    /// O perfil visual do aquario que o `config.json` pediu (pedido 783).
+    /// **Este e o leitor**, no arranque e a cada gravacao pela tela.
+    pub fn definir_perfil_do_aquario(&self, p: &crate::aquario::perfil::Perfil) {
+        let novo = Arc::new(Telemetria::montar_perfil(p));
+        match self.perfil_do_aquario.lock() {
+            Ok(mut v) => *v = novo,
+            Err(e) => *e.into_inner() = novo,
+        }
+    }
+
+    /// `(digital, perfil para a tela, bloco do config.json)`.
+    pub fn perfil_do_aquario(&self) -> Arc<(String, Json, Json)> {
+        match self.perfil_do_aquario.lock() {
+            Ok(v) => v.clone(),
+            Err(e) => e.into_inner().clone(),
         }
     }
 

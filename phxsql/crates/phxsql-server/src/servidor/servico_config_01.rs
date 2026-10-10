@@ -26,6 +26,10 @@ impl Servidor {
         // vale no proximo arranque» -- mentindo sobre o que ela acabou de
         // fazer. Apareceu exercitando, e nao lendo.
         j.definir("telemetria", self.telemetria.pintura().para_json());
+        // O perfil do aquario tambem e A QUENTE (pedido 783), pelo mesmo
+        // motivo das cores: sem isto o `no_arquivo` acusaria divergencia em
+        // todo campo recem-gravado.
+        j.definir("aquario", self.telemetria.perfil_do_aquario().2.clone());
         // O aviso do pedido 214(b), estruturado e nao em prosa: a tela monta a
         // frase pela fabrica de idiomas. Campo AUSENTE quando a lista esta
         // preenchida -- assim quem le nao precisa distinguir `false` de
@@ -225,6 +229,9 @@ impl Servidor {
         // se escolhe VENDO, e uma que so aparecesse no proximo arranque seria
         // escolhida no escuro.
         self.telemetria.definir_pintura(novo.telemetria.clone());
+        // O perfil do aquario vale no retrato seguinte (pedido 783): a tela e
+        // a TV comparam a digital e buscam o perfil novo sozinhas.
+        self.telemetria.definir_perfil_do_aquario(&novo.aquario);
         self.max_linhas_vivo
             .store(novo.max_linhas, Ordering::Relaxed);
         self.somente_leitura_vivo

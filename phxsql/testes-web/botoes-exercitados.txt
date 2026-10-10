@@ -205,6 +205,10 @@
 #vwExcl
 .aba
 .alterar
+.aqe-descartar
+.aqe-fabrica
+.aqe-salvar
+.aqe-zero
 .aqt-bt
 .aqt-bt-tocar
 .aqt-bt-vivo
@@ -299,6 +303,8 @@
 [data-bi="0"]
 [data-bi="1"]
 [data-bi]
+[data-cor="vermelho"]
+[data-cor]
 [data-db="batLgdC"]
 [data-db="batLgdE"]
 [data-db]
@@ -354,8 +360,8 @@
 [data-i="8"]
 [data-i="9"]
 [data-i]
-[data-id="1791589911917004"]
-[data-id="1791589911917009"]
+[data-id="1791595430789010"]
+[data-id="1791595430789021"]
 [data-id]
 [data-idi="Frances"]
 [data-idi]
@@ -373,8 +379,8 @@
 [data-kill="20"]
 [data-kill="4"]
 [data-kill]
-[data-killweb="11281dd3"]
-[data-killweb="ef6b5b98"]
+[data-killweb="bbce8e04"]
+[data-killweb="cf73dcb7"]
 [data-killweb]
 [data-login="fichausuc"]
 [data-login="fichausue"]
@@ -412,7 +418,7 @@
 [data-op="7"]
 [data-op="8"]
 [data-op]
-[data-origem="/tmp/phx-bateria-gRsopj/backups"]
+[data-origem="/tmp/phx-bateria-a7cpM7/backups"]
 [data-origem]
 [data-p="1"]
 [data-p="2"]
@@ -447,6 +453,9 @@
 [data-tab="filha"]
 [data-tab="pacientes"]
 [data-tab]
+[data-tema="claro"]
+[data-tema="escuro"]
+[data-tema]
 [data-ti="0"]
 [data-ti]
 [data-tirar="0"]
@@ -454,8 +463,8 @@
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
-[data-uuid="01a12319-8ac4-728d-8cad-1f15695d2cdc"]
-[data-uuid="01a1231e-5345-724a-9aaf-7fb6f3ce8981"]
+[data-uuid="01a1236d-e937-725d-9e4b-a630f61d133d"]
+[data-uuid="01a12373-00bf-72c0-9a05-fa233bdb1ff3"]
 [data-uuid]
 [data-x="0"]
 [data-x="1"]

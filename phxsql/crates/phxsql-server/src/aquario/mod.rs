@@ -44,6 +44,7 @@ pub mod base;
 pub mod classe;
 pub mod contagem;
 pub mod log;
+pub mod perfil;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 

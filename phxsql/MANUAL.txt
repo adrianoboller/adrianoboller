@@ -1344,6 +1344,49 @@ CORES DO PAINEL DE TELEMETRIA
 
     Detalhes em docs/TELEMETRIA.md, secao 3.3.1.
 
+APARENCIA DO AQUARIO
+
+    A secao "aquario" do config.json e o perfil visual do aquario dos
+    processos (pedido 783): o tom das seis cores nos dois temas, o tamanho e o
+    movimento das bolhas, o traco e a letra. Vale para a tela, para a alca da
+    telemetria e para a TV de parede. Edita-se em Configuracoes > Gerais do
+    servidor > "Aparencia do aquario", com dois tanques de pre-visualizacao
+    (tema escuro e tema claro) que mostram o rascunho antes de salvar.
+
+    "aquario": {
+      "cor_vermelho": "", "cor_vermelho_claro": "",
+      "raio_min": 9, "raio_max": 46, "estouro_ms": 380,
+      "fonte": "Exo 2"
+    }
+
+    CAMPO AUSENTE OU VAZIO E O DE FABRICA, e o de fabrica e o desenho de
+    antes do 783, byte a byte. As seis cores sao verde, azul_claro,
+    azul_escuro, amarelo, vermelho e rosa; "cor_<cor>" e o tom no tema escuro
+    e "cor_<cor>_claro" no tema claro. As medidas, com a faixa: raio_min 4-20,
+    raio_max 24-64 (e ao menos o dobro de raio_min), ocupacao 0,2-0,6, cresce
+    0,5-6, mola_faixa 1-12, atrito 0,3-4, quique 0-0,9, estouro_ms 120-1500,
+    rotulo_min 10-30 (e menor que raio_max), espessura e traco_escala 0,5-2,
+    preenchimento 0,05-0,4, fonte_rotulo_px 8-16, fonte_faixa_px 9-18. A
+    fonte e uma de: Exo 2, IBM Plex Mono, Helvetica Neue, Arial, system-ui --
+    e vale so para o nome dentro da bolha e o das faixas; os titulos ficam em
+    Exo 2, que e a marca.
+
+    A GRAVACAO RECUSA, O ARRANQUE AVISA. Pela tela, o servidor recusa com o
+    motivo: tom com contraste abaixo de 3:1 contra o fundo do aquario no tema
+    dele (#010418 no escuro, #f7f5f2 no claro), tom fora da FAMILIA da cor,
+    medida fora da faixa, fonte fora da lista. Escrito a mao no arquivo, o
+    mesmo valor vira aviso no arranque e o campo fica de fabrica.
+
+    O QUE NAO SE CONFIGURA E O SIGNIFICADO. Vermelho e alarme e afunda,
+    amarelo e aviso: configura-se o tom, e um "vermelho" pintado de verde e
+    recusado. A forma (circulo, losango, octogono) e o padrao do tracejado
+    continuam sendo sinal; o perfil so escala o traco.
+
+    VALE NA HORA, E SO QUEM ADMINISTRA GRAVA. O retrato do aquario leva a
+    digital do perfil, e a tela -- inclusive a TV que ficou aberta -- busca o
+    perfil novo no retrato seguinte. Cada campo gravado vai ao diario das
+    diretivas, com o valor de antes e o de depois.
+
 SEQUENCIAS
 
     A operacao "sequencias" junta, num lugar so, o contador de cada tabela do

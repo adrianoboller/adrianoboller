@@ -95,7 +95,12 @@ async function corpo(ctx) {
   await definirIA(page, { chave: CHAVE, ligado: true });
   await page.click('[data-admin="ocorrencias"]');
   await page.waitForSelector('.bt-explicar-oc', { timeout: ESPERA });
-  await page.selectOption('#ocAlarme', 'forca_bruta');
+  // Um alarme que a bateria NUNCA produz, para o filtro ter de esvaziar a
+  // lista. Era `forca_bruta`, ate o 779 dar produtor a ele: desde entao o
+  // caso 42 (bloqueio do 127.0.0.2) gera uma, e na bateria inteira a lista
+  // filtrada nao esvaziava mais (10/10/2026). Sem replicacao aqui, a
+  // continuidade nunca rompe.
+  await page.selectOption('#ocAlarme', 'continuidade_rompida');
   await page.click('#ocFiltrar');
   await page.waitForFunction(() => !document.querySelector('.bt-explicar-oc')
     && document.querySelector('#gradeOcorrencias'), undefined, { timeout: ESPERA });
