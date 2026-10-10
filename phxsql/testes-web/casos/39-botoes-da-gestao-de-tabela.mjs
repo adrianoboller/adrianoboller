@@ -263,7 +263,7 @@ async function corpo(ctx) {
       bases: { [db]: { ler: true } } }).catch(() => {});
     const leitor = await page.context().newPage();
     try {
-      await entrar(leitor, ctx.url, { usuario: login, senha, token: CREDENCIAL.TOKEN });
+      await entrar(leitor, ctx.url, { usuario: login, senha, token: CREDENCIAL.TOKEN }, { cadastradaPor: page });
       await leitor.evaluate(d => gerirTabelas(d), db);
       await leitor.waitForSelector('#btNovaTab', { timeout: ESPERA });
       await leitor.evaluate(([d, t]) => gerirTabela(d, t), [db, tab]);

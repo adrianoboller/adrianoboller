@@ -26,6 +26,11 @@ pub(super) const CODIGO_DE_ES: u16 = 5001;
 /// compara com os `PhxError` de verdade, para o numero nao derivar calado.
 pub(super) const CODIGOS_DE_INTEGRIDADE: [u16; 3] = [3002, 3004, 3006];
 
+/// O que `semear_o_sistema` devolve: o resultado das mensagens (criou
+/// database, criou tabela, semeadas, ja existiam) e o da protecao (semeadas),
+/// separados -- a falha de uma nao cala a outra.
+pub(super) type Semeadura = (Result<(bool, bool, u64, u64)>, Result<u64>);
+
 impl Servidor {
     /// Violacao grave: bloqueia (na hora ou na enesima, conforme a politica)
     /// e avisa no log. Devolve o que aconteceu, porque a RESPOSTA depende
@@ -656,7 +661,125 @@ impl Servidor {
     ///
     /// Devolve (criou database, criou tabela, semeadas, ja existiam).
     pub(super) fn semear_mensagens(&self) -> Result<(bool, bool, u64, u64)> {
-        let dados = self.travar_dados()?;
+        self.semear_o_sistema(true, false, false).0
+    }
+
+    /// As duas tabelas de sistema semeadas sob UMA tomada da trava: a de
+    /// mensagens e a de protecao (765/767, P12). Uma tomada so porque as
+    /// duas fazem o mesmo trabalho -- criar se falta, gravar o que falta --,
+    /// e a catraca do mapa da trava (`alcancam-fsync-3`) conta cada secao
+    /// nova que alcanca `fsync`. Cada uma devolve o proprio resultado: a
+    /// falha de uma nao cala a outra.
+    ///
+    /// `criar_o_sistema` falso semeia a protecao SO se o database `phxsys`
+    /// ja existe -- e o arranque: completa a tabela de quem ja tem o sistema
+    /// (a linha de uma op nova da fabrica entra no upgrade), e nao faz nascer
+    /// `phxsys` em servidor que nunca o pediu.
+    pub(super) fn semear_o_sistema(
+        &self,
+        mensagens: bool,
+        protecao: bool,
+        criar_o_sistema: bool,
+    ) -> Semeadura {
+        let dados = match self.travar_dados() {
+            Ok(d) => d,
+            Err(e) => {
+                let texto = e.to_string();
+                return (Err(e), Err(PhxError::Esquema(texto)));
+            }
+        };
+        let m = if mensagens {
+            Self::semear_mensagens_em(&dados)
+        } else {
+            Ok((false, false, 0, 0))
+        };
+        let p = if protecao
+            && (criar_o_sistema || dados.abrir_database(crate::protecao::DATABASE).is_ok())
+        {
+            Self::semear_protecao_em(&dados)
+        } else {
+            Ok(0)
+        };
+        drop(dados);
+        if mensagens {
+            // O cache rele na proxima resolucao -- e o "aplica sem reiniciar".
+            self.mensagens.invalidar();
+        }
+        (m, p)
+    }
+
+    /// Cria `phxsys.protecao` se falta e grava as linhas de fabrica cuja op
+    /// ainda nao tem linha. Linha presente nao e tocada -- semear de novo
+    /// NUNCA desfaz a escolha do dono do banco, e e por isso que roda a cada
+    /// arranque. Devolve quantas semeou.
+    fn semear_protecao_em(dados: &Instancia) -> Result<u64> {
+        use crate::protecao as pr;
+        let db = match dados.abrir_database(pr::DATABASE) {
+            Ok(db) => db,
+            Err(_) => dados.criar_database(pr::DATABASE)?,
+        };
+        if !db.existe_tabela(None, pr::TABELA)? {
+            let colunas = vec![
+                Column::new("id", ColumnType::Uuid).obrigatoria(),
+                Column::new("op", ColumnType::Str(40)).obrigatoria(),
+                Column::new("categoria", ColumnType::Str(30)),
+                Column::new("modo", ColumnType::Str(12)),
+            ];
+            // `op` unico: duas linhas da mesma op seriam duas respostas para
+            // a mesma pergunta. O leitor ainda assim fica com a mais estrita.
+            let indices = vec![
+                IndexDef::new("porId", vec![IndexColumn::asc(0)]).primaria(),
+                IndexDef::new("porOp", vec![IndexColumn::asc(1)]).unico(),
+            ];
+            db.criar_tabela(None, Schema::new(pr::TABELA, colunas, indices)?)?;
+        }
+        let mut t = db.abrir_qualificada(pr::TABELA)?;
+        let Some(col_op) = posicao_da_coluna(t.esquema(), "op") else {
+            return Err(PhxError::Esquema(format!(
+                "a tabela {}.{} existe mas nao tem a coluna op",
+                pr::DATABASE,
+                pr::TABELA
+            )));
+        };
+        // TODAS, como nas mensagens: a linha marcada ainda ocupa o indice
+        // unico, e semear por cima daria chave duplicada.
+        let mut existentes = std::collections::HashSet::new();
+        let total = t.registros();
+        if let Ok((rowids, _)) = t.pagina_por_posicao(0, total, Visao::Todas) {
+            for rowid in rowids {
+                if let Ok(Some(linha)) = t.ler(rowid) {
+                    if let Some(op) = linha.get(col_op).and_then(Value::como_str) {
+                        existentes.insert(op.trim().to_string());
+                    }
+                }
+            }
+        }
+        let mut semeadas = 0u64;
+        for (op, categoria) in pr::FABRICA {
+            if existentes.contains(*op) {
+                continue;
+            }
+            let objeto = Json::objeto(vec![
+                (
+                    "id",
+                    Json::texto_de(phxsql_core::uuid::Uuid::v7().to_string()),
+                ),
+                ("op", Json::texto_de(*op)),
+                ("categoria", Json::texto_de(categoria.nome())),
+                ("modo", Json::texto_de(pr::Modo::Proteger.nome())),
+            ]);
+            let linha = json_para_linha(&objeto, t.esquema())?;
+            t.inserir(&linha)?;
+            semeadas += 1;
+        }
+        if semeadas > 0 {
+            t.sincronizar()?;
+        }
+        Ok(semeadas)
+    }
+
+    /// O corpo da semeadura das mensagens, com a trava na mao de quem chama.
+    fn semear_mensagens_em(dados: &Instancia) -> Result<(bool, bool, u64, u64)> {
         let mut criou_db = false;
         let db = match dados.abrir_database(crate::mensagens::DATABASE) {
             Ok(db) => db,
@@ -743,9 +866,6 @@ impl Servidor {
         if semeadas > 0 {
             t.sincronizar()?;
         }
-        drop(dados);
-        // O cache rele na proxima resolucao -- e o "aplica sem reiniciar".
-        self.mensagens.invalidar();
         Ok((criou_db, criou_tabela, semeadas, existentes.len() as u64))
     }
 

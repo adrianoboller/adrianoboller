@@ -188,6 +188,13 @@ impl Cofre {
         Ok(self.ler()?.iter().any(|r| r.login == login))
     }
 
+    /// Quem tem senha cadastrada. So os logins -- e o que a regra do
+    /// primeiro cadastro precisa saber («algum administrador ja tem a dele?»).
+    pub fn logins(&self) -> Result<Vec<String>> {
+        let _t = self.travar();
+        Ok(self.ler()?.into_iter().map(|r| r.login).collect())
+    }
+
     /// Confere a senha, e conta: a falha soma, a quinta seguida bloqueia, o
     /// acerto zera. O PBKDF2 roda FORA da trava.
     pub fn conferir(&self, login: &str, senha: &str, agora_ms: i64) -> Result<Conferencia> {

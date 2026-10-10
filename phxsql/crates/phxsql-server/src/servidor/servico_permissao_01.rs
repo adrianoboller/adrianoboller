@@ -172,8 +172,26 @@ impl Servidor {
         sessao: &Sessao,
     ) -> Result<Option<crate::protecao::Escopo>> {
         use crate::protecao::{self as pr, Classe};
+        if !self.config.protecao.ligada {
+            return Ok(None);
+        }
+        // A guarda guarda a si mesma (P13), antes da lista: a escrita em
+        // `phxsys.protecao` nao tem op «perigosa» -- e um `atualizar` comum --,
+        // e e justamente por isso que ela tem de ser olhada aqui, onde passam
+        // a rede, o SQL derivado e o job. O portao e o `database` do pedido.
+        if let Some(toque) = pr::toque_na_guarda(op, pedido) {
+            let escopo = pr::escopo_da_guarda(op);
+            return match toque {
+                // Subir nunca pede senha -- proteger nao pede permissao --, e
+                // vai a trilha do mesmo jeito: a guarda e monitorada sempre.
+                pr::Toque::Sobe => Ok(Some(escopo)),
+                pr::Toque::PodeBaixar => {
+                    self.julgar(pr::Veredito::ExigeSenhaDeExecucao { escopo }, sessao, None)
+                }
+            };
+        }
         let classe = pr::classe(op, pedido);
-        if classe == Classe::Livre || !self.config.protecao.ligada {
+        if classe == Classe::Livre {
             return Ok(None);
         }
         let veredito = match classe {
@@ -181,25 +199,71 @@ impl Servidor {
             Classe::SeGrande => self.medir_para_a_protecao(op, pedido, sessao)?,
             Classe::Livre => return Ok(None),
         };
-        self.julgar(veredito, sessao)
+        self.julgar(veredito, sessao, None)
+    }
+
+    /// O modo da linha de `phxsys.protecao` desta op -- a tabela lida pelo
+    /// MOTOR DA GRADE (`varrer_a_pagina`), e por isso sem segundo leitor: o
+    /// que a tela mostra e o que a camada decide.
+    ///
+    /// `dados` e a ficha de quem ja tem a trava (o plano da cascata decide
+    /// DENTRO dela); sem ela, o `varrer` toma a propria. Qualquer falha --
+    /// tabela ausente, database ausente, trava reentrante -- vale
+    /// `proteger`, o lado estrito.
+    fn modo_da_protecao(&self, op: &str, dados: Option<&Instancia>) -> crate::protecao::Modo {
+        use crate::protecao as pr;
+        let pedido = Json::objeto(vec![
+            ("database", Json::texto_de(pr::DATABASE)),
+            ("tabela", Json::texto_de(pr::TABELA)),
+            ("max", Json::de_u64(pr::TETO_DE_LINHAS)),
+        ]);
+        let ninguem = Sessao::default();
+        let resposta = match dados {
+            Some(d) => self
+                .abrir_travada_sem_sobrepor(d, &pedido, &ninguem)
+                .and_then(|mut t| self.varrer_a_pagina(&mut t, &pedido))
+                .map(|(r, _)| r),
+            None => self.op_varrer(&pedido, &ninguem),
+        };
+        match resposta {
+            Ok(r) => pr::Modos::de_varredura(&r).de(op),
+            Err(_) => pr::Modo::Proteger,
+        }
     }
 
     /// O veredito contra a sessao, e o REGISTRO dele -- num lugar so, para os
     /// dois pontos (o pedido e o plano). Bloqueado vira ocorrencia pelo
     /// produtor unico (`ComandoBloqueado`, a bolha vermelha da tarefa no
     /// aquario); liberado devolve o escopo para quem executa registrar.
-    fn julgar(
+    ///
+    /// # A linha de `phxsys.protecao` (P12)
+    ///
+    /// O modo da op decide o MONITORAMENTO (o executado vai ou nao a trilha)
+    /// e, so com `protecao.modo_dispensa_a_senha`, a senha -- ver
+    /// `crate::protecao::Modo`. A escrita na propria guarda nao pergunta a
+    /// tabela: e ela que a tabela nao pode desligar.
+    pub(super) fn julgar(
         &self,
         veredito: crate::protecao::Veredito,
         sessao: &Sessao,
+        dados: Option<&Instancia>,
     ) -> Result<Option<crate::protecao::Escopo>> {
-        use crate::protecao::Veredito;
+        use crate::protecao::{Categoria, Modo, Veredito};
         let Veredito::ExigeSenhaDeExecucao { escopo } = &veredito else {
             return veredito.em_resultado().map(|_| None);
         };
         let escopo = escopo.clone();
+        let modo = if escopo.categoria == Categoria::APropriaGuarda {
+            Modo::Proteger
+        } else {
+            self.modo_da_protecao(&escopo.op, dados)
+        };
+        let vigiado = modo.monitora().then(|| escopo.clone());
+        if modo != Modo::Proteger && self.config.protecao.modo_dispensa_a_senha {
+            return Ok(vigiado);
+        }
         match veredito.para_a_sessao(sessao.execucao_liberada()) {
-            Veredito::Livre => Ok(Some(escopo)),
+            Veredito::Livre => Ok(vigiado),
             bloqueado => {
                 // `op`, `database` e `tabela` sao os campos que a camada de
                 // ocorrencias mantem ao redigir; o MOTIVO e o proprio alarme.
@@ -256,6 +320,7 @@ impl Servidor {
         tabela: &str,
         (linhas, vivas): (u64, u64),
         sessao: &Sessao,
+        dados: Option<&Instancia>,
     ) -> Result<()> {
         if !self.config.protecao.ligada {
             return Ok(());
@@ -265,7 +330,7 @@ impl Servidor {
         // laco: a cascata se aplica la dentro do `alterar`, e o laco da faixa
         // pode parar numa linha -- o que se registra e que a sessao liberada
         // mandou executar este plano.
-        if let Some(escopo) = self.julgar(veredito, sessao)? {
+        if let Some(escopo) = self.julgar(veredito, sessao, dados)? {
             self.registrar_na_trilha("protecao.executou", &escopo, sessao);
         }
         Ok(())
@@ -445,13 +510,25 @@ impl Servidor {
                         return Err(recusa_da_senha(&eu, &outra));
                     }
                 }
-            } else if eu != crate::senha_de_execucao::IDENTIDADE_DO_SERVICO
-                && !self.e_a_senha_de_login(&eu, p.texto_ou("senha", ""))
-            {
-                return Err(PhxError::Autorizacao(format!(
-                    "{eu}: o primeiro cadastro da senha de execucao pede a senha de LOGIN \
-                     em \"senha\" -- a sessao sozinha nao prova quem voce e"
-                )));
+            } else if eu != crate::senha_de_execucao::IDENTIDADE_DO_SERVICO {
+                // A brecha do 767, fechada ANTES de conferir a senha de login:
+                // quem so tem a de login nao cadastra a segunda. A recusa
+                // vem primeiro para nao virar oraculo da senha de login.
+                if self.config.protecao.primeiro_cadastro_pelo_administrador
+                    && !self.cadastra_a_propria_sozinho(&eu)?
+                {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{eu}: o primeiro cadastro da senha de execucao e do administrador, \
+                         com a sessao liberada (senha_execucao_definir com \"login\") -- a \
+                         senha de login sozinha nao prova que e o dono quem cadastra"
+                    )));
+                }
+                if !self.e_a_senha_de_login(&eu, p.texto_ou("senha", "")) {
+                    return Err(PhxError::Autorizacao(format!(
+                        "{eu}: o primeiro cadastro da senha de execucao pede a senha de LOGIN \
+                         em \"senha\" -- a sessao sozinha nao prova quem voce e"
+                    )));
+                }
             }
         } else {
             let administra = sessao
@@ -492,6 +569,32 @@ impl Servidor {
             ("definida", Json::Bool(true)),
             ("login", Json::texto_de(&alvo)),
         ]))
+    }
+
+    /// Com `protecao.primeiro_cadastro_pelo_administrador`, quem ainda se
+    /// cadastra sozinho: SO um administrador do servidor, e so enquanto
+    /// NENHUM administrador tem a sua -- e o primeiro dono do servidor, que
+    /// nao tem a quem pedir. Depois dele, todo primeiro cadastro passa por um
+    /// administrador com a sessao liberada.
+    ///
+    /// O que sobra de risco e nomeado: num servidor recem-criado, quem tem a
+    /// senha de login de um administrador ainda chega antes dele. Fecha-lo
+    /// pediria um segredo fora do servidor (o token do `config.json`, que e
+    /// a identidade do servico e ja tem o seu cadastro).
+    fn cadastra_a_propria_sozinho(&self, login: &str) -> Result<bool> {
+        let administra = |l: &str| {
+            self.cadastro()
+                .por_login(l)
+                .is_some_and(|u| u.pode_em("", "", Atividade::Administrar))
+        };
+        if !administra(login) {
+            return Ok(false);
+        }
+        Ok(!self
+            .senhas_de_execucao
+            .logins()?
+            .iter()
+            .any(|l| administra(l)))
     }
 
     /// A senha abre o LOGIN desta identidade? Para a do servico, o token.

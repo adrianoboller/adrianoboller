@@ -371,6 +371,68 @@ de hoje não há sessão autenticada no limite; entra com a P8); o ajudante
 SYN do IP bloqueado medido pela suíte (o M5 deste desenho continua sendo a
 medida); o `netsh` do Windows, não exercitado neste contêiner — PENDENTE.
 
+### 6.2 P12, P13 e a brecha do primeiro cadastro — o que o papel B entregou, e o RED (10/10/2026)
+
+Provas em `servidor/testes_da_guarda_da_protecao.rs`, `protecao::testes`,
+`jobs::testes` e `config::testes_da_protecao`; 19 entradas novas no catálogo,
+provadas pelo provador com `--so` (verde na árvore limpa, cada defeito reposto
+derruba o `caem` e deixa o `seguem` de pé).
+
+**Decisões desta fatia, com o motivo:**
+
+- **O modo da linha liga e desliga o MONITORAMENTO; a senha segue exigida.**
+  A ordem do 767 («a tabela habilita ou não o monitoramento») e a precisão
+  «sem a senha esses comandos não executam, em qualquer modo» só cabem juntas
+  assim. Se a linha `observar`/`desligado` também DISPENSA a senha é **produto
+  e sobe ao dono**; implementado atrás de `protecao.modo_dispensa_a_senha`,
+  fábrica `false` (o lado seguro).
+- **A tabela nasce pelo `protecao_semear`, não no arranque.** Medido: semear
+  em todo arranque derrubou **9** testes do comportamento velho (listas de
+  bases e tabelas; `phxsys nao pode nascer sem alguem pedir`). A ausência já
+  vale `proteger`; o arranque só **completa** a tabela onde `phxsys` existe.
+- **O leitor é o motor da grade** (`varrer_a_pagina`), e dentro da trava (o
+  plano da cascata) a ficha vai adiante — a leitura pelo `varrer` lá dentro
+  seria reentrante e cairia calada em `proteger` (cognição de 10/10 14:00).
+- **O job:** `job_autorizar` por quem administra o servidor com a sessão
+  liberada; escopo = SHA-256 de usuário+pedido; teto 366 corridas e 366 dias;
+  a corrida gasta um uso antes de rodar; o `job_salvar` nunca traz a
+  autorização. «O dono do job» virou «quem administra»: todas as ops de job já
+  pedem administrar, e quem autoriza prova a PRÓPRIA segunda senha.
+- **A brecha do primeiro cadastro:** fechada atrás de
+  `protecao.primeiro_cadastro_pelo_administrador` (fábrica `true`) — é produto
+  (muda a entrada de cada usuário) e sobe ao dono. Só o primeiro administrador
+  do servidor se cadastra sozinho; risco residual nomeado: servidor recém-criado.
+- **Hipótese que morreu medida:** «o `aplicar` é porta dos fundos da guarda».
+  Fora da réplica o papel já o recusa (4001) —
+  `o_aplicar_na_origem_ja_recusa_pelo_papel`; ele segue isento, como no P5.
+
+| guarda | defeito reposto | caiu |
+|---|---|---|
+| `guarda-sem-guarda` | sem o `toque_na_guarda` | baixar pelo JSON/SQL; os caminhos opacos |
+| `subir-a-guarda-pede-senha` | `Sobe` vira `PodeBaixar` | subir; `o_toque_na_guarda`; o torto que passa |
+| `modo-torto-baixa-a-guarda` | torto vale `desligado` | o leitor estrito; o torto do P13 |
+| `linha-desligada-ainda-monitora` | o modo não decide a trilha | `a_linha_desligada_tira_da_trilha…` |
+| `linha-baixa-dispensa-sem-interruptor` | dispensa sem o interruptor | idem |
+| `tabela-da-protecao-cega-sob-a-trava` | leitura sob a trava devolve erro | a cascata com dispensa |
+| `semear-a-protecao-por-cima` | semear sem conferir o que existe | semear de novo |
+| `arranque-cria-o-sistema` | o arranque cria `phxsys` | `o_arranque_completa…` |
+| `arranque-nao-completa-a-protecao` | o arranque não semeia | idem |
+| `job-autorizado-sem-liberacao` | a corrida não libera | o job autorizado; o escopo |
+| `autorizacao-do-job-sem-teto` | o uso não gasta | o job; `a_autorizacao_vale…` |
+| `autorizacao-herdada-por-outro-pedido` | `salvar` herda sempre | o escopo |
+| `autorizacao-perdida-ao-regravar` | `salvar` nunca herda | o escopo |
+| `autorizacao-pela-rede` | `job_salvar` aceita o campo | a forjada |
+| `autorizacao-sem-impressao` | sem conferir a impressão | `a_autorizacao_vale…` |
+| `job-autorizar-sem-a-senha` | `job_autorizar` sem `julgar` | o job |
+| `primeiro-cadastro-pela-senha-de-login` | sem a regra | `o_primeiro_cadastro_e_do_administrador` |
+| `segundo-administrador-se-cadastra-sozinho` | sem conferir o cofre | idem |
+| `interruptores-do-767-sem-leitor` | o campo não é lido | `os_interruptores_do_767…` |
+
+**De fora, e por quê:** a tela (botões de semear, de autorizar o job e de
+baixar a linha) e o MANUAL — P15; a isenção da réplica no P13 provada contra
+um nó réplica de verdade (o teste usa só o papel isolado); o `restaurar_backup`
+de `phxsys` provado de ponta a ponta (provado só na classificação).
+
 ## 7. Choque com pétrea?
 
 **Nenhum.** «Guarda nova entra pedida»: tudo nasce `observar` (não muda resposta), o `bloquear_por_codigo`

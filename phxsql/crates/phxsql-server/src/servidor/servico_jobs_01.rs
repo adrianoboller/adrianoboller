@@ -324,6 +324,95 @@ impl Servidor {
         ]))
     }
 
+    /// `job_autorizar`: da ao job a senha de execucao do comando perigoso que
+    /// ele roda (765/767, P12) -- ou a tira, com `"revogar": true`.
+    ///
+    /// # Quem, com o que, e por quanto
+    ///
+    /// * quem administra o servidor, com a sessao LIBERADA pela propria
+    ///   segunda senha: o job roda o pedido sob o usuario dele, e o pedido so
+    ///   passa se aquele usuario ja tinha o direito -- autorizar so dispensa a
+    ///   segunda senha, que quem autoriza acabou de provar ter;
+    /// * o escopo e o pedido inteiro do job sob o usuario (a impressao, ver
+    ///   `jobs::Autorizacao`): regravar o job com outro pedido apaga a
+    ///   autorizacao;
+    /// * teto de corridas (`usos`, padrao 1) e de prazo (`dias`, padrao 30),
+    ///   os dois ate `TETO_DE_USOS`/`TETO_DE_DIAS`.
+    ///
+    /// Revogar nao pede senha: tirar poder nao pede permissao. Os dois vao a
+    /// trilha.
+    pub(super) fn op_job_autorizar(&self, p: &Json, sessao: &Sessao) -> Result<Json> {
+        use crate::jobs::{TETO_DE_DIAS, TETO_DE_USOS};
+        let nome = p.texto_ou("nome", "").trim().to_string();
+        // O portao do catalogo ja pediu administrar EM ALGUMA base; dar
+        // senha de execucao a um job e do servidor.
+        let administra = sessao
+            .usuario
+            .as_ref()
+            .is_none_or(|u| u.pode_em("", "", Atividade::Administrar));
+        if !administra {
+            return Err(PhxError::Autorizacao(format!(
+                "job {nome:?}: so quem administra o servidor autoriza um job"
+            )));
+        }
+        let job = self.jobs.tomar("jobs")?.achar(&nome)?.clone();
+        let escopo = crate::protecao::Escopo {
+            op: "job_autorizar".to_string(),
+            database: job.pedido.texto_ou("database", "").trim().to_string(),
+            tabela: job.nome.clone(),
+            categoria: crate::protecao::Categoria::APropriaGuarda,
+            linhas: None,
+        };
+        if p.booleano_ou("revogar", false) {
+            let tinha = self.jobs.tomar("jobs")?.revogar(&job.nome)?;
+            if tinha {
+                self.registrar_na_trilha("protecao.revogou_job", &escopo, sessao);
+            }
+            return Ok(Json::objeto(vec![
+                ("job", Json::texto_de(&job.nome)),
+                ("autorizado", Json::Bool(false)),
+                ("revogada", Json::Bool(tinha)),
+            ]));
+        }
+        let faixa = |campo: &str, padrao: i64, teto: u32| -> Result<u32> {
+            match p.inteiro_ou(campo, padrao) {
+                n if n >= 1 && n <= i64::from(teto) => Ok(n as u32),
+                n => Err(PhxError::Esquema(format!(
+                    "\"{campo}\" = {n}: vale de 1 a {teto}"
+                ))),
+            }
+        };
+        let usos = faixa("usos", 1, TETO_DE_USOS)?;
+        let dias = faixa("dias", 30, TETO_DE_DIAS)?;
+        // A MESMA decisao da camada: sessao liberada, ou recusa com 4009 e a
+        // ocorrencia do bloqueado. A categoria e a da propria guarda -- a
+        // linha de `phxsys.protecao` nao dispensa a senha de dar senha.
+        self.julgar(
+            crate::protecao::Veredito::ExigeSenhaDeExecucao {
+                escopo: escopo.clone(),
+            },
+            sessao,
+            None,
+        )?;
+        let agora = crate::agora_ms();
+        let ate = agora.saturating_add(i64::from(dias) * 24 * 60 * 60 * 1000);
+        let autorizacao = crate::jobs::Autorizacao {
+            por: sessao.identidade_de_execucao().to_string(),
+            quando_ms: agora,
+            ate_ms: ate,
+            usos,
+            impressao: job.impressao(),
+        };
+        self.jobs.tomar("jobs")?.autorizar(&job.nome, autorizacao)?;
+        self.registrar_na_trilha("protecao.autorizou_job", &escopo, sessao);
+        Ok(Json::objeto(vec![
+            ("job", Json::texto_de(&job.nome)),
+            ("autorizado", Json::Bool(true)),
+            ("usos", Json::de_u64(u64::from(usos))),
+            ("ate_ms", Json::de_i64(ate)),
+        ]))
+    }
+
     pub(super) fn op_job_salvar(&self, p: &Json) -> Result<Json> {
         let job = crate::jobs::Job::de_json(p.campo("job").unwrap_or(p))?;
         // Conferido na hora de salvar, e nao so na hora de rodar: descobrir
@@ -628,8 +717,24 @@ impl Servidor {
         // proibido e proibido para todo mundo, e recusar por ele da a mensagem
         // certa a um job cujo dono tambem esta errado.
         self.politica_do_pedido(op, &job.pedido)?;
-        let sessao = self.sessao_do_job(job)?;
+        let mut sessao = self.sessao_do_job(job)?;
         self.portoes_do_pedido(op, &job.pedido, &sessao)?;
+        // A senha de execucao do job (765/767, P12): a autorizacao que o
+        // `job_autorizar` gravou libera ESTA corrida, e gasta um uso. Depois
+        // dos portoes -- liberar nao da direito nenhum, so dispensa a segunda
+        // senha do comando que o usuario do job ja podia pedir. Sem ela, o
+        // comando perigoso do job recusa com 4009, como sempre.
+        if job.autorizacao.is_some()
+            && self
+                .jobs
+                .tomar("jobs")?
+                .gastar_autorizacao(&job.nome, crate::agora_ms())?
+        {
+            sessao.execucao_liberada = Some(LiberacaoDeExecucao {
+                login: sessao.identidade_de_execucao().to_string(),
+                ip: sessao.ip.clone(),
+            });
+        }
         // O TERCEIRO irmao. Um job roda sob o usuario dele, e um job de
         // `exportar` da tabela restrita e exatamente o caminho que ninguem
         // olharia -- ele nao chega nem pelo soquete nem pelo SQL.

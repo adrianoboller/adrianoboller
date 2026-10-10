@@ -7,8 +7,10 @@
  *
  *   1. tenta um DROP pela gestao da tabela -> bloqueado: o dialogo da PAGINA
  *      abre (nunca `prompt()`), e «Cancelar» deixa a tabela de pe;
- *   2. tenta de novo, cadastra a segunda senha no mesmo dialogo (a de login
- *      prova quem e) e libera -> o DROP executa;
+ *   2. tenta de novo e tenta cadastrar a segunda senha no dialogo com a de
+ *      login -> RECUSADO (so o primeiro administrador do servidor se
+ *      cadastra sozinho, brecha do 767); o supervisor liberado cadastra a
+ *      dele, e a senha no mesmo dialogo libera -> o DROP executa;
  *   3. «Trancar» -> o DROP seguinte volta a ser bloqueado;
  *   4. informa a senha no dialogo -> executa de novo.
  *
@@ -112,8 +114,11 @@ async function corpo(ctx) {
     await page.waitForSelector('#dlgSenhaExecucao', { state: 'detached', timeout: ESPERA });
     verdade(await existe('alvo'), 'cancelar o dialogo apagou a tabela');
 
-    // 2. cadastra no dialogo, libera, e o DROP executa
-    passo = '2. cadastrar e liberar';
+    // 2. o cadastro pelo proprio, no dialogo, e RECUSADO: este administrador
+    //    nao e o primeiro do servidor, e so tem a senha de login (a brecha do
+    //    767, fechada em 10/10/2026). O supervisor liberado cadastra a dele;
+    //    a senha no MESMO dialogo libera, e o DROP executa.
+    passo = '2. cadastro recusado, o administrador cadastra, a senha libera';
     const idAntes = await page.evaluate(() => est.sessao);
     await abrirExcluir('alvo');
     await clicarOuExplicar(page, '#seCadastrar');
@@ -121,6 +126,13 @@ async function corpo(ctx) {
     await page.fill('#seNova', senhaExec);
     await page.fill('#seConfirma', senhaExec);
     await capturar(ctx, ctx.nomeCaptura('dialogo-cadastro'));
+    await clicarOuExplicar(page, '#seSim');
+    await page.waitForFunction(() => /administrador/i
+      .test(document.querySelector('#seRecado')?.textContent || ''), undefined, { timeout: ESPERA });
+    verdade(await existe('alvo'), 'o cadastro recusado apagou a tabela');
+    await api(adm, 'senha_execucao_definir', { login, nova_senha_execucao: senhaExec });
+    await clicarOuExplicar(page, '#seCadastrar');
+    await page.fill('#seSenha', senhaExec);
     await clicarOuExplicar(page, '#seSim');
     await page.waitForSelector('#dlgSenhaExecucao', { state: 'detached', timeout: ESPERA });
     await ate(async () => !(await existe('alvo')), 'liberada a sessao, o DROP nao executou');

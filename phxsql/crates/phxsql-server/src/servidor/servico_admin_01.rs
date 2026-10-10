@@ -242,6 +242,35 @@ impl Servidor {
         ]))
     }
 
+    /// `protecao_semear` (765/767, P12): cria `phxsys.protecao` se falta e
+    /// grava em `proteger` a linha de cada comando da lista de perigo que
+    /// ainda nao tem a sua. Idempotente, e nunca toca linha que existe --
+    /// semear so SOBE a guarda, entao nao pede a senha de execucao.
+    ///
+    /// Nao tem campo `tabela`: o portao geral nao a ve, e por isso a regra e
+    /// a do SERVIDOR, conferida aqui -- a licao do `juntar`.
+    pub(super) fn op_protecao_semear(&self, sessao: &Sessao) -> Result<Json> {
+        let administra = sessao
+            .usuario
+            .as_ref()
+            .is_none_or(|u| u.pode_em("", "", Atividade::Administrar));
+        if !administra {
+            return Err(PhxError::Autorizacao(
+                "so quem administra o servidor semeia a tabela de protecao".into(),
+            ));
+        }
+        let semeadas = self.semear_o_sistema(false, true, true).1?;
+        Ok(Json::objeto(vec![
+            ("database", Json::texto_de(crate::protecao::DATABASE)),
+            ("tabela", Json::texto_de(crate::protecao::TABELA)),
+            ("semeadas", Json::de_u64(semeadas)),
+            (
+                "de_fabrica",
+                Json::de_u64(crate::protecao::FABRICA.len() as u64),
+            ),
+        ]))
+    }
+
     /// O portao PROPRIO das operacoes de idioma.
     ///
     /// As cinco nao tem campo `"tabela"` no pedido -- e o portao geral confere

@@ -555,7 +555,7 @@ impl Servidor {
     /// este corpo nao consegue escrever, em ficha nenhuma. O que ele deixa
     /// para a trilha volta como valor, e quem tem a ficha exclusiva e que
     /// grava.
-    fn varrer_a_pagina<T: Legivel>(
+    pub(super) fn varrer_a_pagina<T: Legivel>(
         &self,
         t: &mut T,
         p: &Json,

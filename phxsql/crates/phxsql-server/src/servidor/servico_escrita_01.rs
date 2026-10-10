@@ -933,7 +933,14 @@ impl Servidor {
         if let Some((filha, linhas, vivas)) =
             crate::plano_largo::observar_a_cascata(database, &plano)
         {
-            self.protecao_do_plano("cascata", database, &filha, (linhas, vivas), sessao)?;
+            self.protecao_do_plano(
+                "cascata",
+                database,
+                &filha,
+                (linhas, vivas),
+                sessao,
+                Some(&**trava),
+            )?;
         }
         // E as filhas que a cascata grava sem que o pedido as nomeie (561,
         // a-c): antes da marca, com nada gravado.

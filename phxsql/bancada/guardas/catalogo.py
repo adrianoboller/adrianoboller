@@ -27823,7 +27823,7 @@ fn anotar(""",
             "inclusive (a ferramenta `phx_sql` leva DELETE)."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_sql_01.rs",
-        "trecho": """            self.protecao_do_plano(rotulo, &database, &tabela, medida, sessao)?;
+        "trecho": """            self.protecao_do_plano(rotulo, &database, &tabela, medida, sessao, None)?;
 """,
         "troca": """            let _ = (rotulo, medida);
 """,
@@ -27916,6 +27916,442 @@ fn anotar(""",
         ],
         "seguem": [
             "servidor::testes_dos_caminhos_da_protecao::o_job_com_comando_perigoso_recusa_com_a_4009",
+        ],
+    },
+    # Pedidos 765/767, fatias P12 e P13 e a brecha do primeiro cadastro
+    # (10/10/2026): a tabela phxsys.protecao, a guarda que guarda a si mesma,
+    # o job autorizado e o primeiro cadastro pelo administrador.
+    {
+        "id": "guarda-sem-guarda",
+        "titulo": "a escrita em phxsys.protecao baixava a linha sem a sessão liberada (767, P13)",
+        "porque": (
+            "767 P13: a tabela que liga e desliga o monitoramento e ela mesma "
+            "comando perigoso; sem o `toque_na_guarda` no ponto unico, um "
+            "`atualizar` comum (ou o UPDATE do SQL) baixava `proteger` sem a "
+            "segunda senha."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        if let Some(toque) = pr::toque_na_guarda(op, pedido) {
+""",
+        "troca": """        if let Some(toque) = None::<pr::Toque> {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::baixar_a_guarda_sem_a_sessao_liberada_e_recusado_e_a_linha_fica",
+            "servidor::testes_da_guarda_da_protecao::os_caminhos_que_nao_se_leem_pedem_a_senha",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+    },
+    {
+        "id": "subir-a-guarda-pede-senha",
+        "titulo": "subir a proteção pedia a segunda senha (767, P13)",
+        "porque": (
+            "767 P13: proteger nao pede permissao. A escrita que so deixa linhas em "
+            "`proteger` (ou as tira, que voltam a fabrica) passa sem a sessao "
+            "liberada."
+        ),
+        "arquivo": "crates/phxsql-server/src/protecao.rs",
+        "trecho": """    Some(if sobe { Toque::Sobe } else { Toque::PodeBaixar })
+""",
+        "troca": """    Some(if sobe { Toque::PodeBaixar } else { Toque::PodeBaixar })
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::subir_a_guarda_nunca_pede_senha",
+            "protecao::testes::o_toque_na_guarda",
+            "servidor::testes_da_guarda_da_protecao::baixar_a_guarda_sem_a_sessao_liberada_e_recusado_e_a_linha_fica",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+    },
+    {
+        "id": "modo-torto-baixa-a-guarda",
+        "titulo": "o modo torto de uma linha de phxsys.protecao valia desligado (767, P12)",
+        "porque": (
+            "767 P12: erro de digitacao nao pode ser o que desliga a guarda. O "
+            "MESMO `Modo::de_texto` serve ao leitor da tabela e a conferencia da "
+            "escrita (P13)."
+        ),
+        "arquivo": "crates/phxsql-server/src/protecao.rs",
+        "trecho": """            _ => Modo::Proteger,
+""",
+        "troca": """            _ => Modo::Desligado,
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "protecao::testes::o_leitor_da_tabela_fica_no_lado_estrito",
+            "servidor::testes_da_guarda_da_protecao::baixar_a_guarda_sem_a_sessao_liberada_e_recusado_e_a_linha_fica",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::subir_a_guarda_nunca_pede_senha",
+        ],
+    },
+    {
+        "id": "linha-desligada-ainda-monitora",
+        "titulo": "a linha desligado de phxsys.protecao não tirava o comando da trilha (767, P12)",
+        "porque": (
+            "767 P12, ordem do dono: a tabela habilita ou nao o monitoramento de "
+            "cada comando. Sem ler o modo, a linha `desligado` era configuracao que "
+            "nada le."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        let vigiado = modo.monitora().then(|| escopo.clone());
+""",
+        "troca": """        let vigiado = Some(escopo.clone());
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::a_linha_desligada_tira_da_trilha_e_a_senha_continua",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::com_a_dispensa_observar_executa_sem_a_senha_e_vai_a_trilha",
+        ],
+    },
+    {
+        "id": "linha-baixa-dispensa-sem-interruptor",
+        "titulo": "a linha observar/desligado dispensava a segunda senha sem o dono pedir (767, P12)",
+        "porque": (
+            "767 P12: precisao do dono, «sem a senha de execucao esses comandos nao "
+            "executam, em qualquer modo». A dispensa so vale com "
+            "`protecao.modo_dispensa_a_senha` (fabrica false), a pergunta de "
+            "produto."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        if modo != Modo::Proteger && self.config.protecao.modo_dispensa_a_senha {
+""",
+        "troca": """        if modo != Modo::Proteger {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::a_linha_desligada_tira_da_trilha_e_a_senha_continua",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::com_a_dispensa_observar_executa_sem_a_senha_e_vai_a_trilha",
+        ],
+    },
+    {
+        "id": "tabela-da-protecao-cega-sob-a-trava",
+        "titulo": "dentro da trava (a cascata) a camada não lia phxsys.protecao e caía calada no padrão (767, P12)",
+        "porque": (
+            "767 P12: o plano da cascata decide com a trava na mao, e a leitura "
+            "pelo `varrer` tomaria a trava de novo (reentrante). Sem a ficha "
+            "passada adiante, a linha da cascata nunca valia -- e isso nao aparece, "
+            "porque o lado estrito passa por correto."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """            Some(d) => self
+                .abrir_travada_sem_sobrepor(d, &pedido, &ninguem)
+                .and_then(|mut t| self.varrer_a_pagina(&mut t, &pedido))
+                .map(|(r, _)| r),
+""",
+        "troca": """            Some(_) => Err(PhxError::Esquema(String::new())),
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::com_a_dispensa_observar_executa_sem_a_senha_e_vai_a_trilha",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::a_linha_desligada_tira_da_trilha_e_a_senha_continua",
+        ],
+    },
+    {
+        "id": "semear-a-protecao-por-cima",
+        "titulo": "semear phxsys.protecao de novo tentava regravar a linha que o dono mudou (767, P12)",
+        "porque": (
+            "767 P12: semeada so se falta. A linha presente nao e tocada, e e isso "
+            "que deixa o arranque completar a tabela sem desfazer escolha nenhuma."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """            if existentes.contains(*op) {
+""",
+        "troca": """            if existentes.contains(*op) && false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::semear_cria_em_proteger_e_semear_de_novo_nao_desfaz",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::subir_a_guarda_nunca_pede_senha",
+        ],
+    },
+    {
+        "id": "arranque-cria-o-sistema",
+        "titulo": "o arranque fazia nascer phxsys em servidor que nunca o pediu (767, P12)",
+        "porque": (
+            "767 P12 e o comportamento velho (`sem_bloco_seguranca_nada_muda`): a "
+            "tabela ausente ja vale proteger; o arranque so COMPLETA quem ja tem o "
+            "sistema, e quem cria e o `protecao_semear`. Medido: semear sempre "
+            "derrubou 9 testes que listam bases e tabelas."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "trecho": """            servidor.semear_o_sistema(semeia_mensagens, semeia_protecao, false)
+""",
+        "troca": """            servidor.semear_o_sistema(semeia_mensagens, semeia_protecao, true)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_arranque_completa_quem_tem_o_sistema_e_nao_cria_em_quem_nao_tem",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::semear_cria_em_proteger_e_semear_de_novo_nao_desfaz",
+        ],
+    },
+    {
+        "id": "arranque-nao-completa-a-protecao",
+        "titulo": "o arranque não completava phxsys.protecao, e a op nova da fábrica ficava sem linha (767, P12)",
+        "porque": (
+            "767 P12: semeada so se falta, a cada arranque de quem escreve -- a "
+            "linha de uma op nova da lista entra no upgrade."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_nucleo_01.rs",
+        "trecho": """        let semeia_protecao = servidor.config.protecao.ligada
+""",
+        "troca": """        let semeia_protecao = false && servidor.config.protecao.ligada
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_arranque_completa_quem_tem_o_sistema_e_nao_cria_em_quem_nao_tem",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::semear_cria_em_proteger_e_semear_de_novo_nao_desfaz",
+        ],
+    },
+    {
+        "id": "job-autorizado-sem-liberacao",
+        "titulo": "o job autorizado continuava recusando o comando perigoso com 4009 (765/767, P12)",
+        "porque": (
+            "765/767 P12: o job de manutencao tem a propria senha de execucao, com "
+            "escopo e prazo. A autorizacao gravada tem de liberar a sessao DA "
+            "CORRIDA, senao o `job_autorizar` nao muda nada."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
+        "trecho": """                .gastar_autorizacao(&job.nome, crate::agora_ms())?
+""",
+        "troca": """                .gastar_autorizacao(&job.nome, crate::agora_ms())?
+            && false
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+            "servidor::testes_da_guarda_da_protecao::o_escopo_da_autorizacao_e_o_pedido_e_ela_nao_chega_pela_rede",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::subir_a_guarda_nunca_pede_senha",
+        ],
+    },
+    {
+        "id": "autorizacao-do-job-sem-teto",
+        "titulo": "a corrida autorizada não gastava o uso, e a autorização valia para sempre (765/767, P12)",
+        "porque": (
+            "765/767 P12: teto de corridas. Sem o gasto gravado, `usos: 1` liberava "
+            "toda corrida ate o prazo."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """            a.usos -= 1;
+""",
+        "troca": """            let _ = &a.usos;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+            "jobs::testes::a_autorizacao_vale_no_prazo_com_uso_e_para_o_mesmo_pedido",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_escopo_da_autorizacao_e_o_pedido_e_ela_nao_chega_pela_rede",
+        ],
+    },
+    {
+        "id": "autorizacao-herdada-por-outro-pedido",
+        "titulo": "regravar o job com outro pedido herdava a autorização (765/767, P12)",
+        "porque": (
+            "765/767 P12: o escopo e o pedido. Amarrar ao nome deixava quem so "
+            "administra trocar o DROP autorizado de `rascunho` pelo de `clientes`."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """                if j.autorizacao.is_none() && self.jobs[i].impressao() == j.impressao() {
+""",
+        "troca": """                if j.autorizacao.is_none() {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_escopo_da_autorizacao_e_o_pedido_e_ela_nao_chega_pela_rede",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+    },
+    {
+        "id": "autorizacao-perdida-ao-regravar",
+        "titulo": "regravar o MESMO job pela tela apagava a autorização (765/767, P12)",
+        "porque": (
+            "765/767 P12, o comportamento do outro lado: a tela regrava a ficha "
+            "inteira para mudar a descricao; a autorizacao do mesmo pedido fica."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """                if j.autorizacao.is_none() && self.jobs[i].impressao() == j.impressao() {
+""",
+        "troca": """                if false {
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_escopo_da_autorizacao_e_o_pedido_e_ela_nao_chega_pela_rede",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+    },
+    {
+        "id": "autorizacao-pela-rede",
+        "titulo": "o job_salvar aceitava a autorização escrita no próprio pedido (765/767, P12)",
+        "porque": (
+            "765/767 P12: a autorizacao so nasce do `job_autorizar` com a sessao "
+            "liberada. A impressao e publica (sai na ficha); aceita-la do "
+            "`job_salvar` deixava quem salva job escrever a propria liberacao."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """        job.autorizacao = None;
+""",
+        "troca": """        let _ = &job.autorizacao;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_escopo_da_autorizacao_e_o_pedido_e_ela_nao_chega_pela_rede",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+    },
+    {
+        "id": "autorizacao-sem-impressao",
+        "titulo": "a autorização do job valia para outro usuário ou outro pedido (765/767, P12)",
+        "porque": (
+            "765/767 P12: a impressao e o escopo. Sem conferi-la, o `jobs.json` "
+            "editado ou um job trocado de dono herdaria a liberacao."
+        ),
+        "arquivo": "crates/phxsql-server/src/jobs.rs",
+        "trecho": """            .is_some_and(|a| a.usos > 0 && agora_ms < a.ate_ms && a.impressao == self.impressao())
+""",
+        "troca": """            .is_some_and(|a| a.usos > 0 && agora_ms < a.ate_ms)
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "jobs::testes::a_autorizacao_vale_no_prazo_com_uso_e_para_o_mesmo_pedido",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+    },
+    {
+        "id": "job-autorizar-sem-a-senha",
+        "titulo": "o job_autorizar dava a senha de execução ao job sem a sessão liberada (765/767, P12)",
+        "porque": (
+            "765/767 P12: dar senha e o comando mais perigoso da lista -- pela "
+            "mesma decisao (`julgar`) e com a categoria da propria guarda, que a "
+            "tabela nao dispensa."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_jobs_01.rs",
+        "trecho": """        self.julgar(
+            crate::protecao::Veredito::ExigeSenhaDeExecucao {
+                escopo: escopo.clone(),
+            },
+            sessao,
+            None,
+        )?;
+""",
+        "troca": """        let _ = sessao;
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_job_autorizado_roda_o_drop_e_gasta_o_uso",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::o_escopo_da_autorizacao_e_o_pedido_e_ela_nao_chega_pela_rede",
+        ],
+    },
+    {
+        "id": "primeiro-cadastro-pela-senha-de-login",
+        "titulo": "quem tinha só a senha de login de alguém cadastrava a segunda senha antes do dono (767)",
+        "porque": (
+            "767, brecha registrada: o primeiro cadastro pela senha de login "
+            "deixava quem a roubou cadastrar a segunda. Com "
+            "`primeiro_cadastro_pelo_administrador` (fabrica true), e do "
+            "administrador liberado; so o primeiro administrador se cadastra "
+            "sozinho."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """                if self.config.protecao.primeiro_cadastro_pelo_administrador
+""",
+        "troca": """                if false
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_primeiro_cadastro_e_do_administrador",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::sem_o_interruptor_cada_um_cadastra_a_sua",
+        ],
+    },
+    {
+        "id": "segundo-administrador-se-cadastra-sozinho",
+        "titulo": "depois do primeiro, todo administrador ainda se cadastrava sozinho pela senha de login (767)",
+        "porque": (
+            "767: a excecao do primeiro cadastro e so do PRIMEIRO dono do servidor, "
+            "que nao tem a quem pedir. Sem conferir o cofre, a brecha continuava "
+            "aberta para todo administrador."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        Ok(!self
+""",
+        "troca": """        Ok(true || !self
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_da_guarda_da_protecao::o_primeiro_cadastro_e_do_administrador",
+        ],
+        "seguem": [
+            "servidor::testes_da_guarda_da_protecao::sem_o_interruptor_cada_um_cadastra_a_sua",
+        ],
+    },
+    {
+        "id": "interruptores-do-767-sem-leitor",
+        "titulo": "os interruptores protecao.modo_dispensa_a_senha e primeiro_cadastro_pelo_administrador não eram lidos do config.json (767)",
+        "porque": (
+            "«Configuracao que nao e lida mente.» Os dois nascem no lado seguro e "
+            "so mudam por pedido escrito."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            primeiro_cadastro_pelo_administrador: pelo_admin,
+""",
+        "troca": """            primeiro_cadastro_pelo_administrador: { let _ = pelo_admin; true },
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_da_protecao::os_interruptores_do_767_nascem_no_lado_seguro",
+        ],
+        "seguem": [
+            "config::testes_da_protecao::ausente_e_ligada_e_a_tela_nao_alcanca",
         ],
     },
     {

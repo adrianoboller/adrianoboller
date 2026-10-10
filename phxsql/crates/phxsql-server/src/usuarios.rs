@@ -236,9 +236,8 @@ impl Atividade {
             // O apelido `job_listar` e o `job_ligar` entram AQUI junto com o
             // resto: operacao que o portao nao mapeia e operacao que anonimo
             // chama -- e o furo mora sempre no nome que alguem esqueceu.
-            "jobs" | "job_listar" | "job_salvar" | "job_excluir" | "job_rodar" | "job_ligar" => {
-                Atividade::Administrar
-            }
+            "jobs" | "job_listar" | "job_salvar" | "job_excluir" | "job_rodar" | "job_ligar"
+            | "job_autorizar" => Atividade::Administrar,
             // Backup e restauracao sao da familia do `acessos` e do `config`:
             // administrar o SERVIDOR. Estao aqui declaradas, e nao so caindo
             // no `_`, pelo mesmo motivo do `config_gravar` -- a operacao que
@@ -398,9 +397,8 @@ impl Atividade {
             // quem ve e solta IP tambem exporta e protege. E a gestao das
             // mensagens e configuracao do servidor -- soltar um texto errado
             // na resposta de todo mundo nao e direito de leitor.
-            "bloqueios_exportar" | "whitelist_salvar" | "mensagens" | "mensagens_semear" => {
-                Atividade::Administrar
-            }
+            "bloqueios_exportar" | "whitelist_salvar" | "mensagens" | "mensagens_semear"
+            | "protecao_semear" => Atividade::Administrar,
             // A telemetria mostra o login, o IP e a TABELA de toda atividade
             // viva, e o encerrar interrompe o trabalho alheio: e o mesmo poder
             // do `sessoes` e do `kill`, pelas mesmas duas razoes.
@@ -623,6 +621,7 @@ pub const OPS_DO_SERVIDOR: &[&str] = &[
     "diretiva_gravar",
     "mensagens",
     "mensagens_semear",
+    "protecao_semear",
     // A maquina e o servico.
     "sistema",
     "servico",
@@ -636,6 +635,7 @@ pub const OPS_DO_SERVIDOR: &[&str] = &[
     "job_excluir",
     "job_rodar",
     "job_ligar",
+    "job_autorizar",
     "dblink",
     "dblink_salvar",
     "dblink_excluir",

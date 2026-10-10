@@ -4514,6 +4514,21 @@ pub struct Protecao {
     /// cancela. Este e um SINAL, nao comando da lista de perigo -- e so para
     /// sinal que o dono deixou existir o modo observar.
     pub prazo_comando_so_observa: bool,
+    /// P12: a linha `observar`/`desligado` de `phxsys.protecao` tambem
+    /// DISPENSA a segunda senha daquele comando? Fabrica `false`: a linha so
+    /// liga e desliga o monitoramento, e a senha continua exigida -- a
+    /// precisao do dono «em qualquer modo». `true` e a leitura da ordem do
+    /// 767 em que a tabela tira o comando da lista; qual das duas vale e
+    /// pergunta de PRODUTO, e sobe ao dono. Baixar uma linha continua pedindo
+    /// a sessao liberada nos dois casos (P13).
+    pub modo_dispensa_a_senha: bool,
+    /// Brecha registrada no 767: o PRIMEIRO cadastro da senha de execucao
+    /// pelo proprio, com a senha de login, deixa quem roubou a de login
+    /// cadastrar a segunda antes do dono. `true` (fabrica, o lado seguro):
+    /// o primeiro cadastro e do administrador com a sessao liberada -- e so o
+    /// primeiro administrador do servidor, enquanto nenhum tem a sua, se
+    /// cadastra sozinho. `false` volta ao comportamento da P14.
+    pub primeiro_cadastro_pelo_administrador: bool,
 }
 
 impl Default for Protecao {
@@ -4522,6 +4537,8 @@ impl Default for Protecao {
             ligada: true,
             prazo_comando_ms: 0,
             prazo_comando_so_observa: false,
+            modo_dispensa_a_senha: false,
+            primeiro_cadastro_pelo_administrador: true,
         }
     }
 }
@@ -4558,10 +4575,23 @@ impl Protecao {
                 false
             }
         };
+        // Os dois interruptores do 767 leem o valor torto como o lado
+        // SEGURO: o que nao e `true` nao dispensa senha, e o que nao e
+        // `false` deixa o primeiro cadastro com o administrador.
+        let dispensa = secao
+            .and_then(|c| c.campo("modo_dispensa_a_senha"))
+            .and_then(Json::booleano)
+            .unwrap_or(false);
+        let pelo_admin = secao
+            .and_then(|c| c.campo("primeiro_cadastro_pelo_administrador"))
+            .and_then(Json::booleano)
+            .unwrap_or(true);
         Protecao {
             ligada: Self::efetiva(pedida, cfg!(debug_assertions), avisos),
             prazo_comando_ms: prazo,
             prazo_comando_so_observa: so_observa,
+            modo_dispensa_a_senha: dispensa,
+            primeiro_cadastro_pelo_administrador: pelo_admin,
         }
     }
 
@@ -4597,6 +4627,14 @@ impl Protecao {
                 } else {
                     "proteger"
                 }),
+            ),
+            (
+                "modo_dispensa_a_senha",
+                Json::Bool(self.modo_dispensa_a_senha),
+            ),
+            (
+                "primeiro_cadastro_pelo_administrador",
+                Json::Bool(self.primeiro_cadastro_pelo_administrador),
             ),
         ])
     }
@@ -5398,7 +5436,13 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 20] = [
     ),
     (
         "protecao",
-        &["ligada", "prazo_comando_ms", "prazo_comando_modo"],
+        &[
+            "ligada",
+            "prazo_comando_ms",
+            "prazo_comando_modo",
+            "modo_dispensa_a_senha",
+            "primeiro_cadastro_pelo_administrador",
+        ],
     ),
     (
         "diario",
@@ -11487,5 +11531,29 @@ mod testes_da_protecao {
         assert!(Protecao::de_json(&j, &mut avisos).ligada);
         assert!(Config::default().protecao.ligada);
         assert!(!CAMPOS_EDITAVEIS.iter().any(|c| c.0.starts_with("protecao")));
+    }
+
+    /// Os dois interruptores do 767 (P12 e a brecha do primeiro cadastro):
+    /// ausentes e tortos valem o lado SEGURO, e o pedido explicito vale.
+    #[test]
+    fn os_interruptores_do_767_nascem_no_lado_seguro() {
+        let le = |t: &str| {
+            let mut avisos = Vec::new();
+            Protecao::de_json(&Json::analisar(t).unwrap(), &mut avisos)
+        };
+        for t in [
+            r#"{}"#,
+            r#"{"protecao":{}}"#,
+            r#"{"protecao":{"modo_dispensa_a_senha":"sim","primeiro_cadastro_pelo_administrador":0}}"#,
+        ] {
+            let p = le(t);
+            assert!(!p.modo_dispensa_a_senha, "{t}");
+            assert!(p.primeiro_cadastro_pelo_administrador, "{t}");
+        }
+        let p = le(
+            r#"{"protecao":{"modo_dispensa_a_senha":true,"primeiro_cadastro_pelo_administrador":false}}"#,
+        );
+        assert!(p.modo_dispensa_a_senha);
+        assert!(!p.primeiro_cadastro_pelo_administrador);
     }
 }

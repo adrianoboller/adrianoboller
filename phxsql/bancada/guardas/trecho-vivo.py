@@ -979,7 +979,12 @@ TETO_TESTE_SEM_MODULO = 0
 # `fw-pendura-sem-premissa` (o teste que passou a passar por engano). RED
 # medido pelo `red.py` da frente; o provador rodou com `--so` nas 27.
 # 921 = 877 + 8 (P2-P5) + 9 (781 e A15) + 27 (P6, P9-P11 e 779), somados na integracao.
-PISO_DAS_ENTRADAS = 921
+# +19 (pedidos 765/767 P12, P13 e a brecha do primeiro cadastro, 10/10/2026):
+# 2 da guarda que guarda a si mesma (P13), 7 da tabela
+# phxsys.protecao (o leitor, o monitoramento, a dispensa, a leitura sob a trava
+# e as tres da semeadura), 7 do job autorizado e 3 do primeiro cadastro. RED
+# de cada uma pelo provador com `--so`.
+PISO_DAS_ENTRADAS = 940
 
 # ------------------------------------------------------------- APOSENTADAS
 #

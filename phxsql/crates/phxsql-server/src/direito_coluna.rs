@@ -323,6 +323,7 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("whitelist_salvar", PorColuna::Nenhum),
     ("mensagens", PorColuna::Nenhum),
     ("mensagens_semear", PorColuna::Nenhum),
+    ("protecao_semear", PorColuna::Nenhum),
     ("idiomas", PorColuna::Nenhum),
     ("idiomas_carga", PorColuna::Nenhum),
     ("idiomas_padrao", PorColuna::Nenhum),
@@ -366,6 +367,7 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     ("job_listar", PorColuna::PedidoSalvo),
     ("job_salvar", PorColuna::Nenhum),
     ("job_ligar", PorColuna::Nenhum),
+    ("job_autorizar", PorColuna::Nenhum),
     ("job_excluir", PorColuna::Nenhum),
     // O job roda pelo `executar_job`, que passa por esta mesma funcao com o
     // usuario DELE -- entao o pedido de dentro e classificado por conta.

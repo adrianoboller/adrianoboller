@@ -3297,12 +3297,13 @@ Três regras de formato, todas por compatibilidade e honestidade:
 ### `phxsys` — o database do próprio servidor
 
 Um database como qualquer outro, **criado só quando alguém pede**. Hoje ele
-guarda uma tabela:
+guarda duas tabelas:
 
 ```
 base/
 └── phxsys/
-    └── mensagens.reg ...     os textos que o servidor devolve, um por idioma
+    ├── mensagens.reg ...     os textos que o servidor devolve, um por idioma
+    └── protecao.reg ...      o modo de cada comando da lista de perigo (§31)
 ```
 
 Ser tabela comum é a decisão, e não um detalhe: a grade já a edita, a permissão
@@ -3310,8 +3311,10 @@ por base já a protege, o diário já registra quem mudou o quê, e o backup já
 leva junto. Um arquivo de formato próprio precisaria dos quatro de novo. O
 esquema e a regra de resolução estão em [`MENSAGENS.md`](MENSAGENS.md).
 
-Servidor sem o campo `idioma` no `config.json` e sem ninguém clicar em «semear»
-não tem `phxsys` nenhum no disco — e responde exatamente como sempre respondeu.
+Servidor sem o campo `idioma` no `config.json` e sem ninguém pedir uma das
+duas semeaduras (`mensagens_semear`, `protecao_semear`) não tem `phxsys`
+nenhum no disco — e responde exatamente como sempre respondeu: a proteção sem
+tabela vale `proteger` em tudo.
 
 ---
 
@@ -5059,3 +5062,56 @@ teto de 7 dias que nunca encurta um `bloqueio_minutos` maior).
   começa do zero, que é o comportamento de antes. O binário anterior, lendo um
   arquivo novo, **ignora** o campo e o **perde** na gravação seguinte — o
   escalonamento recomeça do zero, sem perder bloqueio nem whitelist.
+
+## 30. `jobs.json` — o campo `autorizacao` (pedidos 765/767, P12)
+
+O job que roda comando da lista de perigo recusa com `4009` sem a segunda
+senha. O `job_autorizar`, chamado por quem administra o servidor **com a
+sessão liberada pela própria senha de execução**, grava no job a liberação:
+
+```json
+{"nome":"limpeza","usuario":"ana","pedido":{…},
+ "autorizacao":{"por":"ana","quando_ms":1791600000000,"ate_ms":1794192000000,
+                "usos":11,"impressao":"<64 hexa>"}}
+```
+
+- `impressao` é o SHA-256 (hexa minúsculo) de `usuario + "\n" + pedido`
+  serializado. Ela **é o escopo**: o `job_salvar` que muda o usuário ou um byte
+  do pedido apaga a autorização; o que só muda descrição, agenda ou `ligado`
+  a mantém. Não é segredo — sai na ficha.
+- `usos` é o teto de **corridas** (1 a 366): cada corrida com a autorização
+  válida gasta um, gravado **antes** de a corrida rodar. `ate_ms` é o prazo
+  (1 a 366 dias).
+- A autorização **nunca chega pela rede**: o `job_salvar` descarta o campo, e
+  só o `job_autorizar` o escreve. `"revogar": true` o tira sem pedir senha.
+- Arquivo de antes do P12 (sem o campo) lê como job sem autorização — o
+  comportamento de antes. O binário anterior **ignora** o campo e o **perde**
+  na gravação seguinte: o job volta a recusar com `4009`, que é o lado seguro.
+
+## 31. `phxsys.protecao` — a tabela da camada de proteção (pedidos 765/767, P12)
+
+Tabela comum do database `phxsys` (§11), pelo mesmo motivo das mensagens: a
+grade a edita, o diário registra quem mudou, o backup a leva.
+
+| coluna | tipo | o que é |
+|---|---|---|
+| `id` | `Uuid`, obrigatória | chave primária (`porId`) |
+| `op` | `Str(40)`, obrigatória | a op da lista de perigo, ou o rótulo do plano da F8 (`excluir_por_faixa`, `atualizar_por_faixa`, `cascata`); índice único `porOp` |
+| `categoria` | `Str(30)` | `destruir_estrutura`, `apagar_em_massa`, `alterar_em_massa`, `reescrever_tabela_grande`, `acesso` — informativa |
+| `modo` | `Str(12)` | `proteger` (fábrica), `observar` ou `desligado` |
+
+- **Quem cria:** o `protecao_semear` (administrador). O arranque só a
+  **completa** — linha que falta para uma op da fábrica, em `proteger` — e só
+  se `phxsys` já existe, num nó que escreve (não réplica, não
+  somente-leitura). Linha presente nunca é tocada.
+- **Tabela, linha ou database ausentes valem `proteger`**; `modo` vazio, nulo
+  ou torto também; duas linhas da mesma op valem a mais estrita. Apagar uma
+  linha nunca baixa a guarda.
+- **O que o modo muda:** `desligado` tira o executado da trilha; a segunda
+  senha continua exigida nos três, a não ser que o `config.json` ligue
+  `protecao.modo_dispensa_a_senha` (fábrica `false`).
+- **A guarda guarda a si mesma (P13):** a escrita que pode deixar uma linha
+  abaixo de `proteger` — e toda escrita que a camada não lê (lote, carga,
+  `restaurar`, copiar/renomear para ela, restaurar o backup de `phxsys`) —
+  exige a sessão liberada. Subir pelo `inserir`, `atualizar` ou `excluir`
+  nunca exige.

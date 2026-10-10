@@ -626,8 +626,33 @@ impl Servidor {
         // Quem configurou "idioma" pediu o recurso: a tabela de mensagens e
         // semeada no arranque se ainda nao existe. Sem o campo, nada e criado
         // -- guarda nova entra pedida, nao imposta.
-        if !servidor.config.idioma.is_empty() {
-            match servidor.semear_mensagens() {
+        // A tabela da protecao (765/767, P12) e COMPLETADA no arranque de
+        // quem ja tem o database de sistema: a op nova da fabrica ganha a
+        // linha dela no upgrade. Quem nunca pediu `phxsys` nao o ve nascer
+        // -- a tabela ausente ja vale `proteger` em tudo, e e o
+        // `protecao_semear` que a cria. A replica e o bidirecional nao
+        // semeiam: a linha deles chega pela replicacao da origem, e uma
+        // semeadura local daria a mesma `op` com outro `id` dos dois lados.
+        let semeia_protecao = servidor.config.protecao.ligada
+            && !servidor.config.somente_leitura
+            && matches!(servidor.papel_atual(), Papel::Isolado | Papel::Source);
+        let semeia_mensagens = !servidor.config.idioma.is_empty();
+        let (mensagens, protecao) = if semeia_mensagens || semeia_protecao {
+            servidor.semear_o_sistema(semeia_mensagens, semeia_protecao, false)
+        } else {
+            (Ok((false, false, 0, 0)), Ok(0))
+        };
+        match protecao {
+            Ok(n) if n > 0 => eprintln!(
+                "protecao: tabela {}.{} semeada ({n} comandos em proteger)",
+                crate::protecao::DATABASE,
+                crate::protecao::TABELA
+            ),
+            Ok(_) => {}
+            Err(e) => eprintln!("AVISO: nao consegui semear a tabela de protecao: {e}"),
+        }
+        if semeia_mensagens {
+            match mensagens {
                 Ok((db_novo, tab_nova, semeadas, _)) if tab_nova || semeadas > 0 => eprintln!(
                     "mensagens: tabela {}.{} semeada ({} mensagens{})",
                     crate::mensagens::DATABASE,
@@ -1271,7 +1296,14 @@ impl Servidor {
         if let Some((filha, linhas, vivas)) =
             crate::plano_largo::observar_a_cascata(database, &plano)
         {
-            self.protecao_do_plano("cascata", database, &filha, (linhas, vivas), sessao)?;
+            self.protecao_do_plano(
+                "cascata",
+                database,
+                &filha,
+                (linhas, vivas),
+                sessao,
+                Some(trava),
+            )?;
         }
         Ok(plano)
     }

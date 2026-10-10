@@ -78,7 +78,7 @@ export const caso = {
     // Uma aba propria: a sessao do supervisor (acima) nao pode ser a mesma
     // que testa a restricao.
     const v = await page.context().newPage();
-    await entrar(v, ctx.url, { usuario: login, senha, token: CREDENCIAL.TOKEN });
+    await entrar(v, ctx.url, { usuario: login, senha, token: CREDENCIAL.TOKEN }, { cadastradaPor: page });
 
     // -------------------------- achado 2 (estrutura): a aba Estrutura
     // `abrirPelaArvore` pousa na aba que `est.aba` ja tem -- e numa aba nova

@@ -39,7 +39,7 @@ export function contem(texto, pedaco, oQue) {
  * supervisor) cria o usuario restrito pela API, como o supervisor, e chama
  * `entrar` de novo com `{ usuario, senha, token }` dele -- numa aba nova,
  * porque a sessao do supervisor nao pode ser a mesma que testa a restricao. */
-export async function entrar(page, url, credenciais = CREDENCIAL, { liberar = true } = {}) {
+export async function entrar(page, url, credenciais = CREDENCIAL, { liberar = true, cadastradaPor = null } = {}) {
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('#btEntrar');
   // Sem servidor a pagina cai em «modo demonstracao» com dados embutidos, e
@@ -80,15 +80,33 @@ export async function entrar(page, url, credenciais = CREDENCIAL, { liberar = tr
   // entrada de cada usuario cadastra a senha, provando-se com a de login, e
   // tudo passa pela `api()` da pagina -- e assim que o id girado pelo
   // servidor chega ao `est.sessao`.
+  //
+  // Desde a brecha do 767 (10/10/2026, `protecao.primeiro_cadastro_pelo_
+  // administrador`, fabrica true) so o PRIMEIRO administrador do servidor se
+  // cadastra sozinho -- o supervisor da bateria. Todo outro usuario que um
+  // caso cria recebe a senha do administrador LIBERADO: o caso passa a aba
+  // dele em `cadastradaPor`, e e ela que cadastra, como na vida real.
   if (liberar) {
-    await page.evaluate(async ([senhaLogin, senhaExec]) => {
-      try { await api('liberar_execucao', { senha: senhaExec }, true); }
+    const login = credenciais.usuario ?? credenciais.USUARIO;
+    const liberou = await page.evaluate(async ([senhaLogin, senhaExec]) => {
+      try { await api('liberar_execucao', { senha: senhaExec }, true); return true; }
       catch {
-        await api('senha_execucao_definir',
-          { senha: senhaLogin, nova_senha_execucao: senhaExec }, true);
+        try {
+          await api('senha_execucao_definir',
+            { senha: senhaLogin, nova_senha_execucao: senhaExec }, true);
+        } catch { return false; }
         await api('liberar_execucao', { senha: senhaExec }, true);
+        return true;
       }
     }, [credenciais.senha ?? credenciais.SENHA, SENHA_EXECUCAO]);
+    if (!liberou) {
+      if (!cadastradaPor) {
+        throw new Falha(`${login} nao se cadastra sozinho na senha de execucao (o primeiro cadastro e do administrador): passe { cadastradaPor: <aba do supervisor> } ou { liberar: false }`);
+      }
+      await api(cadastradaPor, 'senha_execucao_definir', { login, nova_senha_execucao: SENHA_EXECUCAO });
+      await page.evaluate(async senhaExec => { await api('liberar_execucao', { senha: senhaExec }, true); },
+        SENHA_EXECUCAO);
+    }
   }
 }
 

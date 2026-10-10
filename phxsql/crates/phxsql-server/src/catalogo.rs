@@ -2193,6 +2193,15 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "protecao_semear",
+        apelidos: &[],
+        resumo: "Cria phxsys.protecao se falta e grava em proteger cada comando da lista de \
+                 perigo que ainda não tem linha, sem tocar as existentes.",
+        parametros: &[],
+        exemplo: r#"{"op":"protecao_semear"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "idiomas",
         apelidos: &[],
         resumo: "O estado da tabela de textos da tela: quantos há, quantos estão traduzidos.",
@@ -2529,6 +2538,22 @@ pub const OPERACOES: &[Operacao] = &[
             obr("ligado", "boolean", "true liga, false desliga"),
         ],
         exemplo: r#"{"op":"job_ligar","nome":"backup-noturno","ligado":true}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
+        nome: "job_autorizar",
+        apelidos: &[],
+        resumo: "Dá ao job a senha de execução do comando perigoso que ele roda -- \
+                 com a sessão liberada pela sua segunda senha, por um teto de corridas e \
+                 de dias. Regravar o job com outro pedido apaga a autorização; \
+                 \"revogar\": true a tira sem pedir senha.",
+        parametros: &[
+            obr("nome", "string", "o nome do job"),
+            opc("usos", "integer", "quantas corridas libera, de 1 a 366 (padrão 1)"),
+            opc("dias", "integer", "por quantos dias vale, de 1 a 366 (padrão 30)"),
+            opc("revogar", "boolean", "true tira a autorização"),
+        ],
+        exemplo: r#"{"op":"job_autorizar","nome":"limpeza-mensal","usos":12,"dias":366}"#,
         ferramenta_mcp: false,
     },
     Operacao {

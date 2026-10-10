@@ -202,16 +202,91 @@ pub struct Job {
     /// RECUSA ao rodar -- ver [`Job::recusa_de_credencial`]. Nao vai para o
     /// disco: sai de novo da guarda a cada leitura.
     pub recusa: Option<String>,
+    /// A senha de execucao DADA a este job (765/767, P12). `None` no job de
+    /// sempre -- e o job com comando da lista de perigo recusa com 4009.
+    pub autorizacao: Option<Autorizacao>,
+}
+
+/// A autorizacao de um job para o comando perigoso: quem a deu (com a sessao
+/// liberada pela PROPRIA segunda senha), ate quando, quantas corridas, e a
+/// impressao do que foi autorizado.
+///
+/// # Por que a impressao, e nao so o nome do job
+///
+/// O escopo e o PEDIDO inteiro sob o usuario: `DROP` desta tabela, por este
+/// login. Amarrar ao nome deixaria quem so administra (sem a segunda senha)
+/// salvar outro pedido com o mesmo nome e herdar a liberacao -- um
+/// `excluir_tabela` autorizado para `rascunho` viraria o de `clientes`. A
+/// impressao e o SHA-256 do usuario e do pedido; mudou um byte, a
+/// autorizacao nao vale mais.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Autorizacao {
+    pub por: String,
+    pub quando_ms: i64,
+    pub ate_ms: i64,
+    /// Corridas que ainda pode liberar. Cada corrida com a autorizacao valida
+    /// gasta uma, rode ou nao o comando perigoso: o teto e de CORRIDAS.
+    pub usos: u32,
+    pub impressao: String,
+}
+
+/// O teto de corridas e de dias de uma autorizacao: um ano de job diario.
+/// Autorizacao sem fim e senha guardada em arquivo por outro nome.
+pub const TETO_DE_USOS: u32 = 366;
+pub const TETO_DE_DIAS: u32 = 366;
+
+impl Autorizacao {
+    fn de_json(j: &Json) -> Option<Autorizacao> {
+        let impressao = j.texto_ou("impressao", "").to_string();
+        if impressao.len() != 64 {
+            return None;
+        }
+        Some(Autorizacao {
+            por: j.texto_ou("por", "").to_string(),
+            quando_ms: j.inteiro_ou("quando_ms", 0),
+            ate_ms: j.inteiro_ou("ate_ms", 0),
+            // O teto vale tambem para o arquivo editado a mao.
+            usos: j.inteiro_ou("usos", 0).clamp(0, i64::from(TETO_DE_USOS)) as u32,
+            impressao,
+        })
+    }
+
+    fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("por", Json::texto_de(&self.por)),
+            ("quando_ms", Json::de_i64(self.quando_ms)),
+            ("ate_ms", Json::de_i64(self.ate_ms)),
+            ("usos", Json::de_u64(u64::from(self.usos))),
+            ("impressao", Json::texto_de(&self.impressao)),
+        ])
+    }
 }
 
 impl Job {
+    /// O SHA-256 de usuario e pedido -- o escopo da [`Autorizacao`].
+    pub fn impressao(&self) -> String {
+        let texto = format!("{}\n{}", self.usuario, self.pedido.escrever());
+        phxsql_core::hash::para_hex(&phxsql_core::hash::sha256(texto.as_bytes()))
+    }
+
+    /// A autorizacao vale para ESTE job, agora?
+    pub fn autorizado(&self, agora_ms: i64) -> bool {
+        self.autorizacao
+            .as_ref()
+            .is_some_and(|a| a.usos > 0 && agora_ms < a.ate_ms && a.impressao == self.impressao())
+    }
+
     /// O job que CHEGA -- pelo `job_salvar`. Credencial no pedido recusa, e a
     /// recusa nomeia o campo.
     ///
     /// O que volta do disco no arranque passa por [`Job::do_disco`], que nao
     /// recusa: a mesma guarda, com outra consequencia.
     pub fn de_json(j: &Json) -> Result<Job> {
-        let job = Job::do_disco(j)?;
+        let mut job = Job::do_disco(j)?;
+        // A autorizacao NUNCA chega pela rede: so o `job_autorizar` a cria,
+        // com a sessao liberada. Aceita-la aqui deixaria qualquer um que
+        // salva job escrever a propria liberacao (P12).
+        job.autorizacao = None;
         match job.recusa_de_credencial() {
             Some(e) => Err(e),
             None => Ok(job),
@@ -265,6 +340,7 @@ impl Job {
             usuario: j.texto_ou("usuario", "").trim().to_string(),
             pedido,
             recusa,
+            autorizacao: j.campo("autorizacao").and_then(Autorizacao::de_json),
         })
     }
 
@@ -294,6 +370,9 @@ impl Job {
         ];
         p.extend(self.agenda.campos_para_disco());
         p.push(("pedido".to_string(), self.pedido.clone()));
+        if let Some(a) = &self.autorizacao {
+            p.push(("autorizacao".to_string(), a.para_json()));
+        }
         p
     }
 
@@ -660,7 +739,7 @@ impl Registro {
     }
 
     /// Grava ou substitui um job pelo nome.
-    pub fn salvar(&mut self, j: Job) -> Result<()> {
+    pub fn salvar(&mut self, mut j: Job) -> Result<()> {
         // Antes de mexer na lista: o `gravar` recusaria o disco, mas a memoria
         // ja teria o job, e um cadastro trancado passaria a ter um job que o
         // arquivo nao tem.
@@ -670,10 +749,74 @@ impl Registro {
             .iter()
             .position(|x| x.nome.eq_ignore_ascii_case(&j.nome))
         {
-            Some(i) => self.jobs[i] = j,
+            Some(i) => {
+                // A tela regrava a ficha inteira para mudar a descricao ou a
+                // agenda: a autorizacao fica se o que ela autorizou -- o
+                // usuario e o pedido -- nao mudou. Mudou, ela morre aqui.
+                if j.autorizacao.is_none() && self.jobs[i].impressao() == j.impressao() {
+                    j.autorizacao = self.jobs[i].autorizacao.clone();
+                }
+                self.jobs[i] = j;
+            }
             None => self.jobs.push(j),
         }
         self.gravar()
+    }
+
+    /// Grava a autorizacao do job (P12). Recusa se o job mudou desde que
+    /// quem autoriza o leu: a impressao tem de ser a do job de AGORA.
+    pub fn autorizar(&mut self, nome: &str, a: Autorizacao) -> Result<()> {
+        self.exigir_legivel()?;
+        let job = self
+            .jobs
+            .iter_mut()
+            .find(|j| j.nome.eq_ignore_ascii_case(nome))
+            .ok_or_else(|| PhxError::NaoEncontrado(format!("job {nome:?} nao existe")))?;
+        if job.impressao() != a.impressao {
+            return Err(PhxError::Conflito(format!(
+                "job {nome:?} mudou enquanto era autorizado; leia de novo e autorize o que \
+                 ele roda agora"
+            )));
+        }
+        job.autorizacao = Some(a);
+        self.gravar()
+    }
+
+    /// Tira a autorizacao. Nao pede senha: tirar poder nao pede permissao.
+    pub fn revogar(&mut self, nome: &str) -> Result<bool> {
+        self.exigir_legivel()?;
+        let job = self
+            .jobs
+            .iter_mut()
+            .find(|j| j.nome.eq_ignore_ascii_case(nome))
+            .ok_or_else(|| PhxError::NaoEncontrado(format!("job {nome:?} nao existe")))?;
+        let tinha = job.autorizacao.take().is_some();
+        if tinha {
+            self.gravar()?;
+        }
+        Ok(tinha)
+    }
+
+    /// Gasta uma corrida da autorizacao, se ela vale agora. `true` libera a
+    /// corrida; o uso vai ao disco ANTES de a corrida rodar -- a corrida que
+    /// derruba o processo nao devolve o uso que ja liberou.
+    pub fn gastar_autorizacao(&mut self, nome: &str, agora_ms: i64) -> Result<bool> {
+        self.exigir_legivel()?;
+        let Some(job) = self
+            .jobs
+            .iter_mut()
+            .find(|j| j.nome.eq_ignore_ascii_case(nome))
+        else {
+            return Ok(false);
+        };
+        if !job.autorizado(agora_ms) {
+            return Ok(false);
+        }
+        if let Some(a) = job.autorizacao.as_mut() {
+            a.usos -= 1;
+        }
+        self.gravar()?;
+        Ok(true)
     }
 
     pub fn excluir(&mut self, nome: &str) -> Result<()> {
@@ -1587,5 +1730,52 @@ mod testes {
         );
         assert!(caminho.is_dir(), "o cadastro trancado foi regravado");
         drop(guarda);
+    }
+
+    /// A autorizacao do job (765/767, P12): vale so dentro do prazo, com uso
+    /// sobrando e para o MESMO usuario e pedido; volta do disco e gasta um
+    /// uso por corrida, gravado.
+    #[test]
+    fn a_autorizacao_vale_no_prazo_com_uso_e_para_o_mesmo_pedido() {
+        let (_d, arq) = tmp("autorizacao");
+        let mut r = Registro::abrir(&arq).unwrap();
+        let job = Job::de_json(&job_json("limpa", "")).unwrap();
+        let impressao = job.impressao();
+        assert_eq!(impressao.len(), 64);
+        r.salvar(job).unwrap();
+        let a = |usos: u32, ate_ms: i64, impressao: &str| Autorizacao {
+            por: "adm".into(),
+            quando_ms: 0,
+            ate_ms,
+            usos,
+            impressao: impressao.into(),
+        };
+        // A impressao de OUTRO pedido nao se grava.
+        let outra = Job::de_json(&job_json("x", ",\"descricao\":\"y\""))
+            .unwrap()
+            .impressao();
+        assert_eq!(outra, impressao, "descricao nao entra na impressao");
+        let diferente = "0".repeat(64);
+        assert!(r.autorizar("limpa", a(2, 1_000, &diferente)).is_err());
+        r.autorizar("limpa", a(2, 1_000, &impressao)).unwrap();
+        // Volta do disco.
+        let mut r = Registro::abrir(&arq).unwrap();
+        assert!(r.achar("limpa").unwrap().autorizado(10));
+        assert!(!r.achar("limpa").unwrap().autorizado(1_000), "vencida");
+        assert!(r.gastar_autorizacao("limpa", 10).unwrap());
+        assert!(r.gastar_autorizacao("limpa", 10).unwrap());
+        assert!(!r.gastar_autorizacao("limpa", 10).unwrap(), "sem uso");
+        let r = Registro::abrir(&arq).unwrap();
+        assert_eq!(
+            r.achar("limpa").unwrap().autorizacao.as_ref().unwrap().usos,
+            0,
+            "o uso gasto nao foi ao disco"
+        );
+        // Outro usuario, mesmo pedido: outra impressao.
+        let mut outro = r.achar("limpa").unwrap().clone();
+        outro.autorizacao = Some(a(1, 1_000, &impressao));
+        assert!(outro.autorizado(10));
+        outro.usuario = "bia".into();
+        assert!(!outro.autorizado(10));
     }
 }

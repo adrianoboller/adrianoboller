@@ -633,7 +633,7 @@ impl Servidor {
         // liberada, recusa AQUI, com nada gravado -- a primeira linha do laco
         // ja seria dano.
         if crate::plano_largo::observar_a_faixa(rotulo, &database, &tabela, medida.0, medida.1) {
-            self.protecao_do_plano(rotulo, &database, &tabela, medida, sessao)?;
+            self.protecao_do_plano(rotulo, &database, &tabela, medida, sessao, None)?;
         }
 
         // Passo 2: por rowid, `ler` a linha e a versao, e gravar com a versao

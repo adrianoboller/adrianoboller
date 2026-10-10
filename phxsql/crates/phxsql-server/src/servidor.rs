@@ -229,6 +229,8 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     "idiomas_carga",
     "idiomas_padrao",
     "idiomas_importar",
+    // Cria e completa `phxsys.protecao` (765/767, P12).
+    "protecao_semear",
     // Gravam o cadastro de ligacoes, que e arquivo deste servidor.
     "dblink_salvar",
     "dblink_excluir",
@@ -263,6 +265,8 @@ pub(crate) const OPS_ESCRITA: &[&str] = &[
     "job_salvar",
     "job_excluir",
     "job_ligar",
+    // Grava a autorizacao do job no mesmo `jobs.json` (765/767, P12).
+    "job_autorizar",
     // Parar a porta de dados nao grava byte nenhum, mas interrompe o trabalho
     // de todo mundo -- pela mesma razao que `encerrar_sessao` esta aqui. Um
     // servidor declarado somente-leitura nao e um servidor sem dono.
@@ -2174,6 +2178,7 @@ impl Servidor {
             "whitelist_salvar" => self.op_whitelist_salvar(p),
             "mensagens" => self.op_mensagens(),
             "mensagens_semear" => self.op_mensagens_semear(),
+            "protecao_semear" => self.op_protecao_semear(sessao),
             "idiomas" => self.op_idiomas(p, sessao),
             "idiomas_carga" => self.op_idiomas_carga(p, sessao),
             "idiomas_padrao" => self.op_idiomas_padrao(p, sessao),
@@ -2203,6 +2208,7 @@ impl Servidor {
             "job_excluir" => self.op_job_excluir(p),
             "job_rodar" => self.op_job_rodar(p),
             "job_ligar" => self.op_job_ligar(p),
+            "job_autorizar" => self.op_job_autorizar(p, sessao),
             "criar_database" => self.op_criar_database(p),
             "criar_schema" => self.op_criar_schema(p),
             "criar_tabela" => self.op_criar_tabela(p),
@@ -2758,6 +2764,7 @@ fontes_do_servidor! {
     "servidor/testes_da_absorcao_do_bidi.rs",
     "servidor/testes_da_cifra_exigida_na_replicacao.rs",
     "servidor/testes_da_ficha_compartilhada.rs",
+    "servidor/testes_da_guarda_da_protecao.rs",
     "servidor/testes_da_linhagem_na_replica.rs",
     "servidor/testes_da_previsao.rs",
     "servidor/testes_da_protecao.rs",
@@ -3160,3 +3167,6 @@ mod testes_dos_produtores_779;
 
 #[cfg(test)]
 mod testes_da_protecao_766;
+
+#[cfg(test)]
+mod testes_da_guarda_da_protecao;
