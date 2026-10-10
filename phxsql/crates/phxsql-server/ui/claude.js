@@ -904,7 +904,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       `<div class="aviso">
          ${marcado(txt("tela.ia_leia",
            "**Leia antes de ligar.** Esta tela liga o Centro de Controle direto na API da Anthropic, **do seu navegador**. Em português claro:"))}
-         <ul class="lista-limpa" style="margin-top:8px">
+         <ul class="lista-limpa u-mt-8">
            <li>· ${marcado(txt("tela.ia_leia_chave_mem",
                "a chave fica **só na memória desta aba**, nem no servidor nem no armazenamento do navegador: some ao recarregar, ao **Sair** e ao fechar a aba, como o seu login, e quem sentar aqui depois não a encontra;"))}</li>
            <li>· ${marcado(txt("tela.ia_leia_sobe",
@@ -955,7 +955,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
        ${houveMigracao() ? `<div class="aviso" id="iaMigrada">${marcado(
          txt("tela.ia_migrada_mem", "A chave que estava guardada **no armazenamento deste navegador** foi movida para a memória desta aba e apagada de lá. Ela vale agora; some ao recarregar, ao Sair ou ao fechar a aba."))}</div>` : ""}
 
-       <div class="dbl-titulo" style="margin-top:16px">
+       <div class="dbl-titulo u-mt-16">
          <button class="botao incluir" id="iaSalvar">${E(txt("tela.salvar", "Salvar"))}</button>
          <button class="botao consultar" id="iaTestar">${E(txt("tela.ia_testar", "Testar a chave"))}</button>
          <button class="botao excluir" id="iaRemover"
@@ -964,7 +964,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
        </div>
        <div id="iaRecado"></div>
 
-       <div class="nota" style="margin-top:18px">
+       <div class="nota u-mt-18">
          <p>${marcado(txt("tela.ia_nota_docs", "O desenho e o porquê estão em `docs/CLAUDE-IA.md`."))}
          ${marcado(txt("tela.ia_nota_tls",
            "Em uma frase: a API é HTTPS obrigatório, a `std` do Rust não tem TLS, e a casa não acrescenta dependência — então a chamada sai do navegador, e o servidor fica de fora do caminho inteiro."))}</p>
@@ -1055,10 +1055,9 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const db = await bancoDoContexto();
     const c = cfg();
     onde.innerHTML = `
-      <div class="dbl-titulo" style="margin-top:14px">
+      <div class="dbl-titulo u-mt-14">
         ${Object.entries(RECEITAS).map(([k, r]) =>
-          `<button class="botao mini consultar ia-rec" data-r="${k}"
-            ${k === receitaAtual ? 'style="background:var(--acao-consultar);color:var(--fundo)"' : ""}
+          `<button class="botao mini consultar ia-rec${k === receitaAtual ? " u-aceso" : ""}" data-r="${k}"
             >${r.ico} ${E(txt(r.txt, r.rot))}</button>`).join("")}
         <span class="cresce"></span>
         <span class="leg">${marcado(txt("tela.ia_modelo_em_uso", "modelo: `{m}`"),
@@ -1074,11 +1073,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const r = RECEITAS[receitaAtual];
     onde.innerHTML = `
       <div class="form-dbl">
-        <label class="cmp" style="grid-column:1/-1"><span>${E(txt(r.pedeTxt, r.pede))}</span>
-          <textarea id="iaPergunta" rows="3" style="width:100%;padding:8px 10px;
-            border:1px solid var(--linha);border-radius:5px;background:var(--painel);
-            color:var(--texto);font-size:12.5px;font-family:'IBM Plex Mono',monospace;
-            resize:vertical" placeholder="${E(txt(r.exemploTxt, r.exemplo))}"></textarea></label>
+        <label class="cmp u-linha-inteira"><span>${E(txt(r.pedeTxt, r.pede))}</span>
+          <textarea id="iaPergunta" rows="3" placeholder="${E(txt(r.exemploTxt, r.exemplo))}"></textarea></label>
 
         <label class="cmp"><span>${E(txt("tela.ia_db_contexto", "Database do contexto"))}</span>
           <input id="iaDb" value="${E(db || "")}"
@@ -1095,15 +1091,14 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
           <span>${marcado(txt("tela.ia_mandar_linhas",
             "Mandar também **linhas de exemplo** de cada tabela"))}</span></label>
 
-        <div class="cmp linha-chk" style="grid-column:1/-1">
+        <div class="cmp linha-chk u-linha-inteira">
           <span class="leg" id="iaLinhasQtd" hidden>${E(txt("tela.ia_quantas", "quantas por tabela:"))}
-            <input id="iaQtd" type="number" value="3" min="1" max="20"
-                   style="width:70px;display:inline-block"></span></div>
+            <input id="iaQtd" type="number" value="3" min="1" max="20"></span></div>
       </div>
 
       <div id="iaAlertaLinhas"></div>
 
-      <div class="dbl-titulo" style="margin-top:12px">
+      <div class="dbl-titulo u-mt-12">
         <button class="botao consultar" id="iaVer">${E(txt("tela.ia_ver_envio", "Ver o que vai subir"))}</button>
         <button class="botao incluir" id="iaIr">${E(txt("tela.ia_perguntar", "Perguntar"))}</button>
         <span class="cresce"></span>
@@ -1114,11 +1109,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       <div id="iaSaida"></div>
       ${r.editor ? `
         <h3>${E(txt("tela.ia_editor", "Editor — o SQL cai aqui, e quem executa é você"))}</h3>
-        <textarea id="iaSql" rows="4" style="width:100%;padding:10px 12px;
-          border:1px solid var(--linha);border-radius:6px;background:var(--painel);
-          color:var(--texto);font-size:12.5px;font-family:'IBM Plex Mono',monospace;
-          resize:vertical"></textarea>
-        <div class="dbl-titulo" style="margin-top:10px">
+        <textarea id="iaSql" rows="4"></textarea>
+        <div class="dbl-titulo u-mt-10">
           <button class="botao consultar" id="iaExecutar">${E(txt("tela.ia_executar", "Executar"))}</button>
           <span class="leg">${E(txt("tela.ia_sem_clique", "nada roda sem este clique"))}</span>
         </div>
@@ -1183,8 +1175,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
           { tabelas: ctx.resumo.tabelas, linhas: ctx.resumo.linhas,
             redigidas: ctx.resumo.redigidas })}</summary>
         <p class="leg">POST <code>${E(c.endpoint || ENDPOINT_OFICIAL)}</code></p>
-        <pre class="dado" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(JSON.stringify(cab, null, 1))}</pre>
-        <pre class="dado" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(JSON.stringify(b, null, 1))}</pre>
+        <pre class="dado u-pre-quebra u-rolo-x">${E(JSON.stringify(cab, null, 1))}</pre>
+        <pre class="dado u-pre-quebra u-rolo-x">${E(JSON.stringify(b, null, 1))}</pre>
       </details>`;
     return ctx;
   }
@@ -1216,7 +1208,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     await mostrarEnvio(onde, Object.assign({}, e, { ctx, aprovado }));
     saida.innerHTML = `<div class="aviso" id="iaAprovacao">${marcado(txt("tela.ia_aprovar_pede",
         "**Nada saiu ainda.** Confira acima o que vai para a Anthropic — a pergunta, o esquema e as linhas, se marcou. Só o clique em «Enviar isto» manda, e manda exatamente o que está mostrado."))}
-      <div class="dbl-titulo" style="margin-top:10px">
+      <div class="dbl-titulo u-mt-10">
         <button class="botao incluir" id="iaAprovar">${E(txt("tela.ia_aprovar", "Enviar isto à Anthropic"))}</button>
         <button class="botao secundario" id="iaNaoEnviar">${E(txt("tela.ia_nao_enviar", "Não enviar"))}</button>
       </div></div>`;
@@ -1230,7 +1222,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       return;
     }
 
-    saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3><pre class="dado" id="iaTexto" style="white-space:pre-wrap;word-break:break-word">…</pre>`;
+    saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3><pre class="dado u-pre-quebra" id="iaTexto">…</pre>`;
     const alvo = onde.querySelector("#iaTexto");
     const tok = onde.querySelector("#iaTokens");
     try {
@@ -1276,7 +1268,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       conf = conferirPlano(plano, t.tabelas || []);
     } catch (e) {
       alvo.innerHTML = `<div class="aviso mal">${E(e.message || String(e))}</div>`
-        + `<h3>${E(txt("tela.ia_respondeu", "O que a Claude respondeu"))}</h3><pre class="dado" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(texto)}</pre>`;
+        + `<h3>${E(txt("tela.ia_respondeu", "O que a Claude respondeu"))}</h3><pre class="dado u-pre-quebra u-rolo-x">${E(texto)}</pre>`;
       return;
     }
     desenharRevisao(onde, conf, plano, db);
@@ -1290,18 +1282,16 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const fksRuins = conf.fks.filter(i => i.problemas.length);
 
     const linhaTabela = (i, n) => `
-      <div class="ia-item" style="border:1px solid var(--linha);border-radius:6px;
-           padding:10px 12px;margin:8px 0;background:var(--painel)">
-        <label class="linha-chk" style="display:flex;gap:8px;align-items:center;
-               text-transform:none;letter-spacing:0">
-          <input type="checkbox" class="ia-mt" data-i="${n}" style="width:auto"
+      <div class="ia-item ia-cartao">
+        <label class="linha-chk ia-cartao-rot">
+          <input type="checkbox" class="ia-mt u-larg-auto" data-i="${n}"
                  ${i.marcado ? "checked" : ""} ${i.problemas.length ? "disabled" : ""}>
           <b>${E(i.nome)}</b>
           <span class="pino">${E(preencher(txt("tela.ia_n_colunas", "{n} coluna(s)"), { n: i.colunas }))}</span>
           <span class="pino">${E(preencher(txt("tela.ia_n_indices", "{n} índice(s)"), { n: i.indices }))}</span>
         </label>
         ${i.tabela.porque ? `<p class="leg">${E(i.tabela.porque)}</p>` : ""}
-        <div style="overflow-x:auto"><table><thead><tr>
+        <div class="u-rolo-x"><table><thead><tr>
           <th>${E(txt("tela.ia_col_coluna", "coluna"))}</th>
           <th>${E(txt("tela.ia_col_tipo", "tipo"))}</th>
           <th>${E(txt("tela.ia_col_obrig", "obrig."))}</th>
@@ -1345,11 +1335,9 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         } ${marcado(txt("tela.ia_fk_declarada2",
           "O que ela **não** cobre é o que chega pela replicação: ali outro servidor já julgou, e este aplica."))}</div>
         ${conf.fks.map((f, n) => `
-          <div style="border:1px solid var(--linha);border-radius:6px;
-               padding:10px 12px;margin:8px 0;background:var(--painel)">
-            <label class="linha-chk" style="display:flex;gap:8px;align-items:center;
-                   text-transform:none;letter-spacing:0">
-              <input type="checkbox" class="ia-mf" data-i="${n}" style="width:auto"
+          <div class="ia-cartao">
+            <label class="linha-chk ia-cartao-rot">
+              <input type="checkbox" class="ia-mf u-larg-auto" data-i="${n}"
                      ${f.marcado ? "checked" : ""} ${f.problemas.length ? "disabled" : ""}>
               <code>${E(f.de)}</code>(${E((f.fk.colunas || []).join(", "))})
               → <code>${E(f.para)}</code>(${E((f.fk.colunas_ref || []).join(", "))})
@@ -1360,7 +1348,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
             ${f.problemas.map(pr => `<div class="aviso mal">${E(pr)}</div>`).join("")}
           </div>`).join("")}` : ""}
       ${fksRuins.length ? "" : ""}
-      <div class="dbl-titulo" style="margin-top:14px">
+      <div class="dbl-titulo u-mt-14">
         <button class="botao incluir" id="iaCriar">${E(txt("tela.ia_criar", "Criar o que está marcado"))}</button>
         <span class="leg">${E(txt("tela.ia_so_este_clique", "só este clique escreve no banco"))}</span>
       </div>
@@ -1444,7 +1432,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         { bons, total: feitos.length }))}</div>
       <ul class="lista-limpa">${feitos.map(([o, t]) =>
         `<li>${o ? "·" : "<span class='mal'>×</span>"} ${t}</li>`).join("")}</ul>
-      <div class="dbl-titulo" style="margin-top:12px">
+      <div class="dbl-titulo u-mt-12">
         <button class="botao consultar" id="iaVerDic">${E(txt("tela.ia_dicionario", "Dicionário de dados"))}</button>
         <button class="botao consultar" id="iaVerEr">${E(txt("tela.ia_er_cheia", "Diagrama ER em tela cheia"))}</button>
         <button class="botao excluir" id="iaDesfazer">${E(txt("tela.ia_desfazer", "Desfazer esta rodada"))}</button>
@@ -1704,12 +1692,12 @@ Termine SEMPRE com a linha:
         <summary>${marcado(txt("tela.oc_vai_subir",
           "**O que vai subir para a Anthropic** — a ocorrência, sem login, sem IP e sem linha de dado."))}</summary>
         <p class="leg">POST <code>${E(c.endpoint || ENDPOINT_OFICIAL)}</code></p>
-        <pre class="dado" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(JSON.stringify(cab, null, 1))}</pre>
-        <pre class="dado" id="iaOcCorpo" style="white-space:pre-wrap;word-break:break-word;overflow-x:auto">${E(JSON.stringify(JSON.parse(aprovado), null, 1))}</pre>
+        <pre class="dado u-pre-quebra u-rolo-x">${E(JSON.stringify(cab, null, 1))}</pre>
+        <pre class="dado u-pre-quebra u-rolo-x" id="iaOcCorpo">${E(JSON.stringify(JSON.parse(aprovado), null, 1))}</pre>
       </details>
       <div class="aviso" id="iaOcAprovacao">${marcado(txt("tela.oc_aprovar_pede",
         "**Nada saiu ainda.** Confira acima o que vai para a Anthropic. Só o clique em «Enviar isto» manda, e manda exatamente o que está mostrado."))}
-        <div class="dbl-titulo" style="margin-top:10px">
+        <div class="dbl-titulo u-mt-10">
           <button class="botao incluir" id="iaOcAprovar">${E(txt("tela.ia_aprovar", "Enviar isto à Anthropic"))}</button>
           <button class="botao secundario" id="iaOcNaoEnviar">${E(txt("tela.ia_nao_enviar", "Não enviar"))}</button>
         </div></div>
@@ -1726,7 +1714,7 @@ Termine SEMPRE com a linha:
       return;
     }
     saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3>
-      <pre class="dado" id="iaOcTexto" style="white-space:pre-wrap;word-break:break-word">…</pre>
+      <pre class="dado u-pre-quebra" id="iaOcTexto">…</pre>
       <p class="leg" id="iaOcTokens"></p>`;
     const alvo = saida.querySelector("#iaOcTexto");
     const tok = saida.querySelector("#iaOcTokens");

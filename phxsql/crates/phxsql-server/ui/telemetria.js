@@ -295,7 +295,7 @@ window.PhxTelemetria = (function () {
          ${svg}
        </svg>
        <div class="tlm-faixa-leg">${
-         series.map(s => `<span><i style="background:${s.cor}"></i>${esc(s.nome)}</span>`).join("")
+         series.map(s => `<span><i data-e-fundo="${esc(s.cor)}"></i>${esc(s.nome)}</span>`).join("")
        }<span class="tlm-topo">${esc(preencher(txt("tela.tl_pico", "pico {v}"),
           { v: cfg.topoRot ? cfg.topoRot(topo) : topo.toFixed(1) }))}</span></div>`;
   }
@@ -434,15 +434,15 @@ window.PhxTelemetria = (function () {
     const g = (id, cor) =>
       `<radialGradient id="${id}" cx="34%" cy="28%" r="72%">
          <stop offset="0%" stop-color="#fff" stop-opacity=".85"/>
-         <stop offset="26%" style="stop-color:${cor}" stop-opacity=".95"/>
-         <stop offset="78%" style="stop-color:${cor}" stop-opacity="1"/>
+         <stop offset="26%" data-e-parada="${esc(cor)}" stop-opacity=".95"/>
+         <stop offset="78%" data-e-parada="${esc(cor)}" stop-opacity="1"/>
          <stop offset="100%" stop-color="#000" stop-opacity=".45"/>
        </radialGradient>`;
     return `<defs>
       ${Object.keys(NIVEIS).map(n => g("tlmEsfera-" + n, corDoNivel(n))).join("")}
       <linearGradient id="tlmChao" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" style="stop-color:var(--painel-2)"/>
-        <stop offset="100%" style="stop-color:var(--painel)"/>
+        <stop offset="0%" class="tlm-chao-a"/>
+        <stop offset="100%" class="tlm-chao-b"/>
       </linearGradient>
       <filter id="tlmSombra" x="-30%" y="-30%" width="180%" height="180%">
         <feDropShadow dx="2" dy="3" stdDeviation="2.5" flood-color="#000"
@@ -507,8 +507,8 @@ window.PhxTelemetria = (function () {
               { nivel: txt(v.txt, v.rot), razao: t.razao.toFixed(2) }))}">
          <defs><radialGradient id="${id}" cx="34%" cy="28%" r="72%">
            <stop offset="0%" stop-color="#fff" stop-opacity=".85"/>
-           <stop offset="26%" style="stop-color:${esc(c)}" stop-opacity=".95"/>
-           <stop offset="78%" style="stop-color:${esc(c)}" stop-opacity="1"/>
+           <stop offset="26%" data-e-parada="${esc(c)}" stop-opacity=".95"/>
+           <stop offset="78%" data-e-parada="${esc(c)}" stop-opacity="1"/>
            <stop offset="100%" stop-color="#000" stop-opacity=".45"/>
          </radialGradient></defs>
          <circle cx="26" cy="26" r="23" fill="url(#${id})" stroke="${esc(c)}"
@@ -1497,9 +1497,11 @@ window.PhxTelemetria = (function () {
       const t = el.querySelector(".tlm-leg-t");
       if (!t) return;
       t.innerHTML = `${v.glifo ? esc(v.glifo) + " " : ""}${
-        escolhida ? "" : esc(txt(v.palavraTxt, v.palavra)) + " · "}<b${
-        escolhida ? ` style="color:${esc(escolhida)}"` : ""}>${
+        escolhida ? "" : esc(txt(v.palavraTxt, v.palavra)) + " · "}<b>${
         esc(txt(v.txt, v.rot))}</b> · ${esc(txt(v.bordaTxt, v.borda))}`;
+      // A cor pelo CSSOM, como o disquinho acima: atributo `style` no HTML a
+      // CSP barra (pedido 771).
+      if (escolhida) t.querySelector("b").style.color = escolhida;
     });
   }
 
@@ -1589,8 +1591,8 @@ window.PhxTelemetria = (function () {
       && !a.servico;
     const irmas = (d.atividades || []).filter(x => x.ip === a.ip).length;
     alvo.innerHTML = `
-      <div class="tlm-cartao-cab" style="--n:${
-        corDoNivel(NIVEIS[a.nivel] ? a.nivel : "normal")}">
+      <div class="tlm-cartao-cab" data-e-n="${
+        esc(corDoNivel(NIVEIS[a.nivel] ? a.nivel : "normal"))}">
         <span class="tlm-nivel">${esc(niv.glifo)} ${esc(txt(niv.txt, niv.rot))}</span>
         <b>${esc(a.id)}</b>
         ${d.voce === a.id ? `<span class="tlm-eu">${esc(txt("tela.tl_sua_tela", "esta é a sua tela"))}</span>` : ""}
@@ -1750,7 +1752,7 @@ window.PhxTelemetria = (function () {
   /* A dispensa do `tr.morta` da folha: a grade nao tem gancho por linha, e o
      `opacity:.45` da thread encerrada passa a valer por CELULA. Mesmo efeito,
      e continua sendo ROTULO -- o dado nao muda, so a tinta. */
-  const apagada = (l, html) => l.viva ? html : `<span style="opacity:.45">${html}</span>`;
+  const apagada = (l, html) => l.viva ? html : `<span class="tlm-apagada">${html}</span>`;
 
   /* PREGUICOSA de proposito: o `<details>` nasce fechado, e criar a grade
      dentro de um `display:none` mede largura zero em toda coluna. Ela nasce

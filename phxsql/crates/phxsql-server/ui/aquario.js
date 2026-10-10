@@ -651,11 +651,24 @@ window.PhxAquario = (function () {
     return p.map(q => q[0].toFixed(1) + "," + q[1].toFixed(1)).join(" ");
   }
 
+  /* A folha do aquario entra CONSTRUIDA (`new CSSStyleSheet`), e nao como
+   * `<style>` montado por string: a CSP da pagina so aceita `<style>` cujo
+   * hash ela conhece, e um bloco nascido no JS seria barrado calado -- as
+   * faixas sem tracejado, os nomes em caixa alta (pedido 771). A folha
+   * construida e CSSOM, que so script autorizado alcanca. O `<style>` fica
+   * como recurso de navegador sem folha construida (anterior a 2023). */
+  let folhaAdotada = false;
   function garantirCss() {
-    if (!document.getElementById("aq-css")) {
-      const s = document.createElement("style");
-      s.id = "aq-css"; s.textContent = CSS; document.head.appendChild(s);
+    if (folhaAdotada || document.getElementById("aq-css")) return;
+    if (typeof CSSStyleSheet === "function" && "adoptedStyleSheets" in document) {
+      const f = new CSSStyleSheet();
+      f.replaceSync(CSS);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, f];
+      folhaAdotada = true;
+      return;
     }
+    const s = document.createElement("style");
+    s.id = "aq-css"; s.textContent = CSS; document.head.appendChild(s);
   }
 
   /** `criar(host, { auto, colisao, semente })` — devolve o aquario. */

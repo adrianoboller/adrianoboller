@@ -144,7 +144,10 @@ export const caso = {
 
     // A thread encerrada continua apagada -- era o `tr.morta` da folha, que
     // virou opacidade por celula porque a grade nao tem gancho por linha.
-    const apagadas = await page.$$eval('#tlmThreads tbody td span[style*="opacity"]', t => t.length);
+    // Desde o 771 a opacidade mora numa CLASSE (a CSP barra o `style=`), e a
+    // prova e a opacidade CALCULADA: classe sem regra na folha nao apagaria.
+    const apagadas = await page.$$eval('#tlmThreads tbody td span.tlm-apagada',
+      t => t.filter(e => Number(getComputedStyle(e).opacity) < 1).length);
     verdade(apagadas > 0, 'nenhuma thread encerrada apareceu apagada');
   },
 };

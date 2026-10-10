@@ -987,8 +987,12 @@
       renderLista._noop = true;
       if (!dist.remoto) renderLista();
     }
-    var estiloFixas = document.createElement("style");
-    wrap.appendChild(estiloFixas);
+    // As colunas fixas e o que o corpo pede por linha (largura da barra,
+    // recuo do grupo) vao pelo CSSOM, e nao por `<style>` montado nem por
+    // atributo `style` no HTML: a CSP da pagina barra os dois (pedido 771).
+    // `fixasPos` guarda o que `mideFixas` mediu; `pintaCorpo` aplica a
+    // qualquer pedaco da tabela que acabou de nascer.
+    var fixasPos = {};
     var envoltorio = wrap.querySelector(".phx-envoltorio");
     var roladoFlag = false;
     envoltorio.addEventListener("scroll", function () {
@@ -1109,7 +1113,7 @@
       if (c.tipo === "barra") {
         var max = c.max || 100;
         var pct = Math.max(0, Math.min(100, (Number(v) / max) * 100));
-        return '<span class="phx-barra-envoltorio"><span class="phx-barra"><span class="phx-barra-fill" style="width:' + pct.toFixed(1) + '%"></span></span>' +
+        return '<span class="phx-barra-envoltorio"><span class="phx-barra"><span class="phx-barra-fill" data-pct="' + pct.toFixed(1) + '"></span></span>' +
           '<span class="phx-barra-rotulo">' + fmt.percentual(v) + "</span></span>";
       }
       if (c.tipo === "json") {
@@ -1304,24 +1308,49 @@
       if (inp) inp.value = "";
     }
     function mideFixas() {
-      var v = visiveis(), esq = 0, dirTot = 0, j2, c2, regras = [], ths = {};
+      var v = visiveis(), esq = 0, dirTot = 0, j2, c2, ths = {};
+      fixasPos = {};
       var lista = thead.querySelectorAll("th[data-campo]");
       for (j2 = 0; j2 < lista.length; j2++) ths[lista[j2].getAttribute("data-campo")] = lista[j2];
       for (j2 = 0; j2 < v.length; j2++) {
         c2 = v[j2];
         if (c2.fixa === "esq") {
-          regras.push('.phx-grid [data-campo="' + c2.campo + '"],.phx-grid [data-fx="' + c2.campo + '"]{position:sticky;position:-webkit-sticky;left:' + esq + "px;z-index:5}");
+          fixasPos[c2.campo] = { lado: "left", px: esq };
           esq += (ths[c2.campo] && ths[c2.campo].offsetWidth) || c2.largura || 0;
         }
       }
       for (j2 = v.length - 1; j2 >= 0; j2--) {
         c2 = v[j2];
         if (c2.fixa === "dir") {
-          regras.push('.phx-grid [data-campo="' + c2.campo + '"],.phx-grid [data-fx="' + c2.campo + '"]{position:sticky;position:-webkit-sticky;right:' + dirTot + "px;z-index:5}");
+          fixasPos[c2.campo] = { lado: "right", px: dirTot };
           dirTot += (ths[c2.campo] && ths[c2.campo].offsetWidth) || c2.largura || 0;
         }
       }
-      estiloFixas.textContent = regras.join("\n");
+      pintaCorpo(envoltorio);
+    }
+    /* O nome da coluna e DADO de quem configurou a grade: ele entra como
+       chave de objeto e nunca como seletor de CSS, que era o que o `<style>`
+       montado fazia (uma aspa no nome quebrava a folha inteira). */
+    function pintaCorpo(raiz) {
+      var els = raiz.querySelectorAll("[data-campo],[data-fx],[data-pct],[data-nivel]"), i, e, f, p;
+      for (i = 0; i < els.length; i++) {
+        e = els[i];
+        f = e.getAttribute("data-fx");
+        if (f == null) f = e.getAttribute("data-campo");
+        if (f != null) {
+          p = Object.prototype.hasOwnProperty.call(fixasPos, f) ? fixasPos[f] : null;
+          if (p) {
+            e.style.position = "sticky";
+            e.style.left = p.lado === "left" ? p.px + "px" : "";
+            e.style.right = p.lado === "right" ? p.px + "px" : "";
+            e.style.zIndex = "5";
+          } else if (e.style.zIndex) {
+            e.style.position = e.style.left = e.style.right = e.style.zIndex = "";
+          }
+        }
+        if (e.hasAttribute("data-pct")) e.style.width = Number(e.getAttribute("data-pct")) + "%";
+        if (e.hasAttribute("data-nivel")) e.style.paddingLeft = (10 + Number(e.getAttribute("data-nivel")) * 22) + "px";
+      }
     }
 
     function alternaOrdem(campo) {
@@ -1366,7 +1395,7 @@
             var cA = porCampo[ka];
             resumoA.push(esc(cA.titulo || ka) + ": " + formata(cA, gN.aggs[ka], {}, 0));
           }
-          html += '<tr class="phx-grupo" data-gpath="' + esc(gN.path) + '"><td class="phx-td phx-grupo-td" colspan="' + nCols + '" style="padding-left:' + (10 + gN.nivel * 22) + 'px">' +
+          html += '<tr class="phx-grupo" data-gpath="' + esc(gN.path) + '"><td class="phx-td phx-grupo-td" colspan="' + nCols + '" data-nivel="' + gN.nivel + '">' +
             '<span class="phx-grupo-caret">' + (abertoG ? "\u25be" : "\u25b8") + "</span>" +
             '<span class="phx-grupo-rotulo">' + esc((cG && cG.titulo) || gN.campo) + ": " + formata(cG, gN.valor, {}, 0) + "</span>" +
             '<span class="phx-grupo-conta">(' + fmt.numero(gN.n) + ")</span>" +
@@ -1431,6 +1460,7 @@
       }
       var tB = agora();
       tbody.innerHTML = html;
+      pintaCorpo(tbody);
       var tC = agora();
       atualizaMestre();
       perfRender.strMs = Math.round((tB - tA) * 100) / 100;

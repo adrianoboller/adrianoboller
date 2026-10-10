@@ -310,7 +310,11 @@ async function principal() {
         // politica so prova alguma coisa se o que ela barra for visto: uma
         // violacao de `script-src` quer dizer um script da casa que deixou de
         // rodar (hash que nao bate, manipulador em atributo que sobrou), e a
-        // tela fica calada -- sem `pageerror`, sem nada. O ouvinte entra
+        // tela fica calada -- sem `pageerror`, sem nada. Desde a segunda
+        // etapa do 771 vale igual para ESTILO: um `style="…"` que voltou a um
+        // modelo, ou um `<style>` montado pelo JS, e barrado e chega aqui como
+        // `style-src-attr`/`style-src-elem` -- a barra sem largura, o campo
+        // esticado, que nenhum `pageerror` acusaria. O ouvinte entra
         // antes de qualquer script da pagina e o Node acumula, como os botoes.
         const violacoes = [];
         await ctxNav.exposeBinding('__phxViolacao', (_fonte, v) => { violacoes.push(v); });
@@ -345,7 +349,7 @@ async function principal() {
           // conta: ela e a prova, nao o defeito.
           const reais = violacoes.filter(v => !v.sonda);
           if (reais.length) {
-            throw new Falha(`${reais.length} violacao(oes) da CSP — um script ou recurso `
+            throw new Falha(`${reais.length} violacao(oes) da CSP — um script, estilo ou recurso `
               + 'da casa que o navegador BARROU:\n      '
               + reais.slice(0, 8).map(v => `${v.diretiva} ${v.bloqueado} `
                 + `${v.fonte}:${v.linha} «${v.amostra}»`).join('\n      '));

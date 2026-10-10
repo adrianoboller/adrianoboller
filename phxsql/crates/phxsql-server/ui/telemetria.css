@@ -445,3 +445,14 @@ table.tlm-tab { min-width:520px; }
   .tlm-legenda { flex-direction:column; align-items:flex-start; gap:5px; }
   .tlm-escala { gap:8px; }
 }
+
+/* Pedido 771: o que era atributo `style` no HTML que o `telemetria.js` monta.
+   A CSP barra o atributo; o fixo mora aqui, o dinamico (cor de serie, de
+   nivel) vai por `data-e-*` e o `PhxEstilo` da pagina o poe pelo CSSOM. */
+.tlm-chao-a{stop-color:var(--painel-2)}
+.tlm-chao-b{stop-color:var(--painel)}
+.tlm-apagada{opacity:.45}
+/* A cor do nivel do cartao: o `PhxEstilo` a troca pela do nivel (atributo
+   `data-e-n`); esta e a de fabrica, a do «normal», para o cartao nunca nascer
+   sem cor se o atributo faltar. */
+.tlm-cartao-cab{--n:var(--reg)}

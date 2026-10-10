@@ -2036,6 +2036,76 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
      threads (24). */
   .botao,.chip-visao button,.tlm-passo,.tlm-link,.tlm-threads > summary{min-height:32px}
 }
+
+/* Pedido 771: o que era atributo `style` nos modelos de HTML desta pagina e do
+   `claude.js`. A CSP barra o atributo (`style-src-attr 'none'`), entao o
+   ESTATICO mora aqui, na folha autorizada por hash. O `!important` e de
+   proposito e e o que torna a troca fiel: o atributo ganhava de toda regra da
+   folha, e a classe que o substitui tem de ganhar das mesmas -- a primeira
+   delas e o `input{width:100%}` global, que sem isto voltaria a esticar o
+   campo de seis algarismos ate o fim da linha. O DINAMICO (largura de barra,
+   cor vinda de variavel) nao cabe em classe: ver `PhxEstilo`, no script. */
+#ocPeriodo{width:auto!important}
+#ocAlarme{width:auto!important;max-width:22rem!important}
+#ocMax{width:6rem!important}
+#fmtExport{width:auto!important;max-width:20rem!important}
+#saidaExport{user-select:all!important}
+#ptIndice{width:auto!important;min-width:14rem!important;flex:none!important}
+#ptPalavra{width:auto!important;min-width:18rem!important;flex:none!important}
+#idiEscopo{width:auto!important;min-width:230px!important}
+#rzCada{width:5em!important;display:inline-block!important;margin:0 4px!important}
+#rzHora{width:10.5em!important;display:inline-block!important;margin:0 4px!important}
+#iaQtd{width:70px!important;display:inline-block!important}
+#iaPergunta,#iaSql{width:100%!important;border:1px solid var(--linha)!important;
+  background:var(--painel)!important;color:var(--texto)!important;font-size:12.5px!important;
+  font-family:'IBM Plex Mono',monospace!important;resize:vertical!important}
+#iaPergunta{padding:8px 10px!important;border-radius:5px!important}
+#iaSql{padding:10px 12px!important;border-radius:6px!important}
+.u-esmaecido{opacity:.6!important}
+.u-apagado{opacity:.45!important}
+.u-larg-auto{width:auto!important}
+.u-maxl-28{max-width:28rem!important}
+.u-maxh-220{max-height:220px!important}
+.u-linha-inteira{grid-column:1/-1!important}
+.u-rolo-x{overflow-x:auto!important}
+.u-mt-8{margin-top:8px!important}
+.u-mt-10{margin-top:10px!important}
+.u-mt-12{margin-top:12px!important}
+.u-mt-14{margin-top:14px!important}
+.u-mt-16{margin-top:16px!important}
+.u-mt-18{margin-top:18px!important}
+.u-mb-10{margin-bottom:10px!important}
+.u-mb-12{margin-bottom:12px!important}
+.u-m-8-0-0{margin:8px 0 0!important}
+.u-m-14-0-2{margin:14px 0 2px!important}
+.u-m-18-0-6{margin:18px 0 6px!important}
+.u-m-22-0-8{margin:22px 0 8px!important}
+.u-fs-125{font-size:12.5px!important}
+.u-italico{font-style:italic!important}
+.u-larg-34px{width:34px!important}
+.u-larg-170px{width:170px!important}
+/* O texto cru (JSON, resposta da Claude) quebra em vez de empurrar a tela. */
+.u-pre-quebra{white-space:pre-wrap!important;word-break:break-word!important}
+/* As cores por papel. Cor de ROTULO (PK, FK, a legenda das acoes), nunca do
+   dado: a celula com o valor gravado nao ganha classe destas. */
+.u-cor-laranja{color:var(--laranja)!important}
+.u-cor-ndx{color:var(--ndx)!important}
+.u-cor-memo{color:var(--memo)!important}
+.u-cor-ok{color:var(--ok)!important}
+.u-cor-vermelho{color:var(--vermelho)!important}
+.u-fundo-incluir{background:var(--acao-incluir)!important}
+.u-fundo-alterar{background:var(--acao-alterar)!important}
+.u-fundo-marcar{background:var(--acao-marcar)!important}
+.u-fundo-excluir{background:var(--acao-excluir)!important}
+.u-fundo-consultar{background:var(--acao-consultar)!important}
+/* A receita escolhida da Claude: o botao «aceso», o mesmo desenho do hover. */
+.ia-rec.u-aceso{background:var(--acao-consultar)!important;color:var(--fundo)!important}
+/* O cartao de cada tabela e de cada chave que a Claude propoe. O `label` dele
+   segura o `text-transform` global: ali dentro vai NOME DE TABELA, dado. */
+.ia-cartao{border:1px solid var(--linha)!important;border-radius:6px!important;
+  padding:10px 12px!important;margin:8px 0!important;background:var(--painel)!important}
+.ia-cartao-rot{display:flex!important;gap:8px!important;align-items:center!important;
+  text-transform:none!important;letter-spacing:0!important}
 </style>
 
 <!-- =========================== ENTRADA =========================== -->
@@ -2215,6 +2285,69 @@ td label,td .rot-dado{text-transform:none;letter-spacing:0;font-size:inherit;
 
 <script>
 "use strict";
+
+// =====================================================================
+// PhxEstilo (pedido 771): o estilo DINAMICO sem atributo `style`.
+//
+// A CSP da pagina barra o atributo `style` (`style-src-attr 'none'`). O que
+// e fixo virou classe na folha; o que muda com o dado (a largura de uma barra,
+// a cor de uma serie ou de um nivel) vem num atributo `data-e-*` TIPADO e e
+// posto aqui pelo CSSOM (`elemento.style.setProperty`), que a CSP permite
+// porque so script autorizado chega a ele.
+//
+// Tipado e a palavra que importa: um `data-e-css` generico com a declaracao
+// inteira seria o atributo `style` de volta com outro nome, e HTML injetado voltaria a
+// desenhar o que quisesse. Aqui cada atributo leva UMA propriedade, e o valor
+// passa por crivo: largura e numero (0..100, em %), cor e `var()` de um token, `#hex`,
+// `rgb()/hsl()` de numeros ou nome de cor. O resto e ignorado e contado em
+// `PhxEstilo.recusados`, para a bateria ver.
+//
+// E UM observador para a pagina inteira, e nao uma chamada depois de cada
+// `innerHTML`: sao dezenas de lugares que montam HTML, e o que alguem
+// esquecesse ficaria com a barra sem largura, calado. O `MutationObserver`
+// entrega antes da proxima pintura (fila de microtarefas), entao a barra
+// nunca aparece vazia nem por um quadro.
+// =====================================================================
+const PhxEstilo = (() => {
+  // `var()` de um token, `#hex`, `rgb()/hsl()` so de numeros, ou nome de cor
+  // («orange»): a paleta da telemetria e livre, e o dono escreve como quiser.
+  const COR = /^(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8}|(rgb|hsl)a?\([0-9.,%\s]+\)|[a-zA-Z]{3,24})$/;
+  const num = v => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+  const cor = v => (typeof v === "string" && v.length <= 64 && COR.test(v.trim())) ? v.trim() : null;
+  // atributo -> [propriedade CSS, crivo que devolve o valor ou null]
+  const REGRAS = {
+    "data-e-larg":   ["width", v => { const n = num(v); return n == null ? null : Math.max(0, Math.min(100, n)) + "%"; }],
+    "data-e-fundo":  ["background-color", cor],
+    "data-e-tinta":  ["color", cor],
+    "data-e-parada": ["stop-color", cor],
+    "data-e-n":      ["--n", cor],
+  };
+  const SELETOR = Object.keys(REGRAS).map(a => `[${a}]`).join(",");
+  const api = { recusados: 0 };
+  function um(el) {
+    for (const a in REGRAS) {
+      if (!el.hasAttribute(a)) continue;
+      const [prop, crivo] = REGRAS[a];
+      const v = crivo(el.getAttribute(a));
+      if (v == null) { api.recusados++; continue; }
+      el.style.setProperty(prop, v);
+    }
+  }
+  api.aplicar = raiz => {
+    if (!raiz || raiz.nodeType !== 1) return;
+    if (raiz.matches(SELETOR)) um(raiz);
+    raiz.querySelectorAll(SELETOR).forEach(um);
+  };
+  new MutationObserver(lista => {
+    for (const m of lista) {
+      if (m.type === "attributes") um(m.target);
+      else m.addedNodes.forEach(api.aplicar);
+    }
+  }).observe(document.documentElement, {
+    childList: true, subtree: true, attributes: true, attributeFilter: Object.keys(REGRAS),
+  });
+  return api;
+})();
 
 // =====================================================================
 // Camada de acesso. Contra o servidor de verdade fala com POST /api; sem
@@ -3815,8 +3948,8 @@ function barras(itens, opc = {}) {
     const p2 = it.segundo ? (Math.max(0, it.segundo) / teto) * 100 : 0;
     return `<span class="bh-nome">${esc(it.nome)}</span>
       <span class="bh-trilha">
-        <i style="width:${p.toFixed(2)}%;background:${it.cor || "var(--laranja)"}"></i>
-        ${p2 ? `<i style="width:${p2.toFixed(2)}%;background:var(--log)"></i>` : ""}
+        <i data-e-larg="${p.toFixed(2)}" data-e-fundo="${esc(it.cor || "var(--laranja)")}"></i>
+        ${p2 ? `<i data-e-larg="${p2.toFixed(2)}" data-e-fundo="var(--log)"></i>` : ""}
       </span>
       <span class="bh-val">${esc(it.texto ?? fmt(it.valor))}</span>`;
   }).join("");
@@ -3981,7 +4114,7 @@ function barrasCheias(itens) {
       <span class="dsk-val">${esc(it.texto)}</span>
       <div class="dsk-trilha" role="img"
            aria-label="${esc(preencher(txt("tela.pa_disco_ocupado_aria","{nome}: {p}% ocupado, {texto}"), {nome: it.nome, p: p.toFixed(0), texto: it.texto}))}"
-        <i style="width:${Math.max(1.5, p).toFixed(1)}%;background:${cor}"></i>
+        <i data-e-larg="${Math.max(1.5, p).toFixed(1)}" data-e-fundo="${cor}"></i>
       </div>
     </div>`;
   }).join("") + `</div>`;
@@ -4367,14 +4500,14 @@ async function telaOcorrencias(p, aindaEMinha) {
     `<option value="${esc(v)}"${sel ? " selected" : ""}>${esc(rot)}</option>`;
   p.innerHTML = `<div class="ferramentas">
       <label for="ocPeriodo">${esc(txt("tela.oc_periodo", "Período"))}</label>
-      <select id="ocPeriodo" style="width:auto">${PERIODOS.map(([v, , rot]) =>
+      <select id="ocPeriodo">${PERIODOS.map(([v, , rot]) =>
         opt(v, rot(), v === filtro.periodo)).join("")}</select>
       <label for="ocAlarme">${esc(txt("tela.oc_alarme", "Alarme"))}</label>
-      <select id="ocAlarme" style="width:auto;max-width:22rem">${
+      <select id="ocAlarme">${
         opt("", txt("tela.oc_todos", "todos"), !filtro.alarme)}${
         (r.alarmes || []).map(a => opt(a.nome, motivo(a.nome), a.nome === filtro.alarme)).join("")}</select>
       <label for="ocMax">${esc(txt("tela.oc_max", "Máximo"))}</label>
-      <input id="ocMax" type="number" min="1" max="5000" value="${esc(String(filtro.max))}" style="width:6rem">
+      <input id="ocMax" type="number" min="1" max="5000" value="${esc(String(filtro.max))}">
       <button class="botao consultar" id="ocFiltrar">${esc(txt("tela.oc_filtrar", "Filtrar"))}</button>
       <span class="conta">${esc(preencher(txt("tela.oc_contagem", "{n} ocorrência(s)"),
         { n: (r.linhas || []).length }))}</span>
@@ -4600,7 +4733,7 @@ async function abrirAdmin(qual) {
         <p class="leg">${marcado(txt("tela.bl_whitelist_p1","A recusa da operação proibida continua valendo; whitelist protege o **acesso**, não dá poder. Aceita IP e faixa CIDR (`192.168.50.0/24`)."))}</p>
         <p class="leg">${marcado(txt("tela.bl_fixa_config","Fixa do `config.json`:"))}
            ${wlConfig.map(chip).join(" ") || `<i>${esc(txt("tela.bl_vazia","vazia"))}</i>`}</p>
-        <div class="ficha-edit" style="max-width:28rem">
+        <div class="ficha-edit u-maxl-28">
           <textarea id="wlEditavel" rows="4" spellcheck="false"
             placeholder="${esc(txt("tela.bl_ph_ip_cidr","um IP ou CIDR por linha"))}">${esc(wlEditavel.join("\n"))}</textarea>
         </div>
@@ -4613,9 +4746,10 @@ async function abrirAdmin(qual) {
       // entrega o texto pronto para quem TEM o privilégio aplicar.
       const exportarHtml = `<h3 class="secao">${esc(txt("tela.bl_exportar_firewall_titulo","Exportar para o firewall do sistema"))}</h3>
         <div class="acoes">
-          <!-- width:auto porque o CSS global diz select{width:100%}, que é
-               certo num formulário e aqui empurraria o botão para fora. -->
-          <select id="fmtExport" style="width:auto;max-width:20rem">
+          <!-- O width:auto dele mora na folha (#fmtExport): o CSS global diz
+               select{width:100%}, que é certo num formulário e aqui empurraria
+               o botão para fora. -->
+          <select id="fmtExport">
             <option value="texto">${esc(txt("tela.bl_opt_texto","texto — um IP por linha"))}</option>
             <option value="iptables">iptables / ip6tables</option>
             <option value="nftables">nftables</option>
@@ -4624,7 +4758,7 @@ async function abrirAdmin(qual) {
           <button class="botao consultar" id="btExportar">${esc(txt("tela.gerar","Gerar"))}</button>
           <span class="leg">${esc(txt("tela.bl_so_bloqueios_ativos","só os bloqueios ativos · docs/SEGURANCA.md mostra o comando de aplicar"))}</span>
         </div>
-        <pre id="saidaExport" class="rolo" hidden style="user-select:all"></pre>`;
+        <pre id="saidaExport" class="rolo" hidden></pre>`;
 
       p.innerHTML = politicaHtml + bloqueadosHtml + whitelistHtml + exportarHtml;
 
@@ -4843,7 +4977,7 @@ async function desenharFichaUsuario() {
          <label><span>${esc(txt("tela.col_nome_curto","nome"))}</span>
            <input id="fu_nome" value="${esc(r.nome)}"></label>
          <label><span>${esc(txt("tela.col_login","login"))}</span>
-           <input id="fu_login" value="${esc(r.login)}" ${r.novo ? "" : `readonly style="opacity:.6"`}></label>
+           <input id="fu_login" value="${esc(r.login)}" ${r.novo ? "" : `readonly class="u-esmaecido"`}></label>
          <label><span>${esc(txt("tela.col_email","e-mail"))}</span>
            <input id="fu_email" value="${esc(r.email)}"></label>
          <label><span>${esc(txt("tela.col_telefone","telefone"))}</span>
@@ -5172,10 +5306,10 @@ async function telaProcurarTexto(db, tab, indices) {
   const dobra = ind.some(i => i.dobrar);
   folha(txt("tela.pt_titulo","Procurar texto"), `${esc(db)}.${esc(tab)}`, `
     <div class="acoes">
-      <select id="ptIndice" class="campo" style="width:auto;min-width:14rem;flex:none">
+      <select id="ptIndice" class="campo">
         ${ind.map(i => `<option value="${esc(i.nome)}">${esc(i.nome)} · ${esc(i.coluna)}</option>`).join("")}
       </select>
-      <input id="ptPalavra" class="campo" style="width:auto;min-width:18rem;flex:none"
+      <input id="ptPalavra" class="campo"
              placeholder="${esc(txt("tela.pt_palavra","palavra inteira"))}">
       <button class="botao consultar" id="ptIr">${esc(txt("tela.pt_procurar","Procurar"))}</button>
       <button class="botao secundario" id="ptVoltar">← ${esc(tab)}</button>
@@ -5280,11 +5414,11 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
         <span class="leg">${esc(txt("tela.ce_de_visiveis","de"))} ${fmt(paginas)}</span>
       </span>
       <span class="cores-acao" title="${esc(txt("tela.ce_mesma_cor_toda_tela","a mesma cor vale em toda tela"))}">
-        <b><i style="background:var(--acao-incluir)"></i>${esc(txt("tela.acl_incluir","incluir"))}</b>
-        <b><i style="background:var(--acao-alterar)"></i>${esc(txt("tela.acl_alterar","alterar"))}</b>
-        <b><i style="background:var(--acao-marcar)"></i>${esc(txt("tela.acl_marcar","marcar"))}</b>
-        <b><i style="background:var(--acao-excluir)"></i>${esc(txt("tela.acl_excluir_de_vez","excluir de vez"))}</b>
-        <b><i style="background:var(--acao-consultar)"></i>${esc(txt("tela.acl_consultar","consultar"))}</b>
+        <b><i class="u-fundo-incluir"></i>${esc(txt("tela.acl_incluir","incluir"))}</b>
+        <b><i class="u-fundo-alterar"></i>${esc(txt("tela.acl_alterar","alterar"))}</b>
+        <b><i class="u-fundo-marcar"></i>${esc(txt("tela.acl_marcar","marcar"))}</b>
+        <b><i class="u-fundo-excluir"></i>${esc(txt("tela.acl_excluir_de_vez","excluir de vez"))}</b>
+        <b><i class="u-fundo-consultar"></i>${esc(txt("tela.acl_consultar","consultar"))}</b>
       </span>
       <span class="leg" title="${esc(COMO_PAGINOU[r.salto || r.modo] || "")}">${
         fmt(r.devolvidas)} ${esc(txt("tela.ce_de_visiveis","de"))} ${fmt(r.visiveis ?? r.registros)} ·
@@ -5463,7 +5597,7 @@ function campoDaColuna(c, valor, soLeitura = false, novo = false) {
       ? txt("tela.cf_calculada_dica","o servidor recalcula este valor a cada gravação; o que se digitar aqui é descartado")
       : txt("tela.cf_usado_programacao_busca","usado na programação e na busca; não muda depois de criado");
     return `<label><span>${rotulo} <span class="tipo">${esc(porque)}</span> ${dica}</span>
-      <input id="${id}" value="${esc(v)}" readonly style="opacity:.6"
+      <input id="${id}" value="${esc(v)}" readonly class="u-esmaecido"
         title="${esc(dicaTitulo)}"></label>`;
   }
 
@@ -6015,7 +6149,7 @@ async function verParticoes(db, tab) {
   // aplicar por linha; cada `formato` reduz a opacidade da PROPRIA celula
   // quando o balde nunca recebeu linha, o que chega ao mesmo efeito visto por
   // quem olha, sem tocar no dado.
-  const apaga = (html, v) => (porLetra && !v.usados) ? `<span style="opacity:.45">${html}</span>` : html;
+  const apaga = (html, v) => (porLetra && !v.usados) ? `<span class="u-apagado">${html}</span>` : html;
   const colunas = [
     { campo:"volume", titulo:txt("tela.col_volume","volume"), tipo:"numero", fixa:"esq",
       formato:(v, l) => apaga(`${v}${porLetra ? ` <b>${esc(l.letra)}</b>` : ""}`, l) },
@@ -8655,7 +8789,7 @@ async function verConfigServidor() {
        subiria. Comentários, ordem das chaves e seções que este servidor não
        conhece ficam onde estavam.</p>
      </div>
-     <p class="cores-acao"><b><i style="background:var(--acao-alterar)"></i>salvar altera</b></p>`);
+     <p class="cores-acao"><b><i class="u-fundo-alterar"></i>salvar altera</b></p>`);
 
   $("#cfDescartar").onclick = () => verConfigServidor();
   $("#cfSalvar").onclick = salvarConfigServidor;
@@ -9290,12 +9424,12 @@ async function vIdiomas() {
         + "repetida à vontade sem desfazer tradução nenhuma."))}
     </div>
 
-    <h3 style="margin:22px 0 8px">${esc(txt("tela.idi_padrao", "Carga padrão"))}</h3>
+    <h3 class="u-m-22-0-8">${esc(txt("tela.idi_padrao", "Carga padrão"))}</h3>
     <p class="leg">${esc(txt("tela.idi_padrao_leg",
       "Devolve os textos de fábrica por cima do que está gravado — é o «caso a tradução não "
       + "tenha ficado boa». Escolha o alcance: um idioma só deixa os outros cinco intactos."))}</p>
     <div class="acoes">
-      <select id="idiEscopo" style="width:auto;min-width:230px">
+      <select id="idiEscopo">
         ${IDIOMAS.map(i => `<option value="${i.col}">${esc(txt("tela.idi_so", "só"))} ${
           esc(i.col)} (${esc(i.nome)})</option>`).join("")}
         <option value="*">${esc(txt("tela.idi_seis", "os seis idiomas"))}</option>
@@ -10302,7 +10436,7 @@ function ligarMotivos(regs) {
     colunas: [
       { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
       { campo:"tipo", titulo:txt("tela.col_o_que","o quê"),
-        formato:v => `<b style="color:${CORES[v] || "var(--texto-2)"}">${esc(v)}</b>` },
+        formato:v => `<b data-e-tinta="${CORES[v] || "var(--texto-2)"}">${esc(v)}</b>` },
       // "rowid" e nome de coluna de sistema, o mesmo em toda lingua -- e por
       // isso ISENTO no conferidor de idiomas, sem passar por txt().
       { campo:"rowid", titulo:"rowid", tipo:"numero", formato:v => v || "—" },
@@ -11116,7 +11250,7 @@ async function estruturaDbl(tabela) {
   folha(preencher(txt("tela.tt_estrutura_de","Estrutura de {db}.{tab}"), {db: DBL.database, tab: tabela}),
     preencher(txt("tela.st_colunas_indices_como_reporta","colunas e índices como o {ligacao} os reporta"), {ligacao: DBL.ligacao}),
     `<div id="gradeDblCol"></div>
-     <h4 style="margin:18px 0 6px">${esc(txt("tela.aba_indices", "Índices"))}</h4>
+     <h4 class="u-m-18-0-6">${esc(txt("tela.aba_indices", "Índices"))}</h4>
      <div id="gradeDblIdx"></div>
      <div class="acoes">
        <button class="botao secundario" id="btVoltaEstr">← ${esc(tabela)}</button>
@@ -11353,11 +11487,11 @@ async function assistenteDbLink() {
           </select></td></tr>`;
       }).join("");
       molde("Quais tabelas ficam ligadas?", 4, `
-        <div class="form-dbl" style="margin-bottom:12px"><label class="cmp"><span>Gravar aqui no database</span>
+        <div class="form-dbl u-mb-12"><label class="cmp"><span>Gravar aqui no database</span>
           <input id="azLocal" class="campo" value="${esc(az.local_db || az.base)}">
           <span class="leg">a tabela local nasce com as mesmas colunas e a mesma chave da prima</span></label></div>
         <div class="rolo"><table class="conf">
-          <colgroup><col style="width:34px"><col><col style="width:170px"><col style="width:170px"></colgroup>
+          <colgroup><col class="u-larg-34px"><col><col class="u-larg-170px"><col class="u-larg-170px"></colgroup>
           <thead><tr><th></th><th>tabela de lá</th><th>sentido</th><th>conflito</th></tr></thead>
           <tbody>${linhas}</tbody></table></div>`,
         `<button class="botao secundario" id="azVolta">${esc(txt("tela.voltar", "← Voltar"))}</button>
@@ -11950,7 +12084,7 @@ function montarFerramentas() {
     // ferramenta faz.
     const rotulo = rot(`fer.${f.rot}`, txt(f.txt, f.rot));
     return `<button class="fer${pendente ? " afazer" : ""}"
-      data-f="${i}" style="color:${f.cor}"
+      data-f="${i}" data-e-tinta="${f.cor}"
       title="${esc(rotulo)}${f.dica ? " — " + esc(txt(f.dicaTxt, f.dica)) : ""}${
         pendente ? " · " + esc(txt("tela.ainda_nao_existe", "ainda não existe")) : ""}">
       ${svg(f.ico)}<span class="rot">${esc(rotulo)}</span></button>`;
@@ -12026,8 +12160,8 @@ async function verServico() {
     noAr ? txt("tela.sv_sub_no_ar","a porta de dados está aceitando conexão")
          : txt("tela.sv_sub_parada","a porta de dados está PARADA — a interface web continua no ar"),
     `<div class="fichas">
-       <div class="ficha"><div class="v" style="color:${
-          noAr ? "var(--ok)" : "var(--vermelho)"}">${esc(noAr ? txt("tela.sv_no_ar","no ar") : txt("tela.sv_parada","parada"))}</div>
+       <div class="ficha"><div class="v ${
+          noAr ? "u-cor-ok" : "u-cor-vermelho"}">${esc(noAr ? txt("tela.sv_no_ar","no ar") : txt("tela.sv_parada","parada"))}</div>
          <div class="r">${esc(txt("tela.sv_fic_porta","porta de dados"))}</div></div>
        <div class="ficha"><div class="v">${esc(s.endereco || "—")}</div>
          <div class="r">${esc(noAr ? txt("tela.sv_escutando_em","escutando em") : txt("tela.sv_ultima_porta","última porta"))}</div></div>
@@ -12068,10 +12202,10 @@ async function verServico() {
        <p>${marcado(txt("tela.sv_nota_processo_1", "**O processo não é derrubado por aqui.**"))}
          ${marcado(txt("tela.sv_nota_processo_2", "Para isso é o sistema: `systemctl stop phxsql` no Linux, ou o Gerenciador de Serviços no Windows."))}</p>
      </div>
-     <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>${esc(txt("tela.sv_leg_subir","subir"))}</b>
-       <b><i style="background:var(--acao-alterar)"></i>${esc(txt("tela.sv_leg_trocar","trocar"))}</b>
-       <b><i style="background:var(--acao-excluir)"></i>${esc(txt("tela.sv_leg_parar","parar"))}</b>
-       <b><i style="background:var(--acao-consultar)"></i>${esc(txt("tela.acl_consultar","consultar"))}</b></p>`);
+     <p class="cores-acao"><b><i class="u-fundo-incluir"></i>${esc(txt("tela.sv_leg_subir","subir"))}</b>
+       <b><i class="u-fundo-alterar"></i>${esc(txt("tela.sv_leg_trocar","trocar"))}</b>
+       <b><i class="u-fundo-excluir"></i>${esc(txt("tela.sv_leg_parar","parar"))}</b>
+       <b><i class="u-fundo-consultar"></i>${esc(txt("tela.acl_consultar","consultar"))}</b></p>`);
 
   $("#btSvVer").onclick = () => verServico();
   const parar = $("#btSvParar");
@@ -12207,10 +12341,10 @@ async function telaJobs() {
          <p>${marcado(txt("tela.jb_nota_falha_1", "**Falha entra no histórico igual** ao acerto: job que falha calado não existe."))}
            ${marcado(txt("tela.jb_nota_falha_2", "O detalhe é o resumo da resposta — a resposta inteira não cabe, e uma varredura de vinte mil linhas vira «linhas: 20000 itens»."))}</p>
        </div>
-       <p class="cores-acao"><b><i style="background:var(--acao-incluir)"></i>${esc(txt("tela.acl_novo","novo"))}</b>
-         <b><i style="background:var(--acao-alterar)"></i>${esc(txt("tela.jb_leg_alterar","rodar / ligar / editar"))}</b>
-         <b><i style="background:var(--acao-excluir)"></i>${esc(txt("tela.at_excluir","excluir"))}</b>
-         <b><i style="background:var(--acao-consultar)"></i>${esc(txt("tela.acl_consultar","consultar"))}</b></p>`);
+       <p class="cores-acao"><b><i class="u-fundo-incluir"></i>${esc(txt("tela.acl_novo","novo"))}</b>
+         <b><i class="u-fundo-alterar"></i>${esc(txt("tela.jb_leg_alterar","rodar / ligar / editar"))}</b>
+         <b><i class="u-fundo-excluir"></i>${esc(txt("tela.at_excluir","excluir"))}</b>
+         <b><i class="u-fundo-consultar"></i>${esc(txt("tela.acl_consultar","consultar"))}</b></p>`);
 
   $("#btJobVer").onclick = () => telaJobs();
   $("#btJobNovo").onclick = () => editarJob(null);
@@ -12534,11 +12668,11 @@ async function telaDiagramaER(db, vez = vezDoPainel()) {
        ? `<div class="er-rolo"><div id="erDesenho"></div></div>`
        : `<div class="vazio">nenhuma tabela em ${esc(db)} — comece pelo “✚ Nova tabela”</div>`}
      <p class="er-legenda">
-       <b style="color:var(--laranja)">PK</b> chave primária
-       <b style="color:var(--ndx)">FK</b> chave estrangeira
+       <b class="u-cor-laranja">PK</b> chave primária
+       <b class="u-cor-ndx">FK</b> chave estrangeira
        <b>→</b> a seta sai do filho e chega no pai
-       <b style="font-style:italic">- - →</b> aponta para fora deste database
-       ${sincronias.length ? `<b style="color:var(--memo)">⇄ ┄┄</b> sincronia DbLink` : ""}
+       <b class="u-italico">- - →</b> aponta para fora deste database
+       ${sincronias.length ? `<b class="u-cor-memo">⇄ ┄┄</b> sincronia DbLink` : ""}
      </p>
      ${fora > 0 ? `<div class="aviso">${fora} tabela(s) ficaram de fora do
        desenho — sem permissão de leitura, ou com o esquema ilegível.</div>` : ""}
@@ -12649,7 +12783,7 @@ function cartaoDeclararFk(db, de, para) {
     <h3>${esc(txt("tela.fk_declarar_titulo", "Declarar chave estrangeira"))}</h3>
     <div class="sub"><code>${esc(de.tabela)}.${esc(de.coluna)}</code> →
       <code>${esc(para.tabela)}.${esc(para.coluna)}</code></div>
-    <p style="font-size:12.5px">${marcado(de.tabela === para.tabela
+    <p class="u-fs-125">${marcado(de.tabela === para.tabela
       ? txt("tela.fk_entra_em_propria", "A chave entra em **{filha}** (a filha) e aponta para **{mae}** — a própria tabela: é o laço do «chefe que também é funcionário», e ele é legítimo.")
       : txt("tela.fk_entra_em", "A chave entra em **{filha}** (a filha) e aponta para **{mae}**."),
       { filha: de.tabela, mae: para.tabela })}</p>
@@ -12665,7 +12799,7 @@ function cartaoDeclararFk(db, de, para) {
       <label class="cmp"><span>${esc(txt("tela.fk_ao_excluir_mae", "ao excluir a linha-mãe"))}</span>${selAcao("fkExc", ["restringir"])}</label>
       <label class="cmp"><span>${esc(txt("tela.fk_ao_alterar_mae", "ao alterar a chave da mãe"))}</span>${selAcao("fkAlt")}</label>
     </div>
-    <div class="aviso" style="margin-top:12px">${marcado(txt("tela.fk_card_1",
+    <div class="aviso u-mt-12">${marcado(txt("tela.fk_card_1",
       "**Declarada e conferida.** A chave nasce conferida na gravação: filha sem mãe é recusada."))}
       ${marcado(txt("tela.fk_card_2",
       "Mãe que tem filha também não é excluída — nunca se mata o pai que tem filhos."))}
@@ -12718,17 +12852,17 @@ function cartaoTabelaER(db, nome) {
     <h3>${esc(nome)}</h3>
     <div class="sub">${esc(db)} · ${e.registros} registro(s) ·
       ${colunas.length} coluna(s) · ${fks.length} chave(s) estrangeira(s)</div>
-    <div class="rolo" style="max-height:220px"><table class="er-campos"><thead>
+    <div class="rolo u-maxh-220"><table class="er-campos"><thead>
       <tr><th></th><th>coluna</th><th>tipo</th><th>obrig.</th></tr></thead>
       <tbody>${colunas.map(col => `<tr>
-        <td class="num">${col.primaria ? `<b style="color:var(--laranja)">PK</b>`
-          : col.estrangeira ? `<b style="color:var(--ndx)">FK</b>` : ""}</td>
+        <td class="num">${col.primaria ? `<b class="u-cor-laranja">PK</b>`
+          : col.estrangeira ? `<b class="u-cor-ndx">FK</b>` : ""}</td>
         <td class="dado">${esc(col.nome)}</td>
         <td class="dado">${esc(PhxER.tipoCurto(col))}</td>
         <td class="num">${col.nullable === false ? "✓" : ""}</td>
       </tr>`).join("")}</tbody></table></div>
 
-    ${fks.length ? `<h3 style="font-size:12.5px;margin:14px 0 2px">Chaves
+    ${fks.length ? `<h3 class="u-fs-125 u-m-14-0-2">Chaves
       estrangeiras declaradas</h3>
     <ul class="er-fks">${fks.map(f => `<li>
       <code>${esc(f.nome)}</code>
@@ -12739,7 +12873,7 @@ function cartaoTabelaER(db, nome) {
       <button class="mini perigo er-rm-fk" data-fk="${esc(f.nome)}">excluir
         declaração</button></li>`).join("")}</ul>` : ""}
 
-    <div class="nota" style="margin-top:12px">
+    <div class="nota u-mt-12">
       <p>${esc(txt("tela.alter_pode", "Acrescentar coluna funciona nesta tabela, mesmo com dado dentro: o rowid de cada linha não muda, e por isso os índices não são refeitos."))}</p>
       <p>${esc(txt("tela.alter_nao_pode", "Trocar o tipo ou a largura de uma coluna que já existe continua não existindo — o caminho é duplicar a tabela e reimportar."))}</p>
     </div>
@@ -12793,7 +12927,7 @@ async function cartaoAcrescentarColuna(db, tabela) {
     c.corpo.innerHTML = `
       <h3>${esc(txt("tela.acrescentar_coluna_em", "Acrescentar coluna em"))} ${esc(tabela)}</h3>
       <div class="sub">${esc(db)} · ${linhas} ${esc(txt("tela.registros", "registro(s)"))}</div>
-      <div class="form-dbl" style="margin-bottom:10px">
+      <div class="form-dbl u-mb-10">
         <label class="cmp"><span>${esc(txt("tela.col_nome", "nome da coluna"))}</span>
           <input id="acNome" placeholder="situacao"></label>
         <label class="cmp"><span>${esc(txt("tela.col_tipo", "tipo"))}</span>
@@ -12866,7 +13000,7 @@ function cartaoNovaTabelaER(db) {
     c.corpo.innerHTML = `
       <h3>${esc(preencher(txt("tela.ner_nova_tabela_em","Nova tabela em {db}"), {db}))}</h3>
       <div class="sub">${esc(txt("tela.ner_sub","os arquivos da tabela nascem juntos · o cadastro completo (partição, índices, máscaras) fica na tela «Nova tabela»"))}</div>
-      <div class="form-dbl" style="margin-bottom:10px">
+      <div class="form-dbl u-mb-10">
         <label class="cmp"><span>${esc(txt("tela.nt_nome_da_tabela","nome da tabela"))}</span>
           <input id="ntNome" placeholder="cadastroClientes"></label>
       </div>
@@ -12886,7 +13020,7 @@ function cartaoNovaTabelaER(db) {
         <td><button type="button" class="mini perigo nt-rm" data-i="${i}"
           >${esc(txt("tela.nt_remover","remover"))}</button></td>
       </tr>`).join("")}</tbody></table>
-      <div class="acoes" style="margin:8px 0 0">
+      <div class="acoes u-m-8-0-0">
         <button type="button" class="mini" id="ntMais">+ ${esc(txt("tela.nt_campo","campo"))}</button>
         <span class="leg">a chave primária vira o índice único
           <code>pk_&lt;campo&gt;</code> — é para ela que as chaves das outras
@@ -13972,7 +14106,7 @@ async function assistenteReplicacao() {
                  placeholder="${rz.senha ? esc(txt("tela.rz_senha_guardada", "guardada — deixe em branco para manter")) : ""}">
           <span class="leg">${marcado(txt("tela.rz_p2_senha_leg", "nunca viaja em claro; no config vira `senha_hash`"))}</span></label>
       </div>
-      <h4 style="margin:18px 0 6px">${esc(txt("tela.rz_cifra_h", "O fio entre os dois servidores"))}</h4>
+      <h4 class="u-m-18-0-6">${esc(txt("tela.rz_cifra_h", "O fio entre os dois servidores"))}</h4>
       <div class="form-dbl">
         <label class="cmp linha-chk"><input type="checkbox" id="rzCifra" ${rz.cifra ? "checked" : ""}>
           <span><b>${esc(txt("tela.rz_cifra", "Puxar por dentro do túnel cifrado"))}</b>
@@ -14197,13 +14331,13 @@ async function assistenteReplicacao() {
           <span class="leg">— aplica o que chega, o tempo todo; é o padrão, e no config é a agenda AUSENTE</span></span></label>
         <label class="cmp linha-chk"><input type="radio" name="rzAg" value="minutos" ${marca("minutos")}>
           <span>A cada <input id="rzCada" class="campo" type="number" min="1"
-            value="${rz.cada}" style="width:5em;display:inline-block;margin:0 4px"> minutos
+            value="${rz.cada}"> minutos
           <span class="leg">— para link caro ou lote tolerante a atraso</span></span></label>
         <label class="cmp linha-chk"><input type="radio" name="rzAg" value="hora_em_hora" ${marca("hora_em_hora")}>
           <span>De hora em hora</span></label>
         <label class="cmp linha-chk"><input type="radio" name="rzAg" value="diaria" ${marca("diaria")}>
           <span>Diária às <input id="rzHora" class="campo" type="time"
-            value="${esc(rz.hora)}" style="width:10.5em;display:inline-block;margin:0 4px">
+            value="${esc(rz.hora)}">
           <span class="leg">— janela noturna; o atraso esperado é o intervalo</span></span></label>
         <label class="cmp"><span>Reconferir a cada (s)</span>
           <input id="rzRec" class="campo" type="number" min="1" value="${rz.reconectar}">

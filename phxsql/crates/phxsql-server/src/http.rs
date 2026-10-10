@@ -439,14 +439,26 @@ pub fn responder_cheio(fluxo: &mut TcpStream, segundos: u64, corpo: &str) -> std
 }
 
 /// Os conteudos dos `<script>` embutidos de uma pagina, na ordem.
+pub fn conteudos_de_script(pagina: &str) -> Vec<&str> {
+    conteudos_de_blocos(pagina, true)
+}
+
+/// Os conteudos dos `<style>` embutidos de uma pagina, na ordem (pedido 771).
+pub fn conteudos_de_estilo(pagina: &str) -> Vec<&str> {
+    conteudos_de_blocos(pagina, false)
+}
+
+/// O leitor de blocos, UM so para script e estilo.
 ///
 /// Le como o analisador de HTML le, no que importa aqui: o conteudo de um
-/// `<script>` vai ate o primeiro `</script`, comentario `<!-- … -->` fora de
-/// script nao abre script nenhum, e o conteudo de um `<style>` nao e olhado.
+/// `<script>` vai ate o primeiro `</script`, o de um `<style>` ate o primeiro
+/// `</style`, e comentario `<!-- … -->` fora dos dois nao abre bloco nenhum.
 /// O hash tem de bater com o texto que o navegador ve, byte a byte -- e as
 /// fontes de `ui/` nao tem `\r`, que o navegador normalizaria antes de
-/// calcular (ha teste para isso).
-pub fn conteudos_de_script(pagina: &str) -> Vec<&str> {
+/// calcular (ha teste para isso). E um leitor so de proposito: dois leitores
+/// discordariam um dia sobre onde um bloco termina, e o hash de um deles
+/// sairia de um texto que o navegador nunca viu.
+fn conteudos_de_blocos(pagina: &str, quer_script: bool) -> Vec<&str> {
     let baixa = pagina.to_ascii_lowercase();
     let abre = |de: usize, tag: &str| -> Option<usize> {
         let mut p = de;
@@ -484,7 +496,7 @@ pub fn conteudos_de_script(pagina: &str) -> Vec<&str> {
         let Some(f) = baixa[ini..].find(fecho) else {
             break;
         };
-        if eh_script {
+        if eh_script == quer_script {
             saida.push(&pagina[ini..ini + f]);
         }
         pos = ini + f + fecho.len();
@@ -494,7 +506,16 @@ pub fn conteudos_de_script(pagina: &str) -> Vec<&str> {
 
 /// A lista `'sha256-…'` dos scripts embutidos de uma pagina, ou `'none'`.
 pub fn hashes_dos_scripts(pagina: &str) -> String {
-    let lista: Vec<String> = conteudos_de_script(pagina)
+    hashes_de(conteudos_de_script(pagina))
+}
+
+/// A lista `'sha256-…'` dos `<style>` embutidos de uma pagina, ou `'none'`.
+pub fn hashes_dos_estilos(pagina: &str) -> String {
+    hashes_de(conteudos_de_estilo(pagina))
+}
+
+fn hashes_de(blocos: Vec<&str>) -> String {
+    let lista: Vec<String> = blocos
         .into_iter()
         .map(|c| {
             format!(
@@ -520,6 +541,16 @@ fn hashes_dos_scripts_da(corpo: &str) -> String {
         return DA_PAGINA.get_or_init(|| hashes_dos_scripts(pagina)).clone();
     }
     hashes_dos_scripts(corpo)
+}
+
+/// O mesmo para os `<style>`, pelo mesmo motivo.
+fn hashes_dos_estilos_da(corpo: &str) -> String {
+    let pagina = montar_pagina();
+    if std::ptr::eq(corpo, pagina) {
+        static DA_PAGINA: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        return DA_PAGINA.get_or_init(|| hashes_dos_estilos(pagina)).clone();
+    }
+    hashes_dos_estilos(corpo)
 }
 
 fn montar_com_folga_e_extras(
@@ -556,19 +587,28 @@ fn montar_com_folga_e_extras(
     // uma vez por processo ([`montar_pagina`]): nonce exigiria remontar 1,5 MB
     // por resposta para chegar ao mesmo lugar.
     //
-    // O `style-src 'unsafe-inline'` FICA, por ora, e o motivo e medido: 97
-    // `style="…"` dentro de modelos de HTML da `ui/` e dois `<style>` que o
-    // proprio JS monta com conteudo variavel (a grade e o aquario). CSS nao
-    // executa script; o que ele ainda permite (desenho falso por cima da tela)
-    // e a etapa seguinte do 771.
+    // O `style-src` saiu de `'unsafe-inline'` pelo mesmo caminho: cada
+    // `<style>` embutido por hash, e atributo `style="…"` barrado
+    // (`style-src-attr 'none'`). Eram 97 atributos em modelos de HTML da `ui/`
+    // e dois `<style>` que o JS montava com conteudo variavel (a grade e o
+    // aquario). O estatico virou classe na folha; o DINAMICO (largura de
+    // barra, cor de serie, posicao da coluna fixa) e posto pelo CSSOM -- o
+    // `elemento.style` e a folha construida (`new CSSStyleSheet`), que a CSP
+    // nao alcanca porque so script autorizado chega a eles. O que se fecha:
+    // HTML injetado sem script deixa de conseguir desenhar por cima da tela
+    // (um botao falso, um aviso falso, um campo escondido).
     //
     // Resposta que NAO e HTML nao carrega script nem estilo: o `default-src
     // 'none'` responde por ela, e a folga da pagina nao vaza para os dados.
     let html = tipo.starts_with("text/html");
-    let estilo = match (html, externo) {
-        (true, true) => "style-src 'unsafe-inline'; font-src data:; ",
-        (true, false) => "style-src 'unsafe-inline'; ",
-        (false, _) => "",
+    let estilo = if html {
+        format!(
+            "style-src {}; style-src-attr 'none'; {}",
+            hashes_dos_estilos_da(corpo),
+            if externo { "font-src data:; " } else { "" }
+        )
+    } else {
+        String::new()
     };
     let script = if html {
         format!(
@@ -1490,6 +1530,51 @@ mod testes_da_csp {
             conteudos_de_script(p),
             vec!["um /* <script> */ fim", "dois"]
         );
+        // O MESMO leitor devolve os estilos: o `<style>` dentro do comentario
+        // nao conta, e o `</style>` dentro de um script tambem nao fecha nada.
+        let q = "<!-- <style>x</style> --><script>a='</style>'</script><STYLE>b{}</STYLE>";
+        assert_eq!(conteudos_de_estilo(p), vec!["a{content:\"<script>\"}"]);
+        assert_eq!(conteudos_de_estilo(q), vec!["b{}"]);
+    }
+
+    /// Pedido 771: o `style-src` da pagina sem `'unsafe-inline'`. Cada
+    /// `<style>` embutido entra por hash e o atributo `style` e barrado.
+    /// Reponha `style-src 'unsafe-inline'` na politica e este teste cai.
+    #[test]
+    fn a_pagina_autoriza_cada_estilo_por_hash_e_nenhum_atributo() {
+        let pagina = montar_pagina();
+        let c = csp(&montar_resposta_da_interface(pagina, true));
+        let estilo = diretiva(&c, "style-src").expect("style-src declarado");
+        assert!(!estilo.contains("unsafe-inline"), "{estilo}");
+        let blocos = conteudos_de_estilo(pagina).len();
+        // A fonte da marca, a grade, a telemetria, a multitela e o
+        // `<style>` do proprio `index.html`.
+        assert_eq!(blocos, 5, "blocos <style> embutidos na pagina");
+        assert_eq!(estilo.matches("'sha256-").count(), blocos, "{estilo}");
+        assert_eq!(
+            diretiva(&c, "style-src-attr"),
+            Some("style-src-attr 'none'")
+        );
+        // A fonte da marca continua entrando (`font-src data:`).
+        assert!(c.contains("font-src data:"), "{c}");
+    }
+
+    /// O atributo `style` nao volta para os modelos da tela: a CSP o barra, e
+    /// o que ela barra some calado (a barra sem largura, o campo esticado).
+    /// O estatico mora na folha; o dinamico vai por `data-e-*` e o
+    /// `PhxEstilo` o poe pelo CSSOM. Esta guarda le a pagina INTEIRA, que e o
+    /// que o navegador recebe, e nao uma lista de arquivos digitada.
+    #[test]
+    fn nenhum_atributo_style_nos_modelos_da_pagina() {
+        let pagina = montar_pagina();
+        let achados: Vec<&str> = pagina
+            .lines()
+            .filter(|l| l.contains("style=\"") || l.contains("style='"))
+            .collect();
+        assert!(
+            achados.is_empty(),
+            "atributo style na pagina (a CSP o barra): {achados:?}"
+        );
     }
 
     /// A pagina da interface: script so por hash, um hash por bloco embutido,
@@ -1561,5 +1646,8 @@ mod testes_da_csp {
         let s = diretiva(&fechada, "script-src").unwrap();
         assert_eq!(s, format!("script-src {}", hashes_dos_scripts(corpo)));
         assert!(!fechada.contains(ORIGEM_ANTHROPIC));
+        // Sem `<style>` nenhum, o estilo embutido fica todo barrado.
+        assert_eq!(diretiva(&fechada, "style-src"), Some("style-src 'none'"));
+        assert!(!fechada.contains("font-src"), "{fechada}");
     }
 }

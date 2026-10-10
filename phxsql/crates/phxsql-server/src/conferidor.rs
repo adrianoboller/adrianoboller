@@ -1524,10 +1524,11 @@ pub fn token_sem_definicao_e_sem_fallback() -> Vec<(&'static str, String)> {
     let mut definidos: std::collections::HashSet<String> = std::collections::HashSet::new();
     // As definicoes sao colhidas de CSS **e** de JS, e o motivo veio da
     // primeira execucao desta guarda: ela acusou `--n` do `telemetria.css`,
-    // e o token e legitimo -- o `telemetria.js` o poe num `style` EM LINHA
-    // (`style="--n:${…}"`), que e definicao tao valida quanto a do `:root`.
-    // O furo era da guarda, nao da tela. Uso se confere no CSS; definicao vem
-    // de onde vier.
+    // e o token era legitimo -- o `telemetria.js` o punha num `style` EM
+    // LINHA, que e definicao tao valida quanto a do `:root`. O furo era da
+    // guarda, nao da tela. Uso se confere no CSS; definicao vem de onde vier.
+    // (Desde o pedido 771 o atributo `style` nao existe mais -- a CSP o
+    // barra --, e o `--n` ganhou definicao de fabrica na propria folha.)
     for (_, fonte) in FONTES_CSS.iter().chain(FONTES.iter()) {
         let mut resto = *fonte;
         while let Some(i) = resto.find("--") {

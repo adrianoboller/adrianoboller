@@ -22,7 +22,15 @@
  *     o texto CRU. Um endereco com `<b id=…>` virava elemento.
  *  5. Nada que de poder sozinho fica no armazenamento do navegador: nem a
  *     senha, nem a senha de execucao, nem o id da sessao, nem a chave da
- *     Claude que acabou de ser colada. */
+ *     Claude que acabou de ser colada.
+ *  6. O ESTILO tambem (pedido 771, segunda etapa): `style-src` sem
+ *     `'unsafe-inline'`, um hash por `<style>` embutido, `style-src-attr
+ *     'none'`. O veneno e um `<div style=…>` posto por `innerHTML` -- HTML
+ *     injetado SEM script nenhum, que desenha um aviso falso por cima da
+ *     tela. Com a CSP velha ele pinta; com a nova o navegador o barra e
+ *     relata. E o estilo DINAMICO da casa continua de pe: as barras do Painel
+ *     tem a largura pedida (o `PhxEstilo` a pos pelo CSSOM), e um `data-e-*`
+ *     com valor fora do crivo e recusado em vez de virar estilo. */
 import { entrar, abrirPeloMenu, assentar, verdade, igual, SENHA_EXECUCAO, CREDENCIAL } from '../apoio.mjs';
 
 const CHAVE_FALSA = 'sk-ant-api03-' + 'prova771'.repeat(6);
@@ -56,6 +64,11 @@ export const caso = {
       "form-action 'none'", "default-src 'none'"]) {
       verdade(csp.includes(d), `falta «${d}» na CSP: ${csp}`);
     }
+    const estilo = diretiva('style-src');
+    verdade(estilo, `a pagina nao declara style-src: ${csp}`);
+    verdade(!estilo.includes("'unsafe-inline'"),
+      `style-src ainda aceita estilo embutido sem hash: ${estilo}`);
+    igual(diretiva('style-src-attr'), "style-src-attr 'none'", 'atributo style barrado');
     igual(h['cross-origin-opener-policy'], 'same-origin', 'COOP');
     igual(h['cross-origin-resource-policy'], 'same-origin', 'CORP');
     igual(h['x-frame-options'], 'DENY', 'X-Frame-Options');
@@ -77,6 +90,20 @@ export const caso = {
     const blocos = await page.evaluate(() => document.querySelectorAll('script:not([src])').length);
     igual((script.match(/'sha256-/g) || []).length, blocos,
       `um hash por <script> embutido (${blocos} blocos)`);
+    const folhas = await page.evaluate(() => document.querySelectorAll('style').length);
+    igual((estilo.match(/'sha256-/g) || []).length, folhas,
+      `um hash por <style> embutido (${folhas} blocos)`);
+
+    // O estilo dinamico da casa, no Painel que abre com o `entrar`: as barras
+    // sao `<i data-e-larg>`, e sem o `PhxEstilo` teriam largura zero, caladas.
+    await assentar(page, 600);
+    const barras = await page.evaluate(() => [...document.querySelectorAll('[data-e-larg]')]
+      .map(e => ({ pedida: Number(e.getAttribute('data-e-larg')), tem: e.style.width })));
+    verdade(barras.length > 0,
+      'o Painel nao desenhou nenhuma barra com data-e-larg — a prova nao provaria nada');
+    const semLargura = barras.filter(b => b.tem !== Math.max(0, Math.min(100, b.pedida)) + '%');
+    igual(semLargura.length, 0, `barras sem a largura pedida: ${JSON.stringify(semLargura.slice(0, 3))}`);
+
     for (const t of TELAS) {
       await abrirPeloMenu(page, t);
       await assentar(page, 400);
@@ -100,6 +127,34 @@ export const caso = {
     igual(veneno.disparou, 0, 'o onerror posto por innerHTML RODOU: a CSP nao barra manipulador');
     verdade(veneno.barrou >= 1,
       'o veneno nao rodou mas o navegador nao relatou violacao — a sonda nao provou nada');
+
+    // ---------------------------- 6. o veneno de ESTILO nao pinta
+    const pintura = await page.evaluate(async () => {
+      window.__phx771Sonda = true;
+      const conta = () => window.__viol771.filter(v => v.s && v.d === 'style-src-attr').length;
+      const antes = conta();
+      const alvo = document.createElement('div');
+      alvo.innerHTML = '<div id="vene771" style="position:fixed;inset:0;z-index:99999;'
+        + 'background:rgb(255,0,0)">aviso falso</div>';
+      document.body.appendChild(alvo);
+      await new Promise(ok => setTimeout(ok, 300));
+      const cs = getComputedStyle(document.getElementById('vene771'));
+      const pintou = cs.position === 'fixed' || cs.backgroundColor === 'rgb(255, 0, 0)';
+      // O crivo do `PhxEstilo`: um valor que nao e cor nao vira estilo.
+      const r0 = PhxEstilo.recusados;
+      alvo.innerHTML = '<i id="crivo771" data-e-fundo="url(//exemplo.invalid/x)"></i>';
+      await new Promise(ok => setTimeout(ok, 50));
+      const crivo = { recusou: PhxEstilo.recusados - r0,
+                      fundo: document.getElementById('crivo771').style.backgroundColor };
+      alvo.remove();
+      window.__phx771Sonda = false;
+      return { pintou, crivo, barrou: conta() - antes };
+    });
+    verdade(!pintura.pintou, 'o style= posto por innerHTML PINTOU: a CSP nao barra atributo de estilo');
+    verdade(pintura.barrou >= 1,
+      'o estilo nao pintou mas o navegador nao relatou violacao — a sonda nao provou nada');
+    igual(pintura.crivo.recusou, 1, 'o PhxEstilo aceitou um valor fora do crivo');
+    igual(pintura.crivo.fundo, '', 'o PhxEstilo pintou um valor fora do crivo');
 
     // --------------------------------- 4. o E() do claude.js escapa
     const injecao = await page.evaluate(async () => {
@@ -142,6 +197,7 @@ export const caso = {
       const onde = guardado.tudo.filter(x => x.includes(valor));
       verdade(!onde.length, `${oQue} ficou no armazenamento do navegador: ${onde.map(x => x.split('=')[0]).join(', ')}`);
     }
-    ctx.notas.push(`${blocos} scripts por hash; ${guardado.tudo.length} chave(s) no armazenamento, nenhuma com poder`);
+    ctx.notas.push(`${blocos} scripts e ${folhas} folhas por hash; ${barras.length} barra(s) pelo CSSOM; `
+      + `${guardado.tudo.length} chave(s) no armazenamento, nenhuma com poder`);
   },
 };

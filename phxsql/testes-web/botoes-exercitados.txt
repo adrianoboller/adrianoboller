@@ -284,6 +284,7 @@
 .tlm-link
 .tlm-passo
 .trilha-lg
+.u-aceso
 .venn
 .ver-lixo
 .viva
@@ -311,6 +312,16 @@
 [data-de="batRstC"]
 [data-de="batRstE"]
 [data-de]
+[data-e-tinta="var(--acao-consultar)"]
+[data-e-tinta="var(--ambar)"]
+[data-e-tinta="var(--bin)"]
+[data-e-tinta="var(--laranja)"]
+[data-e-tinta="var(--log)"]
+[data-e-tinta="var(--memo)"]
+[data-e-tinta="var(--ndx)"]
+[data-e-tinta="var(--ok)"]
+[data-e-tinta="var(--reg)"]
+[data-e-tinta]
 [data-f="0"]
 [data-f="1"]
 [data-f="10"]
@@ -360,8 +371,8 @@
 [data-i="8"]
 [data-i="9"]
 [data-i]
-[data-id="1791603932166010"]
-[data-id="1791603932166022"]
+[data-id="1791610997038009"]
+[data-id="1791610997038020"]
 [data-id]
 [data-idi="Frances"]
 [data-idi]
@@ -379,8 +390,8 @@
 [data-kill="20"]
 [data-kill="4"]
 [data-kill]
-[data-killweb="80a016fc"]
-[data-killweb="a798acea"]
+[data-killweb="15d11fda"]
+[data-killweb="2e1b7444"]
 [data-killweb]
 [data-login="fichausuc"]
 [data-login="fichausue"]
@@ -418,7 +429,7 @@
 [data-op="7"]
 [data-op="8"]
 [data-op]
-[data-origem="/tmp/phx-bateria-wnERSv/backups"]
+[data-origem="/tmp/phx-bateria-Kud3oV/backups"]
 [data-origem]
 [data-p="1"]
 [data-p="2"]
@@ -463,8 +474,8 @@
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
-[data-uuid="01a123ef-dc27-71b8-a774-cbf00733e503"]
-[data-uuid="01a123f5-d8d1-7374-985b-d00427cbace6"]
+[data-uuid="01a1245b-7ea9-735b-94de-69dedcea5006"]
+[data-uuid="01a12461-2221-75ad-8ec0-dc488d1aacad"]
 [data-uuid]
 [data-x="0"]
 [data-x="1"]
