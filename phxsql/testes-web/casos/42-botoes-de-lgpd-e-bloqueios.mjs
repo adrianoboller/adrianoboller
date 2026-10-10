@@ -167,9 +167,16 @@ async function corpo(ctx, desfazer) {
 
   passo = 'bloqueios: salvar a whitelist';
   await page.fill('#wlEditavel', '203.0.113.0/24\n198.51.100.7');
+  // O campo que o caso preencheu ja casa o texto: esperar por ele passava na
+  // hora, antes de o `whitelist_salvar` voltar, e o `bloqueios` abaixo lia a
+  // whitelist velha (pedido 782, 1 queda em 3 corridas inteiras). Espera-se
+  // o campo NOVO, que o `abrirAdmin` repinta so depois de o servidor guardar.
+  await page.$eval('#wlEditavel', e => { e.dataset.velho = '1'; });
   await clicarOuExplicar(page, '#btSalvarWl');
-  await page.waitForFunction(() => /203\.0\.113\.0\/24/.test(document.querySelector('#wlEditavel')?.value || ''),
-    undefined, { timeout: ESPERA });
+  await page.waitForFunction(() => {
+    const e = document.querySelector('#wlEditavel');
+    return !!e && !e.dataset.velho && /203\.0\.113\.0\/24/.test(e.value);
+  }, undefined, { timeout: ESPERA });
   const depois = await api(page, 'bloqueios', {});
   igual(JSON.stringify(depois.whitelist), JSON.stringify(['203.0.113.0/24', '198.51.100.7']),
     'a whitelist que o servidor guardou');

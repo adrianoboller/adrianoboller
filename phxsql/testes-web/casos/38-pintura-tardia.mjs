@@ -19,6 +19,11 @@
  *      depois do laco de `esquema`, por cima de qualquer coisa.
  *   3. As irmas de duas fases (`irmas` abaixo): tela que anuncia «carregando»,
  *      espera o servidor e pinta o corpo -- cada uma com a op que ela espera.
+ *   4. A volta a «Tabelas de» da gestao (pedido 782) -- excluir, criar pelo
+ *      cadastro completo e colar; seguro `bancos`, a primeira op do
+ *      `montarArvore` que vem antes da volta. Era o que derrubava o caso 49
+ *      uma vez por corrida inteira: com ~80 bases a arvore leva ~1 s, e a
+ *      volta do DROP do passo 2 caia no meio do passo 3.
  *
  * O veredito e sobre o PAR, como no caso 18: titulo e corpo da mesma tela, e o
  * diagrama ausente (`#btErNova`, `.er-rolo`, «lendo o esquema») onde a pessoa
@@ -121,6 +126,56 @@ export const caso = {
       igual(d.titulo, 'Telemetria', `${irma.nome}: o titulo deixou de ser o da tela aberta depois`);
       verdade(d.telemetria, `${irma.nome}: a tela atrasada escreveu o corpo por cima da telemetria`);
     }
+    // ------------------------- 4. a gestao que volta a «Tabelas de» (pedido 782)
+    // Excluir, criar pelo cadastro completo e colar terminam em
+    // `await montarArvore(false); return gerirTabelas(db)`. A arvore faz um
+    // `tabelas` por base, em serie: com as bases que a bateria acumula, a volta
+    // chegava DEPOIS de a pessoa (o caso 49) ter aberto a gestao de outra
+    // tabela, e a levava de volta a lista. O fio que se segura e o `bancos`, a
+    // primeira op do `montarArvore` -- a acao ja foi ao servidor e respondeu.
+    await api(page, 'criar_tabela', { database: db, tabela: 'TardiaExc',
+      colunas: [{ nome: 'id', tipo: 'Int4', obrigatoria: true }],
+      indices: [{ nome: 'porId', colunas: ['id'], unico: true, primario: true }] });
+    const GESTAO = [
+      { nome: 'Excluir tabela', abrir: null,
+        disparar: async () => {
+          page.once('dialog', d => d.accept('TardiaExc'));
+          await page.evaluate(d => { window.__irma = excluirTabelaDe(d, 'TardiaExc'); }, db);
+        } },
+      { nome: 'Criar tabela (cadastro completo)',
+        abrir: async () => {
+          await page.evaluate(d => { est.rascunho = null; telaNovaTabela(d); }, db);
+          await page.waitForSelector('#nt_criar', { timeout: 15000 });
+          await page.fill('#nt_nome', 'TardiaCompleta');
+        },
+        disparar: () => page.evaluate(() => { document.querySelector('#nt_criar').click(); }) },
+      { nome: 'Colar aqui',
+        abrir: async () => {
+          await page.evaluate(d => { est.copia = { db: d, tab: 'TardiaCartao' }; telaCopiarColar(d); }, db);
+          await page.waitForSelector('#btColarAgora', { timeout: 15000 });
+          await page.fill('#cc_nome', 'TardiaColada');
+        },
+        disparar: () => page.evaluate(() => { document.querySelector('#btColarAgora').click(); }) },
+    ];
+    for (const g of GESTAO) {
+      if (g.abrir) await g.abrir();
+      const preso = await segurar(page, 'bancos');
+      await g.disparar();
+      for (let i = 0; i < 200 && !preso.segurou; i++) await page.waitForTimeout(50);
+      verdade(preso.segurou, `${g.nome}: o montarArvore nunca pediu \`bancos\` -- a acao mudou de forma?`);
+      await abrirTelemetria(page);
+      preso.soltar();
+      await page.evaluate(() => window.__irma).catch(() => {});
+      // A medida vem DEPOIS de a volta ter tido chance de pintar: `tabelas`
+      // de cada base, e o `gerirTabelas` com o `esquema` de cada tabela.
+      await page.waitForTimeout(1500);
+      const d = await vista(page);
+      igual(d.titulo, 'Telemetria', `${g.nome}: a volta a «Tabelas de» levou a pessoa da tela que ela abriu depois`);
+      verdade(d.telemetria, `${g.nome}: a lista de tabelas pintou por cima da telemetria`);
+    }
+    const sobra = (await api(page, 'tabelas', { database: db })).tabelas;
+    verdade(!sobra.includes('TardiaExc') && sobra.includes('TardiaCompleta') && sobra.includes('TardiaColada'),
+      `a gestao tem de ter FEITO as tres acoes mesmo com a pessoa em outra tela: ${sobra}`);
     await page.unroute('**/api').catch(() => {});
   },
 };

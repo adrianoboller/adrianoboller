@@ -6036,11 +6036,17 @@ async function excluirTabelaDe(db, tab) {
   if (digitado.trim() !== tab) {
     return avisar(txt("tela.g_nome_nao_confere","nome não confere: a tabela não foi excluída"), true);
   }
+  // A posse de ANTES do primeiro `await` (pedido 636): a arvore faz um
+  // `tabelas` por base, em serie, e com muitas bases a volta a «Tabelas de»
+  // chegava depois de a pessoa ter aberto outra tela -- e a levava embora
+  // (pedido 782, o caso 49 da bateria). Sem a posse, a acao vale e a tela fica.
+  const vez = vezDoPainel();
   const r = await api("excluir_tabela",
     { database: db, tabela: tab, confirmar: tab });
   est.atual = null;
   avisar(preencher(txt("tela.g_tabela_excluida","{tab} excluída · {arquivos} arquivo(s) apagados"), {tab, arquivos: (r.arquivos_apagados || []).length}));
   await montarArvore(false);
+  if (!aindaNoPainel(vez)) return;
   return gerirTabelas(db);
 }
 
@@ -6450,6 +6456,8 @@ function ligarNovaTabela(db) {
     }
 
     rec.textContent = txt("tela.ia_criando", "criando…");
+    // A posse de antes do `await`: a mesma volta do excluir (pedido 782).
+    const vez = vezDoPainel();
     try {
       const feito = await api("criar_tabela", pedido);
       const emSchema = r.schema ? preencher(txt("tela.g_em_schema"," em {schema}"), {schema: r.schema}) : "";
@@ -6462,6 +6470,7 @@ function ligarNovaTabela(db) {
         {tabela: feito.tabela, emschema: emSchema, colunas: feito.colunas, indices: feito.indices, particaotxt: particaoTxt}));
       est.rascunho = null;
       await montarArvore(false);
+      if (!aindaNoPainel(vez)) return;
       return gerirTabelas(db);
     } catch (err) {
       rec.textContent = "";
@@ -7403,6 +7412,8 @@ function telaCopiarColar(db) {
     const destino = $("#cc_nome").value.trim();
     if (!destino) return avisar(txt("tela.g_de_nome_copia","dê um nome à cópia"), true);
     $("#ccRecado").textContent = txt("tela.st_copiando", "copiando…");
+    // A posse de antes do `await`: a mesma volta do excluir (pedido 782).
+    const vez = vezDoPainel();
     try {
       const r = await api("copiar_tabela", {
         database: c.db, tabela: c.tab,
@@ -7410,6 +7421,7 @@ function telaCopiarColar(db) {
       });
       avisar(preencher(txt("tela.g_tabela_colada","{origem} colada em {destino_database}.{destino} · {arquivos} arquivo(s)"), {origem: r.origem, destino_database: r.destino_database, destino: r.destino, arquivos: r.arquivos}));
       await montarArvore(false);
+      if (!aindaNoPainel(vez)) return;
       return gerirTabelas(destinoDb);
     } catch (err) {
       $("#ccRecado").textContent = "";
