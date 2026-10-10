@@ -1006,7 +1006,11 @@ TETO_TESTE_SEM_MODULO = 0
 # PITR que recusa como replica, o volume sem id que nao vira, a ultima
 # transacao calada e o escopo parcial calado. RED de cada uma pelo provador
 # com `--so`.
-PISO_DAS_ENTRADAS = 979
+# +3 (pedidos 765/766, P15, 10/10/2026): a op `perfis` fora da regra do
+# servidor, o retrato com campo a mais e o `bloquear_por_codigo` que o aviso
+# de campo estranho chamava de ignorado. RED de cada uma pelo provador.
+# 982 = 979 (299 F3-F4) + 3 (P15), somados na integracao.
+PISO_DAS_ENTRADAS = 982
 
 # ------------------------------------------------------------- APOSENTADAS
 #

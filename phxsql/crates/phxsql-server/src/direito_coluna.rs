@@ -350,6 +350,9 @@ pub const CLASSES: &[(&str, PorColuna)] = &[
     // A ocorrencia nasce redigida (F2): o `dados` e a FORMA do pedido, com
     // todo valor trocado por `?`. Nao ha valor de coluna para cortar.
     ("ocorrencias", PorColuna::Nenhum),
+    // O perfil habitual (765, P15) guarda login, nomes de base e tabela,
+    // contagens e horas -- nunca valor de linha.
+    ("perfis", PorColuna::Nenhum),
     ("painel", PorColuna::Nenhum),
     // A saude do disco nao le linha nenhuma: e o canario e os contadores.
     ("saude_disco", PorColuna::Nenhum),

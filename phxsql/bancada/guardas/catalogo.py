@@ -29883,4 +29883,74 @@ fn anotar(""",
         "seguem": ["servidor::testes_pitr::restaura_ate_um_instante_no_meio_do_diario"],
         "prazo": 1800,
     },
+    {
+        "id": "p15-bloquear-por-codigo-estranho",
+        "titulo": "`protecao.bloquear_por_codigo` era lido e o aviso de campo estranho dizia que fora IGNORADO (pedido 766, achado da P15)",
+        "porque": (
+            "pedido 766, achado ao montar a tela da P15: o campo valia, saia "
+            "no `config`, e faltava em `SECOES_CONHECIDAS` -- a tela de "
+            "configuracao mentia sobre uma guarda ligada."
+        ),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            "primeiro_cadastro_pelo_administrador",
+            "bloquear_por_codigo",
+        ],""",
+        "troca": """            "primeiro_cadastro_pelo_administrador",
+        ],""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_da_protecao::todo_campo_lido_da_protecao_e_conhecido",
+        ],
+        "seguem": [
+            "config::testes_da_protecao::bloquear_por_codigo_nasce_desligado_e_e_lido",
+        ],
+    },
+    {
+        "id": "p15-perfis-com-campo-a-mais",
+        "titulo": "o retrato da op `perfis` ganhava um campo fora do arquivo: o que nao e metadado passaria a sair para a tela (pedido 765, P15)",
+        "porque": (
+            "pedido 765, P15: o perfil so guarda metadado, e o retrato sai do "
+            "MESMO `para_json` do arquivo mais o `maduro`. Um campo novo no "
+            "retrato e a porta para o texto do pedido sair junto."
+        ),
+        "arquivo": "crates/phxsql-server/src/perfis.rs",
+        "trecho": """                    pares.push(("maduro".to_string(), Json::Bool(maduro)));
+""",
+        "troca": """                    pares.push(("maduro".to_string(), Json::Bool(maduro)));
+                    pares.push(("ultimo_pedido".to_string(), Json::texto_de("x")));
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_op_perfis_devolve_so_metadado",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_op_perfis_e_so_de_quem_administra_o_servidor",
+        ],
+    },
+    {
+        "id": "p15-perfis-fora-do-servidor",
+        "titulo": "a op `perfis` fora da regra do SERVIDOR: o dono de uma base lia o habito de todo mundo pedindo com o `database` dele (pedido 765, P15)",
+        "porque": (
+            "pedido 765, P15: o perfil diz que tabelas cada usuario usa e a "
+            "que horas -- o movimento dos outros, o poder do `acessos`. Fora "
+            "de `OPS_DO_SERVIDOR`, o portao unico pergunta `administrar` na "
+            "base do pedido, e o furo do 756 volta."
+        ),
+        "arquivo": "crates/phxsql-server/src/usuarios.rs",
+        "trecho": """    // `acessos`.
+    \"perfis\",
+""",
+        "troca": """    // `acessos`.
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_op_perfis_e_so_de_quem_administra_o_servidor",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_op_perfis_devolve_so_metadado",
+        ],
+    },
 ]

@@ -4572,6 +4572,111 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     Nasce false: a aplicacao que monta SQL concatenando texto dispara a
     forma sem ser ataque, e trancaria o proprio IP de fabrica.
 
+15.2.1 PROTEGE E BLOQUEIA: a segunda senha e a tabela de protecao
+       (pedidos 765, 766 e 767)
+
+    O comando que derruba, apaga ou para o banco NAO EXECUTA sem a SENHA DE
+    EXECUCAO -- uma segunda senha, que nao e a de login. Vale em qualquer
+    modo, e e o padrao de fabrica. Sem ela a resposta e:
+
+        4009 SENHA_DE_EXECUCAO_EXIGIDA
+
+    A LISTA DE PERIGO (17 comandos): excluir_tabela, excluir_visao,
+    excluir_sequencia, excluir_fk, usuario_excluir, esvaziar_lixeira,
+    expurgar_trilha, o DELETE e o UPDATE largos, a cascata larga,
+    acrescentar_coluna, criptografar, descriptografar,
+    redeclarar_indices_texto, migrar_esquema, usuario_criar e
+    usuario_alterar. Pela rede, pelo SQL, pelo REST, pelo MCP, por job ou
+    por rotina: o nome que a protecao confere e o da operacao que vai
+    executar. A replica fica isenta (o comando ja passou pela guarda na
+    origem).
+
+    LIBERAR A SESSAO (vale ate trancar, sair, a sessao vencer ou a conexao
+    cair; nao passa para outra sessao nem outro IP):
+
+        {"op":"liberar_execucao","senha":"a-senha-de-execucao"}
+        UNLOCK EXECUTION IDENTIFIED BY 'a-senha-de-execucao'
+
+    TRANCAR DE NOVO (o "sudo -k"; nao pede senha):
+
+        {"op":"trancar_execucao"}
+        LOCK EXECUTION
+
+    CADASTRAR. A senha de execucao mora em senhas-de-execucao.json, ao lado
+    do acessos.log (0600, PBKDF2 proprio). Tem 8 bytes ou mais, nao pode
+    ser a de login, e 5 erros seguidos a trancam por 15 minutos. Com
+    "primeiro_cadastro_pelo_administrador" (padrao true), SO o primeiro
+    administrador do servidor cadastra a propria, com a senha de login:
+
+        {"op":"senha_execucao_definir","senha":"a-de-login",
+         "nova_senha_execucao":"outra-senha-longa"}
+
+    Os outros a recebem de um administrador com a sessao LIBERADA:
+
+        {"op":"senha_execucao_definir","login":"ana",
+         "nova_senha_execucao":"outra-senha-longa"}
+
+    Trocar a propria pede a de execucao ATUAL em "senha_execucao", nunca a
+    de login.
+
+    A TABELA phxsys.protecao: uma linha por comando, com o modo.
+
+        proteger    exige a segunda senha; o executado vai a trilha
+        observar    a trilha continua; a senha continua exigida
+        desligado   sai da trilha; a senha continua exigida
+
+    ("modo_dispensa_a_senha": true faz observar e desligado tirarem o
+    comando da exigencia -- padrao false.) A tabela nasce pelo
+    {"op":"protecao_semear"}, que nunca toca linha existente. SEM A TABELA,
+    TUDO VALE proteger; apagar uma linha tambem volta a proteger. Mudar o
+    modo e um atualizar comum na tabela: BAIXAR pede a sessao liberada,
+    SUBIR nao. O comando bloqueado vira ocorrencia em qualquer modo.
+
+    JOB COM COMANDO PERIGOSO: recusa com 4009 ate ser autorizado por quem
+    administra o servidor, com a propria sessao liberada:
+
+        {"op":"job_autorizar","nome":"limpeza-mensal","usos":12,"dias":366}
+        {"op":"job_autorizar","nome":"limpeza-mensal","revogar":true}
+
+    usos (corridas, 1 a 366, padrao 1) e dias (1 a 366, padrao 30). A
+    autorizacao vale so para o pedido de agora: regravar o job com outro
+    pedido a apaga. Revogar nao pede senha.
+
+    PRAZO DE COMANDO: "prazo_comando_ms" (padrao 0, sem prazo) e o teto de
+    todo pedido; "prazo_comando_modo" proteger cancela, observar deixa
+    terminar e registra a ocorrencia prazo_estourado. So morde com a
+    telemetria ligada.
+
+    O PERFIL, PARA QUEM ADMINISTRA O SERVIDOR (so metadado: categoria,
+    base, tabela, contagem e hora UTC; nunca valor nem SQL):
+
+        {"op":"perfis"}
+        {"op":"perfis","usuario":"ana"}
+
+    PELA TELA: Administracao > Protecao mostra a tabela (semear quando
+    falta, mudar o modo de cada linha) e o perfil de cada usuario, com as
+    horas convertidas para a hora local. A ficha do usuario tem "Definir a
+    senha de execucao...", a tela de Jobs tem "Autorizar..." e "Revogar", e
+    Configuracoes mostra os interruptores abaixo, com o motivo.
+
+    OS INTERRUPTORES, SO PELO ARQUIVO -- e o que cada um quebra:
+
+        protecao.bloquear_por_codigo        false   ligado, a aplicacao que
+            concatena SQL tranca o proprio IP
+        protecao.primeiro_cadastro_pelo_administrador   true   desligado,
+            quem roubou a senha de login cadastra a segunda antes do dono
+        protecao.prazo_comando_ms           0       acima de 0, cancela
+            inclusive o relatorio legitimo que passar do prazo
+        protecao.prazo_comando_modo         proteger   observar deixa a
+            operacao longa segurar a trava ate o fim
+        protecao.modo_dispensa_a_senha      false   ligado, a linha observar
+            ou desligado dispensa a segunda senha
+        seguranca.poupar_loopback           true    desligado, cinco senhas
+            erradas da propria maquina trancam a tela e a TV
+
+    Nenhum se grava pela tela: uma sessao roubada nao baixa a guarda que
+    existe para para-la. Detalhes em docs/SEGURANCA.md, secao 44.
+
 15.3 A lista de bloqueio
 
     O blacklist.json guarda IP, data e hora, motivo, comando e ate quando:

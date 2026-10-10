@@ -488,6 +488,69 @@ contra tráfego real (L2 — seguem raciocinados); a sessão web encerrada prova
 pelo helper e não por uma requisição HTTP de ponta a ponta; o perfil não tem
 op de leitura (só o arquivo e a ocorrência).
 
+### 6.4 P15 — a tela, a op do perfil e a documentação (10/10/2026, papéis E e H)
+
+**O que entrou na tela** (texto pela fábrica, 67 chaves nos seis idiomas; a
+catraca dos textos ficou em 798, sem subir):
+
+- **Administração → Proteção** (nova): fichas (linhas, em proteger/observar/
+  desligado, perfis); a grade de `phxsys.protecao` com o modo GRAVADO como
+  está e, por linha, a caixa do modo + «Aplicar» (amarelo, contorno); o
+  botão «Semear a tabela de proteção» (verde) quando a tabela falta, dizendo
+  que sem ela tudo vale `proteger`. Baixar passa pelo 4009 → o diálogo da
+  `api()`; subir grava direto. A linha é relida com a versão antes de gravar.
+- **Jobs:** a coluna «senha de execução» (autorizado/vencida, corridas, até
+  quando, por quem) e os botões «Autorizar…» (diálogo de corridas e dias) e
+  «Revogar» (vermelho, só com autorização).
+- **Ficha do usuário:** «Definir a senha de execução…» — o administrador
+  cadastra ou redefine a segunda senha de OUTRO usuário; o 4009 abre o
+  diálogo dele e o pedido se refaz (`apiComSenhaDeExecucao`, porque a `api()`
+  não reabre o diálogo para a própria `senha_execucao_definir`).
+- **Configurações:** os seis interruptores (`bloquear_por_codigo`,
+  `primeiro_cadastro_pelo_administrador`, `prazo_comando_ms`,
+  `prazo_comando_modo`, `modo_dispensa_a_senha`, `seguranca.poupar_loopback`)
+  só leitura, com o valor que vale e o que cada um quebra.
+- **Perfil (P7):** op nova `perfis` (só quem administra o SERVIDOR, por
+  `OPS_DO_SERVIDOR`; só metadado — o mesmo `para_json` do arquivo mais o
+  `maduro`; `usuario` filtra) e a vista: grade por usuário e, de cada um, as 24
+  horas na hora local de quem olha e as combinações.
+
+**Achados no caminho, e o que se fez:**
+
+- `protecao.bloquear_por_codigo` faltava em `SECOES_CONHECIDAS`: a tela
+  chamava de «ignorado» um campo que valia. Consertado, com prova que tira a
+  lista do `para_json` (cognição de 10/10 06:50).
+- O `atualizar` grava a linha **inteira** — a coluna ausente vira NULL —, e o
+  catálogo (também ferramenta MCP) diz «só as que mudam». A tela manda a linha
+  inteira; **o motor e o catálogo ficam para pedido novo** (cognição de 10/10
+  07:20). Defeito ativo: quem segue o catálogo apaga coluna anulável calado.
+- `.secao{text-transform:uppercase}` punha `phxsys.protecao` e o login em
+  caixa alta dentro do título: `.secao code,.secao .crua` agora não se
+  deformam.
+
+| prova | defeito reposto | caiu |
+|---|---|---|
+| `a_op_perfis_e_so_de_quem_administra_o_servidor` | `perfis` fora de `OPS_DO_SERVIDOR` | sim (o dono da base `b` leu) |
+| `a_op_perfis_devolve_so_metadado` | um campo a mais no retrato | sim |
+| `todo_campo_lido_da_protecao_e_conhecido` | o campo tirado da seção | sim |
+| `testes-web/casos/56-protecao.mjs` (a–e) | cinco defeitos na tela, um por parte | **5 de 5** partes |
+
+As três de Rust entraram no catálogo de guardas (`p15-*`, `PISO_DAS_ENTRADAS`
+975), com RED medido por script da frente — o provador não rodou: pede uma
+cópia com `target` próprio, e o disco compartilhado estava em 0,8 GB livres.
+
+- Na bateria inteira o perfil do administrador passa de **256** combinações
+  (o teto): a combinação nova vai ao coringa e não aparece. O caso confere a
+  desta base quando ela coube, e uma com maiúscula do servidor quando o perfil
+  está cheio; a grade de combinações mostra o teto inteiro numa página.
+- As três atribuições de HTML novas já passam por `window.phxHTML(...)` (o
+  funil do 771, Trusted Types). Nesta base o funil ainda não existe: a bateria
+  verde (107/107) rodou com uma identidade `phxHTML` injetada pelo
+  `addInitScript`, **só na corrida, não versionada**.
+
+**De fora, e por quê:** nenhum interruptor se grava pela tela (decisão de
+segurança, não lacuna); a cognição da P15 são as duas acima.
+
 ## 7. Choque com pétrea?
 
 **Nenhum.** «Guarda nova entra pedida»: tudo nasce `observar` (não muda resposta), o `bloquear_por_codigo`

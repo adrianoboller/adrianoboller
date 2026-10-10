@@ -1,5 +1,5 @@
 {
-  "quando": "2026-10-10 08:03",
+  "quando": "2026-10-10 13:27",
   "mais_antigo": "2026-09-16 15:25",
   "guardas": [
     {
@@ -7835,6 +7835,30 @@
       "segundos": 158.17,
       "notas": [],
       "quando": "2026-10-10 07:42"
+    },
+    {
+      "id": "p15-bloquear-por-codigo-estranho",
+      "titulo": "`protecao.bloquear_por_codigo` era lido e o aviso de campo estranho dizia que fora IGNORADO (pedido 766, achado da P15)",
+      "veredito": "PROVADA",
+      "segundos": 145.01,
+      "notas": [],
+      "quando": "2026-10-10 13:27"
+    },
+    {
+      "id": "p15-perfis-com-campo-a-mais",
+      "titulo": "o retrato da op `perfis` ganhava um campo fora do arquivo: o que nao e metadado passaria a sair para a tela (pedido 765, P15)",
+      "veredito": "PROVADA",
+      "segundos": 139.44,
+      "notas": [],
+      "quando": "2026-10-10 13:27"
+    },
+    {
+      "id": "p15-perfis-fora-do-servidor",
+      "titulo": "a op `perfis` fora da regra do SERVIDOR: o dono de uma base lia o habito de todo mundo pedindo com o `database` dele (pedido 765, P15)",
+      "veredito": "PROVADA",
+      "segundos": 136.52,
+      "notas": [],
+      "quando": "2026-10-10 13:27"
     },
     {
       "id": "alter-com-regra-sem-aviso",

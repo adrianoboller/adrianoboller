@@ -469,3 +469,136 @@ fn sql_de(texto: &str) -> String {
         Json::texto_de(texto).escrever()
     )
 }
+
+// ------------------------------------------------------- P15: a op `perfis`
+
+/// O portao da op `perfis` (765, P15) e o UNICO, na regra do SERVIDOR: o
+/// operador e recusado, o administrador de UMA base tambem -- mesmo pedindo
+/// com `"database":"b"`, a base que ele administra --, e quem administra o
+/// servidor le. RED: tirar `perfis` de `OPS_DO_SERVIDOR` deixa o dono da
+/// base `b` ler o perfil de todo mundo (o furo do 756); tirar o ramo do
+/// `da_operacao` deixa o operador ler.
+#[test]
+fn a_op_perfis_e_so_de_quem_administra_o_servidor() {
+    let dir = DirTemp::novo("p78-p15-portao");
+    let h = phxsql_core::senha::cifrar_com("p78-senha", 1);
+    let cad = crate::Cadastro::de_json(
+        &Json::analisar(&format!(
+            r#"{{"usuarios":[
+                {{"login":"ana","senha_hash":"{h}","nivel":"operador"}},
+                {{"login":"donab","senha_hash":"{h}",
+                  "bases":{{"b":{{"ler":true,"administrar":true}}}}}},
+                {{"login":"chefe","senha_hash":"{h}","nivel":"admin"}}]}}"#
+        ))
+        .unwrap(),
+    )
+    .unwrap();
+    let s = servidor(&dir, |c| c.cadastro = cad.clone());
+    let de = |login: &str| Sessao {
+        usuario: cad.por_login(login).cloned(),
+        ip: "203.0.113.90".into(),
+        ..Sessao::default()
+    };
+    for login in ["ana", "donab"] {
+        for corpo in [r#""op":"perfis""#, r#""op":"perfis","database":"b""#] {
+            match pede(&s, &mut de(login), corpo) {
+                Err(e) => assert!(
+                    matches!(e, PhxError::Autorizacao(_)),
+                    "{login}: recusou por outro motivo: {e}"
+                ),
+                Ok(j) => panic!("{login} leu o perfil de todos: {}", j.escrever()),
+            }
+        }
+    }
+    let r = pede(&s, &mut de("chefe"), r#""op":"perfis""#).expect("o administrador le");
+    assert!(
+        r.campo("perfis").and_then(Json::lista).is_some(),
+        "{}",
+        r.escrever()
+    );
+}
+
+/// O CONTEUDO da op `perfis` e so metadado: depois de um `inserir` com um
+/// valor marcado, de uma varredura filtrada por ele e de um SQL com ele no
+/// texto, o retrato nao traz o valor em lugar nenhum -- e cada perfil tem
+/// EXATAMENTE os campos do arquivo mais o `maduro`. Traz, sim, a combinacao
+/// (categoria, database, tabela) com a contagem, e o `usuario` filtra.
+/// RED: acrescentar ao retrato qualquer campo novo (o texto do ultimo
+/// pedido, por exemplo) derruba a conferencia das chaves.
+#[test]
+fn a_op_perfis_devolve_so_metadado() {
+    let dir = DirTemp::novo("p78-p15-conteudo");
+    let s = servidor(&dir, |_| {});
+    let mut ana = sessao("ana", "203.0.113.91");
+    pede(
+        &s,
+        &mut ana,
+        r#""op":"inserir","database":"b","tabela":"clientes","linha":{"id":9,"nome":"SEGREDO-P15"}"#,
+    )
+    .expect("a insercao executa");
+    pede(
+        &s,
+        &mut ana,
+        r#""op":"varrer","database":"b","tabela":"clientes","onde":{"nome":"SEGREDO-P15"}"#,
+    )
+    .expect("a varredura executa");
+    let _ = pede(
+        &s,
+        &mut ana,
+        &sql_de("SELECT nome FROM clientes WHERE nome = 'SEGREDO-P15'"),
+    );
+
+    let mut chefe = sessao("chefe", "203.0.113.92");
+    let r = pede(&s, &mut chefe, r#""op":"perfis","usuario":"ana""#).unwrap();
+    let texto = r.escrever();
+    assert!(
+        !texto.contains("SEGREDO"),
+        "valor de linha no perfil: {texto}"
+    );
+    assert!(!texto.contains("SELECT"), "texto de SQL no perfil: {texto}");
+
+    let perfis = r.campo("perfis").and_then(Json::lista).unwrap();
+    assert_eq!(perfis.len(), 1, "o filtro por usuario: {texto}");
+    let um = &perfis[0];
+    assert_eq!(um.texto_ou("usuario", ""), "ana");
+    let Json::Objeto(pares) = um else {
+        panic!("perfil nao e objeto: {texto}")
+    };
+    let mut chaves: Vec<&str> = pares.iter().map(|(k, _)| k.as_str()).collect();
+    chaves.sort_unstable();
+    assert_eq!(
+        chaves,
+        [
+            "combinacoes",
+            "coringa",
+            "horas",
+            "maduro",
+            "n",
+            "primeiro_ms",
+            "usuario"
+        ],
+        "{texto}"
+    );
+    assert_eq!(um.campo("maduro"), Some(&Json::Bool(false)), "{texto}");
+    let combinacoes = um.campo("combinacoes").and_then(Json::lista).unwrap();
+    let escreveu = combinacoes.iter().any(|c| {
+        c.lista().is_some_and(|c| {
+            c.first().and_then(Json::texto) == Some("escrever")
+                && c.get(1).and_then(Json::texto) == Some("b")
+                && c.get(2).and_then(Json::texto) == Some("clientes")
+                && c.get(3).and_then(Json::inteiro) == Some(1)
+        })
+    });
+    assert!(escreveu, "a combinacao do inserir: {texto}");
+    assert_eq!(
+        r.campo("piso_de_pedidos").and_then(Json::inteiro),
+        Some(crate::perfis::PISO_DE_PEDIDOS as i64)
+    );
+
+    // O filtro por um login sem perfil devolve a lista vazia, e nao erro.
+    let r = pede(&s, &mut chefe, r#""op":"perfis","usuario":"ninguem""#).unwrap();
+    assert_eq!(
+        r.campo("perfis").and_then(Json::lista).map(<[Json]>::len),
+        Some(0)
+    );
+}

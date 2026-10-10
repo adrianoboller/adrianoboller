@@ -7415,3 +7415,151 @@ só; a queda pode perder a última linha não sincronizada, e o que repete vem d
 fora da gravação (`ajustar_sequencia` para trás, backup antigo, réplica
 atrasada promovida). E o `.seq` só avança o estado em memória depois do
 `fdatasync`, para duas falhas seguidas de gravação não rasgarem os dois slots.
+
+## 44. Protege e bloqueia: a segunda senha, a tabela de proteção e o hábito de cada um (pedidos 765, 766 e 767, 10/10/2026)
+
+A promessa ao cliente, decidida pelo dono em 09/10/2026, é **«protege e
+bloqueia»**: o comando que derruba, apaga ou para o banco **não executa** sem
+uma segunda senha, e o IP que manda código malicioso **sai pela porta e pelo
+firewall**. Esta seção junta as peças que entraram nas quinze fatias do
+desenho (`docs/propostas/protecao-765-desenho.md` §6–§6.3) e diz, de cada
+interruptor, o que ele quebra. Proteger é o **padrão de fábrica** — exceção
+explícita do dono à regra «guarda nova entra pedida», só para estes três
+pedidos.
+
+### 44.1 A segunda senha (senha de execução)
+
+- **Não é a de login.** Cadastro à parte em `senhas-de-execucao.json`, ao lado
+  do `acessos.log`, 0600, PBKDF2 com sal próprio. É recusada se abrir o login
+  do dono, tem 8 bytes ou mais, e o bloqueio por tentativas é dela: **5 erros
+  seguidos trancam 15 minutos**. Nem o hash sai por op nenhuma.
+- **Libera a SESSÃO, não um comando.** `liberar_execucao` (SQL `UNLOCK
+  EXECUTION IDENTIFIED BY '…'`) vale até o `trancar_execucao` (SQL `LOCK
+  EXECUTION`, o `sudo -k`, botão «Trancar» na barra), o logout, a inatividade
+  do 770 ou a queda da conexão. Não passa para outra sessão nem outro IP, e o
+  servidor **gira o id da sessão** ao liberar.
+- **O primeiro cadastro é do administrador.** Com
+  `protecao.primeiro_cadastro_pelo_administrador` (fábrica `true`), só o
+  primeiro administrador do servidor cadastra a própria; os outros a recebem
+  de um administrador **com a sessão liberada**, pela ficha do usuário
+  (botão «Definir a senha de execução…») ou por `senha_execucao_definir` com
+  `"login"`. A troca da própria pede a senha de execução **atual**, nunca a
+  de login: a segunda senha existe para o dia em que a primeira vazou.
+- **Sem ela, recusa com `4009 SENHA_DE_EXECUCAO_EXIGIDA`**, em qualquer modo.
+  A tela abre o diálogo da página (nunca `prompt()`) pelo funil único da
+  `api()` e refaz o mesmo pedido depois de liberar.
+
+### 44.2 A lista de perigo e a tabela `phxsys.protecao`
+
+Dezessete linhas de fábrica, uma por comando: destruir estrutura
+(`excluir_tabela`, `excluir_visao`, `excluir_sequencia`, `excluir_fk`,
+`usuario_excluir`), apagar em massa (`esvaziar_lixeira`, `expurgar_trilha`,
+o `DELETE` largo da F8), alterar em massa (o `UPDATE` largo e a cascata
+larga), reescrever tabela grande (`acrescentar_coluna`, `criptografar`,
+`descriptografar`, `redeclarar_indices_texto`, `migrar_esquema`) e acesso
+(`usuario_criar`, `usuario_alterar`). A camada classifica pela **op que vai
+executar**, não pelo texto: a rede, a op `sql`, o REST, o MCP, o job e o corpo
+de uma rotina chegam com o mesmo nome. A réplica fica isenta por construção —
+o comando já passou pela guarda na origem.
+
+A tabela nasce pelo `protecao_semear` (botão «Semear a tabela de proteção» na
+tela **Administração → Proteção**), nunca sozinha no arranque de um servidor
+sem `phxsys`. **Sem ela, tudo vale `proteger`**, e apagar uma linha também
+volta a `proteger`: apagar nunca baixa a guarda. Os três modos:
+
+| modo | a segunda senha | a trilha (`diretivas.log`) |
+|---|---|---|
+| `proteger` (fábrica; vazio e torto valem este) | exigida | o executado vai |
+| `observar` | exigida (salvo `modo_dispensa_a_senha`) | o executado vai |
+| `desligado` | exigida (salvo `modo_dispensa_a_senha`) | o executado **não** vai |
+
+O **bloqueado** vira ocorrência em qualquer modo — recusa escondida seria pior
+que recusa nenhuma. **A guarda guarda a si mesma:** baixar uma linha pede a
+sessão liberada; subir, não. Só `inserir`, `atualizar` e `excluir` se deixam
+ler; todo outro caminho que alcança a tabela (lote, carga, restaurar,
+renomear ou copiar para ela, restaurar o backup de `phxsys`) pede a senha, na
+dúvida. A tela muda o modo por `atualizar` com a **versão** relida na hora: se
+a linha mudou desde que a tela a mostrou, ela recarrega em vez de gravar por
+cima.
+
+### 44.3 O job autorizado
+
+Job que roda comando da lista recusa com 4009 até alguém **autorizá-lo**:
+`job_autorizar` (botão «Autorizar…» na tela de Jobs), por quem administra o
+servidor com a **própria** sessão liberada, com teto de **corridas** (1 a 366,
+padrão 1) e de **dias** (1 a 366, padrão 30). O escopo é o SHA-256 do usuário
+e do pedido do job: regravar o job com outro pedido apaga a autorização, e
+nenhum `job_salvar` a traz pela rede. Cada corrida gasta um uso **antes** de
+rodar. `"revogar": true` (botão vermelho «Revogar») tira sem pedir senha —
+tirar poder não pede permissão. A grade de Jobs mostra, por job, se está
+autorizado, quantas corridas restam, até quando e por quem.
+
+### 44.4 O prazo de comando
+
+`protecao.prazo_comando_ms` (fábrica `0`, sem prazo) é o teto de todo pedido,
+dentro e fora de transação, pelo relógio do `STATEMENT TIMEOUT`.
+`prazo_comando_modo: "proteger"` cancela; `"observar"` deixa terminar e emite
+`PrazoEstourado`. Nasce 0 porque o tempo que uma varredura segura a trava
+global (L1 do desenho) não foi medido — e sem telemetria ligada não há relógio
+e o prazo não morde.
+
+### 44.5 O IP nunca visto e o perfil habitual — só observam
+
+- **IP novo** (765.b): o primeiro login com sucesso de (usuário, base, IP) em
+  90 dias vira a ocorrência amarela `ip_novo`. Memória em `ips-vistos.jsonl`,
+  semeada do `acessos.log`. Nunca recusa login.
+- **Perfil** (765.c, P7): com a telemetria ligada, quantos pedidos de cada
+  (categoria, database, tabela) e em que hora UTC. Depois de **7 dias e 200
+  pedidos**, a combinação nunca vista ou a hora com menos de 1% da massa vira
+  `fora_do_perfil`. **Não recusa nada** — proteger por perfil travaria o
+  trabalho (98,9% de novidade por digital, medido). A op `perfis` (P15) o
+  devolve **só a quem administra o servidor** (`OPS_DO_SERVIDOR`: o dono de
+  uma base não lê o hábito de todo mundo pedindo com o `"database"` dele) e
+  **só metadado** — o mesmo `para_json` que escreve o `perfis.jsonl`, mais o
+  `maduro`. A tela Proteção mostra a grade por usuário e, de cada um, as
+  combinações e as 24 horas convertidas para a hora local de quem olha.
+  Provas: `a_op_perfis_e_so_de_quem_administra_o_servidor` e
+  `a_op_perfis_devolve_so_metadado`, as duas vistas caindo com o defeito
+  reposto.
+
+### 44.6 O código malicioso e o firewall
+
+Com `protecao.bloquear_por_codigo` (fábrica `false`), o pedido com forma de
+injeção (`injecao_suspeita`, as quatro classes) conta como tentativa leve pela
+**mesma** política da senha errada: 5 em 10 minutos bloqueiam, com as quatro
+guardas de não se trancar (§3), o escalonamento ×2 até 7 dias (§3) e o
+firewall do SO (§5: `{ip}` canônico, `{familia}`, `{segundos}`, conjunto com
+prazo no kernel e reconciliação no arranque). No limite, a sessão de quem
+mandou **termina**, inclusive quando a guarda poupou o IP.
+
+### 44.7 Os interruptores, e o que cada um quebra
+
+Nenhum se grava pela tela (fora de `CAMPOS_EDITAVEIS`): uma sessão roubada não
+pode baixar a guarda que existe para pará-la. A tela de configuração mostra os
+seis, com o valor que está valendo e o motivo.
+
+| campo | fábrica | o que quebra mudar |
+|---|---|---|
+| `protecao.bloquear_por_codigo` | `false` | ligado: a aplicação que monta SQL concatenando texto dispara a forma sem ser ataque e **tranca o próprio IP** |
+| `protecao.primeiro_cadastro_pelo_administrador` | `true` | desligado: a senha de login basta para cadastrar a segunda — **quem roubou a de login chega antes do dono** |
+| `protecao.prazo_comando_ms` | `0` | acima de 0: a operação que passar do prazo é cancelada, **inclusive o relatório legítimo** |
+| `protecao.prazo_comando_modo` | `proteger` | `observar`: a operação longa termina e segura a trava global até o fim |
+| `protecao.modo_dispensa_a_senha` | `false` | ligado: a linha `observar`/`desligado` **tira o comando da exigência** da segunda senha (pergunta de produto, sobe ao dono) |
+| `seguranca.poupar_loopback` | `true` | desligado: cinco senhas erradas da própria máquina **trancam a tela e a TV** |
+
+`protecao.ligada: false` só vale em binário de teste; em produção é ignorado
+com aviso no arranque.
+
+**Achado ao montar a tela (P15):** `protecao.bloquear_por_codigo` era lido,
+saía no `config` e faltava em `SECOES_CONHECIDAS` — quem o ligava via a tela de
+configuração dizer «campo que este servidor não conhece, foi ignorado» sobre
+uma guarda que estava valendo. Consertado; a prova
+`todo_campo_lido_da_protecao_e_conhecido` tira a lista do próprio `para_json`,
+para o campo de amanhã entrar sozinho, e cai com o campo tirado da seção.
+
+### 44.8 O que ficou de fora
+
+O ajudante `phxsql-fw` com `sudoers` no pacote (empacotamento); o `netsh` do
+Windows, não exercitado neste contêiner; os números 7/200/1% do perfil e o
+prazo de comando sugerido, que seguem raciocinados (L1, L2); a isenção da
+réplica no P13 provada contra um nó réplica de verdade.

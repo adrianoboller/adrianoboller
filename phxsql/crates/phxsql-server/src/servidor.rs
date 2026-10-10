@@ -2368,6 +2368,10 @@ impl Servidor {
             // o portao UNICO ja pergunta `administrar` na regra do servidor,
             // venha o `"database"` que vier (o furo do 756).
             "ocorrencias" => self.ocorrencias.consultar(p),
+            // O perfil habitual (765, P15): mesmo portao do `ocorrencias` --
+            // esta em `OPS_DO_SERVIDOR`, e o portao unico pergunta
+            // `administrar` na regra do servidor.
+            "perfis" => self.op_perfis(p),
             "encerrar_sessao" | "kill" => self.op_encerrar_sessao(p, sessao),
             "checksum" | "soma_de_verificacao" => self.op_checksum(p, sessao),
             "exportar" | "export" => self.op_exportar(p, sessao),

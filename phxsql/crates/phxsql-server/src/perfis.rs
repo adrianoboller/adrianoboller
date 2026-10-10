@@ -303,6 +303,54 @@ impl Perfis {
     pub fn coringa(&self) -> u64 {
         self.coringa_de_usuarios + self.mapa.values().map(|p| p.coringa).sum::<u64>()
     }
+
+    /// O retrato para a op `perfis` (765, P15): o que a memoria guarda, e so
+    /// isso -- login, nomes de database e tabela, contagens e horas. Nao ha
+    /// valor de linha nem texto de SQL aqui dentro para vazar, e o retrato
+    /// tambem nao inventa um: ele sai do MESMO `para_json` que escreve o
+    /// arquivo, para as duas formas nunca divergirem.
+    ///
+    /// `usuario` vazio devolve todos, em ordem de login. O `maduro` diz se o
+    /// perfil ja acusa (os dois pisos), que e a pergunta de quem olha a tela:
+    /// «este aviso ja vale, ou ainda esta aprendendo?».
+    pub fn retrato(&self, usuario: &str, agora_ms: i64) -> Json {
+        let mut usuarios: Vec<(&String, &Perfil)> = self
+            .mapa
+            .iter()
+            .filter(|(u, _)| usuario.is_empty() || u.as_str() == usuario)
+            .collect();
+        usuarios.sort_by(|a, b| a.0.cmp(b.0));
+        let lista = usuarios
+            .into_iter()
+            .map(|(u, p)| {
+                let maduro =
+                    p.n >= PISO_DE_PEDIDOS && agora_ms - p.primeiro_ms >= PISO_DE_HISTORIA_MS;
+                let mut j = para_json(u, p);
+                if let Json::Objeto(pares) = &mut j {
+                    pares.push(("maduro".to_string(), Json::Bool(maduro)));
+                }
+                j
+            })
+            .collect();
+        Json::objeto(vec![
+            ("perfis", Json::Lista(lista)),
+            (
+                "coringa_de_usuarios",
+                Json::de_u64(self.coringa_de_usuarios),
+            ),
+            ("piso_de_pedidos", Json::de_u64(PISO_DE_PEDIDOS)),
+            (
+                "piso_de_historia_dias",
+                Json::de_u64((PISO_DE_HISTORIA_MS / (24 * HORA_MS)) as u64),
+            ),
+            ("massa_rara_porcento", Json::de_u64(MASSA_RARA_PORCENTO)),
+            ("teto_de_usuarios", Json::de_u64(TETO_DE_USUARIOS as u64)),
+            (
+                "teto_de_combinacoes",
+                Json::de_u64(TETO_DE_COMBINACOES as u64),
+            ),
+        ])
+    }
 }
 
 /// O arquivo inteiro, pela troca duravel: uma queda no meio deixa o de

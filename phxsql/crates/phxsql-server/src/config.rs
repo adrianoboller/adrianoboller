@@ -5662,6 +5662,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 21] = [
             "prazo_comando_modo",
             "modo_dispensa_a_senha",
             "primeiro_cadastro_pelo_administrador",
+            "bloquear_por_codigo",
         ],
     ),
     (
@@ -11909,5 +11910,31 @@ mod testes_da_protecao {
             p.para_json().campo("bloquear_por_codigo"),
             Some(&Json::Bool(true))
         );
+    }
+
+    /// Todo campo que a secao `protecao` LE e conhecido do aviso de campo
+    /// estranho. Medido em 10/10/2026 pela tela (P15): o
+    /// `protecao.bloquear_por_codigo` era lido e saia no `config`, mas faltava
+    /// em `SECOES_CONHECIDAS` -- quem o ligava via a tela dizer «campo que este
+    /// servidor nao conhece, foi IGNORADO» sobre uma guarda que estava
+    /// valendo. A lista sai do proprio `para_json`, e nao de uma copia: o
+    /// campo novo de amanha entra nesta conferencia sozinho. RED: tirar
+    /// `bloquear_por_codigo` da secao derruba o `assert`.
+    #[test]
+    fn todo_campo_lido_da_protecao_e_conhecido() {
+        let Json::Objeto(pares) = Protecao::default().para_json() else {
+            panic!("para_json nao e objeto")
+        };
+        let corpo: Vec<String> = pares
+            .iter()
+            .map(|(k, v)| format!("\"{k}\":{}", v.escrever()))
+            .collect();
+        let j = Json::analisar(&format!(
+            r#"{{"token":"t","protecao":{{{}}}}}"#,
+            corpo.join(",")
+        ))
+        .unwrap();
+        let estranhas = chaves_estranhas(&j);
+        assert!(estranhas.is_empty(), "{estranhas:?}");
     }
 }

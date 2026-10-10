@@ -4,7 +4,7 @@
      `--catraca` reprova se este arquivo nao bater com o que o extrator
      geraria agora; rode o comando sem flag para atualizar. -->
 
-Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 18 hoje, de 475 cognicoes no total.
+Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 19 hoje, de 477 cognicoes no total.
 
 ## A calculada é a coluna protegida por outro nome — e o preenchimento em lote promove o vazamento de linha a vazamento de tabela
 
@@ -15,6 +15,11 @@ Gerado dos `cognicao_*.md` com `**Estado:** FRUTIFERO` -- 18 hoje, de 475 cognic
 
 - Evidencia: `crates/phxsql-server/tests/commit-pelo-soquete.rs::o_commit_contra_a_tabela_congelada_nao_sai_pela_metade`; `ba65032e`
 - Arquivo: [cognicao_camada-nova-antes-da-marca-esconde-a-rede-velha_20261008_1650.md](cognicao_camada-nova-antes-da-marca-esconde-a-rede-velha_20261008_1650.md)
+
+## Campo lido que o aviso de campo estranho chama de «ignorado»
+
+- Evidencia: `crates/phxsql-server/src/config.rs::todo_campo_lido_da_protecao_e_conhecido`
+- Arquivo: [cognicao_campo-lido-que-o-aviso-chama-de-ignorado_20261010_0650.md](cognicao_campo-lido-que-o-aviso-chama-de-ignorado_20261010_0650.md)
 
 ## O carimbo do arquivo faz o papel do catálogo reverso sem cobrar de ninguém — e o medidor do diretório recém-criado não o vê
 

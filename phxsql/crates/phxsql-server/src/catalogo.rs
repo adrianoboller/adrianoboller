@@ -2366,6 +2366,17 @@ pub const OPERACOES: &[Operacao] = &[
         ferramenta_mcp: false,
     },
     Operacao {
+        nome: "perfis",
+        apelidos: &[],
+        resumo: "O perfil habitual de cada usuário (pedido 765): que categoria de \
+                 operação em que database e tabela, quantas vezes, e a que hora UTC -- \
+                 só metadado, nunca valor de linha nem texto de SQL. Só quem administra \
+                 o servidor.",
+        parametros: &[opc("usuario", "string", "um login só; vazio = todos")],
+        exemplo: r#"{"op":"perfis","usuario":"ana"}"#,
+        ferramenta_mcp: false,
+    },
+    Operacao {
         nome: "painel",
         apelidos: &[],
         resumo: "Os números do painel: bancos, tabelas e linhas que quem olha poderia abrir.",

@@ -47,6 +47,19 @@ pub(super) fn material_da_tabela(t: &Table) -> &'static str {
 impl Servidor {
     // ------------------------------------------------------------ operacoes
 
+    /// `perfis` (765, P15): o perfil habitual de cada usuario, como a
+    /// memoria o guarda -- so metadado. O portao e o UNICO: a op esta em
+    /// `OPS_DO_SERVIDOR`, e `administrar` se pergunta na regra do servidor,
+    /// venha o `"database"` que vier. `usuario` filtra um login.
+    pub(super) fn op_perfis(&self, p: &Json) -> Result<Json> {
+        let usuario = p.texto_ou("usuario", "").trim().to_string();
+        let m = self
+            .perfis
+            .lock()
+            .map_err(|_| PhxError::Esquema("a memoria dos perfis envenenou".into()))?;
+        Ok(m.retrato(&usuario, crate::agora_ms()))
+    }
+
     pub(super) fn op_acessos(&self, p: &Json) -> Result<Json> {
         let max = self.limite(p) as usize;
         let todos = LogAcessos::ler(&self.config.log_acessos)?;

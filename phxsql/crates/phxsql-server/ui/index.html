@@ -647,6 +647,11 @@ table.montar.campos .pos{
 }
 .lgpd-cel input[type=checkbox]{width:auto;margin:0;accent-color:var(--laranja)}
 .lgpd-cel select{width:auto;padding:3px 7px;font-size:11px}
+/* O modo de cada linha de `phxsys.protecao` (765/767): o `select{width:100%}`
+   global faria a caixa ocupar a celula inteira e empurrar o «Aplicar» para a
+   linha de baixo. */
+.pt-acao{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.pt-acao select{width:auto;padding:3px 7px;font-size:11.5px}
 /* Coluna de sistema nao se classifica: `softdeleted` e `rownum` sao do motor
    e nao sao dado de ninguem. A celula fica visivelmente inerte em vez de
    sumir, para nao parecer que a coluna foi esquecida. */
@@ -736,6 +741,9 @@ table.montar.campos .pos{
   margin:20px 0 8px;display:flex;align-items:center;gap:10px;font-weight:600;
 }
 .secao em{font-style:normal;text-transform:none;letter-spacing:0}
+/* O nome que vai DENTRO de um titulo de secao -- a tabela, o login -- e dado:
+   `phxsys.protecao` em caixa alta seria outro nome (a licao do «BLUMENAU»). */
+.secao code,.secao .crua{text-transform:none;letter-spacing:0}
 .mini{
   font-family:inherit;font-size:10.5px;cursor:pointer;padding:3px 8px;
   background:var(--painel-2);border:1px solid var(--linha-forte);border-radius:4px;
@@ -3180,6 +3188,7 @@ async function montarArvore(abrirPainel = true) {
         ["acessos","Acessos","◈","tela.acessos"],
         ["ocorrencias","Ocorrências","⚠","tela.ocorrencias"],
         ["bloqueios","Bloqueios","⛔","tela.bloqueios"],
+        ["protecao","Proteção","⛨","tela.protecao"],
         ["idiomas","Idiomas","⚑","tela.idiomas"]])
     html += `<div class="no" data-admin="${chave}"><span class="ic">${ic}</span>${
       esc(txt(ch, rotulo))}</div>`;
@@ -4565,6 +4574,296 @@ async function telaOcorrencias(p, aindaEMinha) {
   };
 }
 
+/* ======================================== a tela de Proteção (765/766/767)
+   O que a camada de proteção LÊ, num lugar só, e o que dá para mudar dela
+   pela tela:
+
+   * a tabela `phxsys.protecao` -- uma linha por comando da lista de perigo,
+     com o modo. Mudar o modo é uma escrita comum (`atualizar`) na tabela, e
+     o servidor decide se ela BAIXA a guarda (P13): baixar pede a segunda
+     senha, e quem abre o diálogo é a `api()`, o funil único -- esta tela não
+     tem um segundo diálogo de senha. Subir não pede nada;
+   * o botão de semear quando a tabela falta. Sem a tabela, todo comando da
+     lista vale `proteger` -- a tela diz isso, em vez de mostrar uma grade
+     vazia que pareceria «nada protegido»;
+   * o perfil habitual de cada usuário (P7), pela op `perfis`: só
+     metadado. A hora vem em UTC do motor, que não tem fuso, e a tela a
+     converte para a hora local de quem olha.
+
+   O dado que aparece aqui -- o nome da op, o login, a database e a tabela --
+   é DADO: entra em `<code>` ou com a classe `crua`, nunca num rótulo que o
+   CSS global ponha em caixa alta. */
+
+/** Um diálogo da marca com vários campos -- o `perguntarTexto` de mais de um
+ *  campo. Devolve `{ id: valor }` ou `null` quando a pessoa cancelou. A
+ *  senha que passar por aqui sai do campo direto para quem chamou, e os
+ *  campos se apagam antes de o diálogo morrer (a lição do 339). */
+function perguntarCampos({ titulo, sub = "", campos, textoOk, classeOk = "alterar" }) {
+  return new Promise(resolve => {
+    const fundo = document.createElement("div");
+    fundo.className = "sobre";
+    fundo.innerHTML = phxHTML(`
+      <div class="caixa" role="dialog" aria-modal="true" aria-label="${esc(titulo)}" id="dlgCampos">
+        <h3>${esc(titulo)}</h3>
+        ${sub ? `<div class="sub">${esc(sub)}</div>` : ""}
+        ${campos.map(c => `<label class="cmp"><span>${esc(c.rotulo)}</span>
+          <input id="${esc(c.id)}" class="campo" type="${esc(c.tipo || "text")}"
+            ${c.min != null ? `min="${esc(String(c.min))}"` : ""} ${c.max != null ? `max="${esc(String(c.max))}"` : ""}
+            ${c.tipo === "password" ? `autocomplete="new-password"` : `autocomplete="off"`}
+            value="${esc(c.valor == null ? "" : String(c.valor))}">
+          ${c.legenda ? `<span class="leg">${esc(c.legenda)}</span>` : ""}</label>`).join("")}
+        <div id="pcRecado"></div>
+        <div class="acoes">
+          <button class="botao secundario" id="pcNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
+          <button class="botao ${esc(classeOk)}" id="pcSim">${esc(textoOk)}</button>
+        </div>
+      </div>`);
+    document.body.appendChild(fundo);
+    const fechar = valor => {
+      document.removeEventListener("keydown", fuga);
+      fundo.querySelectorAll("input").forEach(i => { i.value = ""; });
+      fundo.remove();
+      resolve(valor);
+    };
+    function fuga(ev) { if (ev.key === "Escape") fechar(null); }
+    document.addEventListener("keydown", fuga);
+    fundo.onclick = ev => { if (ev.target === fundo) fechar(null); };
+    const confirmar = ev => {
+      if (ev) ev.preventDefault();
+      const r = {};
+      fundo.querySelectorAll("input").forEach(i => { r[i.id] = i.value; });
+      fechar(r);
+    };
+    fundo.querySelector("#pcNao").onclick = ev => { ev.preventDefault(); fechar(null); };
+    fundo.querySelector("#pcSim").onclick = confirmar;
+    fundo.querySelectorAll("input").forEach(i => {
+      i.onkeydown = ev => { if (ev.key === "Enter") confirmar(ev); };
+    });
+    const primeiro = fundo.querySelector("input");
+    if (primeiro) primeiro.focus();
+  });
+}
+
+/** Um pedido que pode exigir a segunda senha FORA do funil automático da
+ *  `api()` -- o `senha_execucao_definir`, que a `api()` não reabre porque é
+ *  a própria op do diálogo de cadastro. Pelo NOME do erro, nunca pela frase. */
+async function apiComSenhaDeExecucao(op, params) {
+  try {
+    return await api(op, params);
+  } catch (e) {
+    if (e.nome !== "SENHA_DE_EXECUCAO_EXIGIDA") throw e;
+    if (!(await dialogoSenhaDeExecucao(e.message))) throw e;
+    return api(op, params);
+  }
+}
+
+/** Os três modos de uma linha, do mais ao menos estrito. O VALOR é o que se
+ *  grava; o rótulo é só o que a pessoa lê. */
+const MODOS_DA_PROTECAO = [
+  { v:"proteger", rot:"proteger — exige a segunda senha", txt:"tela.ptc_modo_proteger" },
+  { v:"observar", rot:"observar — vai à trilha", txt:"tela.ptc_modo_observar" },
+  { v:"desligado", rot:"desligado — sai da trilha", txt:"tela.ptc_modo_desligado" },
+];
+
+async function telaProtecao(p, aindaEMinha) {
+  // As três leituras não dependem uma da outra, e uma que recusa não apaga as
+  // outras: o perfil de quem não administra o servidor volta recusado e a
+  // tabela continua aparecendo.
+  const [tabs, perf] = await Promise.all([
+    api("tabelas", { database: "phxsys" }).catch(() => ({ tabelas: [] })),
+    api("perfis").catch(e => ({ erro: String(e && e.message || e) })),
+  ]);
+  const existe = (tabs.tabelas || []).includes("protecao");
+  let linhas = [];
+  let erroTabela = "";
+  if (existe) {
+    try {
+      linhas = (await api("varrer", { database: "phxsys", tabela: "protecao", max: 1000 })).linhas || [];
+    } catch (e) { erroTabela = String(e && e.message || e); }
+  }
+  if (!aindaEMinha()) return;
+
+  const conta = m => linhas.filter(l => String(l.modo || "").trim().toLowerCase() === m).length;
+  // Vazio ou torto vale `proteger` no motor (`Modo::de_texto`): a ficha conta
+  // assim também, senão diria «0 em proteger» numa tabela com a coluna vazia.
+  const emProteger = linhas.length - conta("observar") - conta("desligado");
+  const perfis = perf.perfis || [];
+
+  p.innerHTML = phxHTML(`
+    <div class="fichas">
+      ${ficha(existe ? fmt(linhas.length) : "—", txt("tela.ptc_fc_linhas", "comandos na tabela"))}
+      ${ficha(existe ? fmt(emProteger) : txt("tela.ptc_fc_todos", "todos"), txt("tela.ptc_fc_proteger", "em proteger"))}
+      ${ficha(fmt(conta("observar")), txt("tela.ptc_fc_observar", "em observar"))}
+      ${ficha(fmt(conta("desligado")), txt("tela.ptc_fc_desligado", "desligados"))}
+      ${ficha(perf.erro ? "—" : fmt(perfis.length), txt("tela.ptc_fc_perfis", "perfis aprendidos"))}
+    </div>
+
+    <h3 class="secao">${esc(txt("tela.ptc_h_comandos", "Comandos perigosos"))} <code>phxsys.protecao</code></h3>
+    <p class="leg">${marcado(txt("tela.ptc_leg_comandos",
+      "Sem a **segunda senha**, comando da lista não executa, em modo nenhum. O modo decide o **monitoramento**: `proteger` e `observar` vão à trilha, `desligado` sai dela. Baixar uma linha pede a segunda senha; subir, não."))}</p>
+    ${existe ? (erroTabela ? `<div class="aviso mal">${esc(erroTabela)}</div>` : `<div id="gradePtModos"></div>`)
+      : `<div class="aviso">${marcado(txt("tela.ptc_sem_tabela",
+          "A tabela **ainda não existe**: todo comando da lista vale `proteger`. Semear cria a tabela com uma linha em `proteger` por comando — nunca toca linha que já existe."))}</div>
+         <div class="acoes"><button class="botao incluir" id="btPtSemear">${
+           esc(txt("tela.ptc_bt_semear", "Semear a tabela de proteção"))}</button></div>`}
+
+    <h3 class="secao">${esc(txt("tela.ptc_h_perfil", "Perfil habitual por usuário"))}</h3>
+    ${perf.erro ? `<div class="aviso mal">${esc(perf.erro)}</div>` : `
+    <p class="leg">${marcado(txt("tela.ptc_leg_perfil",
+        "**Só observa.** Aprende com a telemetria ligada, guarda só metadado — categoria, database, tabela e hora — e acusa `ForaDoPerfil` depois de {dias} dias e {n} pedidos do usuário."),
+        { dias: String(perf.piso_de_historia_dias ?? 7), n: fmt(perf.piso_de_pedidos ?? 200) })}</p>
+    ${perfis.length ? `<div id="gradePtPerfis"></div>`
+      : `<div class="vazio">${esc(txt("tela.ptc_sem_perfil", "nenhum perfil aprendido ainda"))}</div>`}
+    <div id="ptPerfilDetalhe"></div>`}
+
+    <p class="cores-acao"><b><i class="u-fundo-incluir"></i>${esc(txt("tela.ptc_leg_semear", "semear"))}</b>
+      <b><i class="u-fundo-alterar"></i>${esc(txt("tela.ptc_leg_aplicar", "mudar o modo"))}</b>
+      <b><i class="u-fundo-consultar"></i>${esc(txt("tela.acl_consultar", "consultar"))}</b></p>`);
+
+  const recarregar = () => abrirAdmin("protecao").catch(e => avisar(`${e}`, true));
+
+  const semear = $("#btPtSemear");
+  if (semear) semear.onclick = async () => {
+    try {
+      const r = await api("protecao_semear");
+      avisar(preencher(txt("tela.g_ptc_semeada", "tabela de proteção semeada: {n} linha(s) em proteger"),
+        { n: r.semeadas }));
+    } catch (e) { avisar(`${e}`, true); }
+    recarregar();
+  };
+
+  if (existe && !erroTabela) {
+    const opcoes = modo => MODOS_DA_PROTECAO.map(m =>
+      `<option value="${m.v}" ${m.v === modo ? "selected" : ""}>${esc(txt(m.txt, m.rot))}</option>`).join("");
+    PhxGrid.criar("#gradePtModos", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "admprotecao",
+      nomeVista: "adm-protecao",
+      colunas: [
+        { campo:"op", titulo:txt("tela.col_operacao", "operação"), fixa:"esq",
+          formato:v => `<code>${esc(v)}</code>` },
+        { campo:"categoria", titulo:txt("tela.ptc_col_categoria", "categoria"),
+          formato:v => `<code>${esc(v || "")}</code>` },
+        // O valor GRAVADO, como está: o vazio aparece vazio, com o «vale
+        // proteger» ao lado -- e nunca trocado por «proteger», que mentiria
+        // sobre o que a célula tem.
+        { campo:"modo", titulo:txt("tela.ptc_col_modo", "modo gravado"),
+          formato:v => String(v || "").trim()
+            ? `<code>${esc(v)}</code>`
+            : `<span class="leg">${esc(txt("tela.ptc_modo_vazio", "(vazio — vale proteger)"))}</span>` },
+        { campo:"__acao", titulo:"", ordenavel:false, filtravel:false,
+          formato:(_, l) => {
+            const modo = String(l.modo || "").trim().toLowerCase();
+            return `<span class="pt-acao">
+              <select class="pt-modo" data-rowid="${esc(String(l.rowid))}" data-modo="${esc(String(l.modo ?? ""))}"
+                aria-label="${esc(preencher(txt("tela.ptc_al_modo", "modo de {op}"), { op: l.op }))}">${opcoes(modo)}</select>
+              <button class="botao mini alterar bt-pt-aplicar" data-rowid="${esc(String(l.rowid))}">${
+                esc(txt("tela.ptc_bt_aplicar", "Aplicar"))}</button></span>`;
+          } },
+      ],
+      dados: linhas,
+      pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    });
+    // Delegacao: o corpo da PhxGrid e reescrito a cada ordenacao e filtro.
+    $("#gradePtModos").addEventListener("click", async ev => {
+      const b = ev.target.closest(".bt-pt-aplicar");
+      if (!b) return;
+      const sel = b.parentElement.querySelector(".pt-modo");
+      const rowid = Number(b.dataset.rowid);
+      const novo = sel.value;
+      try {
+        // A janela entre abrir a tela e clicar: a linha e relida COM a
+        // versao, e se o modo mudou nesse meio a tela recarrega em vez de
+        // gravar por cima -- a mesma guarda de conflito da ficha.
+        const atual = await api("ler", { database: "phxsys", tabela: "protecao", rowid, com_versao: true });
+        if (!atual || String((atual.linha || {}).modo ?? "") !== sel.dataset.modo) {
+          avisar(txt("tela.g_ptc_mudou", "a linha mudou desde que esta tela a leu — recarregada, confira e aplique de novo"), true);
+          return recarregar();
+        }
+        // O `atualizar` grava a LINHA inteira: a coluna que nao vai no
+        // pedido vira NULL. Entao vao todas as que se gravam, como estao
+        // agora, e so o modo muda -- a mesma regra da ficha (`valores()`).
+        const e = await api("esquema", { database: "phxsys", tabela: "protecao" });
+        const valores = {};
+        for (const c of e.colunas || []) {
+          if (c.sistema || c.calculada) continue;
+          valores[c.nome] = c.nome.toLowerCase() === "modo" ? novo
+            : ((atual.linha || {})[c.nome] ?? null);
+        }
+        await api("atualizar", { database: "phxsys", tabela: "protecao", rowid,
+                                 valores, versao: atual.versao });
+        avisar(preencher(txt("tela.g_ptc_aplicado", "{op}: modo {modo}"),
+          { op: (atual.linha || {}).op || "", modo: novo }));
+      } catch (e) { avisar(`${e}`, true); }
+      recarregar();
+    });
+  }
+
+  if (!perf.erro && perfis.length) {
+    const dt = ms => new Date(ms).toLocaleString(document.documentElement.lang || undefined,
+      { dateStyle: "short", timeStyle: "short" });
+    PhxGrid.criar("#gradePtPerfis", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      lembrar: "admperfis",
+      nomeVista: "adm-perfis",
+      colunas: [
+        { campo:"__ver", titulo:"", ordenavel:false, filtravel:false, largura:70,
+          formato:(_, u) => `<button class="botao mini consultar bt-pt-perfil" data-u="${esc(u.usuario)}">${
+            esc(txt("tela.ptc_bt_ver", "ver"))}</button>` },
+        { campo:"usuario", titulo:txt("tela.col_usuario", "usuário"), formato:v => `<span class="crua">${esc(v)}</span>` },
+        { campo:"n", titulo:txt("tela.col_pedidos", "pedidos"), tipo:"numero" },
+        { campo:"primeiro_ms", titulo:txt("tela.col_desde", "desde"), formato:v => esc(dt(v)) },
+        { campo:"ncomb", titulo:txt("tela.ptc_col_combinacoes", "combinações"), tipo:"numero" },
+        { campo:"maduro", titulo:txt("tela.col_estado", "estado"),
+          formato:v => v ? `<span class="pino ok">${esc(txt("tela.ptc_maduro", "já acusa"))}</span>`
+                         : `<span class="pino nao">${esc(txt("tela.ptc_aprendendo", "aprendendo"))}</span>` },
+        { campo:"coringa", titulo:txt("tela.ptc_col_coringa", "fora do teto"), tipo:"numero" },
+      ],
+      dados: perfis.map(u => ({ ...u, ncomb: (u.combinacoes || []).length })),
+      pagina: { tamanho: 100, opcoes: [50, 100, 200] },
+    });
+    $("#gradePtPerfis").addEventListener("click", ev => {
+      const b = ev.target.closest(".bt-pt-perfil");
+      if (!b) return;
+      const u = perfis.find(x => x.usuario === b.dataset.u);
+      if (u) desenharPerfil(u);
+    });
+  }
+
+  /** O detalhe de um perfil: as 24 horas na hora LOCAL de quem olha, e as
+   *  combinações. O motor guarda UTC; o deslocamento é o deste navegador. */
+  function desenharPerfil(u) {
+    const desloc = -Math.round(new Date().getTimezoneOffset() / 60);
+    const horas = u.horas || [];
+    const itens = [];
+    for (let local = 0; local < 24; local++) {
+      const utc = ((local - desloc) % 24 + 24) % 24;
+      itens.push({ nome: `${String(local).padStart(2, "0")}h`, valor: Number(horas[utc] || 0) });
+    }
+    const fuso = `UTC${desloc >= 0 ? "+" : "−"}${Math.abs(desloc)}`;
+    $("#ptPerfilDetalhe").innerHTML = phxHTML(`
+      <h3 class="secao">${esc(txt("tela.ptc_h_perfil_de", "Perfil de"))} <span class="crua">${esc(u.usuario)}</span></h3>
+      <p class="leg">${esc(preencher(txt("tela.ptc_leg_horas", "pedidos por hora, na hora local deste navegador ({fuso})"), { fuso }))}</p>
+      ${barras(itens, { titulo: txt("tela.ptc_al_horas", "pedidos por hora") })}
+      <div id="gradePtCombinacoes"></div>`);
+    PhxGrid.criar("#gradePtCombinacoes", {
+      agrupavel: true, buscaGlobal: true, filterRow: true,
+      colunas: [
+        { campo:"categoria", titulo:txt("tela.ptc_col_categoria", "categoria"), formato:v => `<code>${esc(v)}</code>` },
+        { campo:"database", titulo:txt("tela.col_database", "database"), formato:v => `<span class="crua">${esc(v)}</span>` },
+        { campo:"tabela", titulo:txt("tela.col_tabela", "tabela"), formato:v => `<span class="crua">${esc(v)}</span>` },
+        { campo:"pedidos", titulo:txt("tela.col_pedidos", "pedidos"), tipo:"numero" },
+      ],
+      dados: (u.combinacoes || []).map(([categoria, database, tabela, pedidos]) =>
+        ({ categoria, database, tabela, pedidos })),
+      // Uma pagina so: o perfil guarda no maximo `teto_de_combinacoes`, e a
+      // combinacao que procurei nao pode estar escondida na pagina dois.
+      pagina: { tamanho: perf.teto_de_combinacoes || 256, opcoes: [50, 100, perf.teto_de_combinacoes || 256] },
+    });
+    $("#ptPerfilDetalhe").scrollIntoView({ block: "nearest" });
+  }
+}
+
 async function abrirAdmin(qual) {
   const minhaVez = tomarPainel();
   const aindaEMinha = () => aindaNoPainel(minhaVez);
@@ -4684,6 +4983,11 @@ async function abrirAdmin(qual) {
       $("#subtitulo").textContent = txt("tela.oc_sub",
         "ocorrencias.log · cada alarme com quando, quem e de onde, já redigido");
       await telaOcorrencias(p, aindaEMinha);
+    } else if (qual === "protecao") {
+      $("#titulo").textContent = txt("tela.protecao", "Proteção");
+      $("#subtitulo").textContent = txt("tela.ptc_sub",
+        "pedidos 765, 766 e 767 · o que exige a segunda senha, e o hábito de cada usuário");
+      await telaProtecao(p, aindaEMinha);
     } else if (qual === "idiomas") {
       $("#titulo").textContent = txt("tela.idiomas", "Idiomas");
       $("#subtitulo").textContent = txt("tela.idi_sub",
@@ -5011,6 +5315,9 @@ async function desenharFichaUsuario() {
      <div class="acoes">
        <button class="botao ${r.novo ? "incluir" : "alterar"}" id="fu_salvar">${
          esc(r.novo ? txt("tela.incluir","Incluir") : txt("tela.salvar","Salvar"))}</button>
+       ${r.novo ? "" : `<button class="botao alterar" id="fu_senha_exec"
+           title="${esc(txt("tela.fu_senha_exec_dica","a segunda senha deste usuário, para os comandos perigosos — não é a de login"))}">${
+           esc(txt("tela.fu_senha_exec","Definir a senha de execução…"))}</button>`}
        ${r.novo ? "" : `<button class="botao excluir" id="fu_excluir">${
          esc(txt("tela.bt_excluir_usuario","Excluir usuário"))}</button>`}
        <button class="botao secundario" id="fu_voltar">${esc(txt("tela.ficha_voltar","Voltar"))}</button>
@@ -5100,6 +5407,33 @@ function ligarFichaUsuario() {
 
   $("#fu_voltar").onclick = ev => {
     ev.preventDefault(); est.rascUsuario = null; abrirAdmin("usuarios");
+  };
+
+  // A segunda senha de OUTRO usuario (767): desde a P12 so o primeiro
+  // administrador do servidor se cadastra sozinho, e todos os outros a
+  // recebem daqui. O servidor exige a sessao de quem define LIBERADA pela
+  // propria segunda senha -- o 4009 abre o dialogo de sempre e o pedido se
+  // refaz. A senha nova nunca fica no rascunho da ficha.
+  if ($("#fu_senha_exec")) $("#fu_senha_exec").onclick = async ev => {
+    ev.preventDefault();
+    const v = await perguntarCampos({
+      titulo: preencher(txt("tela.tt_senha_exec_de","Senha de execução de {login}"), {login: r.login}),
+      sub: txt("tela.fu_senha_exec_sub",
+        "Cadastra ou redefine a segunda senha deste usuário. Ela não pode ser a de login, e o servidor diz o tamanho mínimo se faltar. Você precisa estar com a sua liberada."),
+      campos: [
+        { id:"fsNova", rotulo:txt("tela.rot_nova_senha_execucao_curta","Nova senha de execução"), tipo:"password" },
+        { id:"fsConfirma", rotulo:txt("tela.rot_confirmar_senha","Repita a nova senha"), tipo:"password" },
+      ],
+      textoOk: txt("tela.fu_senha_exec_ok","Definir"),
+    });
+    if (!v) return;
+    if (v.fsNova !== v.fsConfirma)
+      return avisar(txt("tela.g_senhas_nao_conferem","as senhas não conferem"), true);
+    try {
+      await apiComSenhaDeExecucao("senha_execucao_definir",
+        { login: r.login, nova_senha_execucao: v.fsNova });
+      avisar(preencher(txt("tela.g_senha_exec_definida","senha de execução de {login} definida"), {login: r.login}));
+    } catch (e) { avisar(`${e}`, true); }
   };
 
   if ($("#fu_excluir")) $("#fu_excluir").onclick = ev => {
@@ -8613,6 +8947,7 @@ async function verConfigServidor() {
   const vez = tomarPainel();
   const [c, p] = await Promise.all([api("config"), api("ping")]);
   const seg = c.seguranca || {};
+  const pt = c.protecao || {};
   const rep = c.replicacao || {};
   const web = c.web || {};
   const al = c.alertas || {};
@@ -8773,6 +9108,23 @@ async function verConfigServidor() {
         "sem ela o diário não replica"],
        ["usuarios", c.usuarios, "cadastro e poder de cada um: mexe em credencial"],
      ])}
+
+     ${grupoDeAjustes(txt("tela.cfg_pt_titulo", "Proteção (765, 766, 767) — só pelo arquivo, e o que cada um quebra"), [
+       ["protecao.bloquear_por_codigo", simNao(pt.bloquear_por_codigo), txt("tela.cfg_pt_codigo",
+         "Ligado, o pedido com forma de injeção conta como tentativa e tranca o IP pela política de bloqueio (e pelo firewall, se ligado). Nasce desligado: a aplicação que monta SQL por concatenação trancaria o próprio IP.")],
+       ["protecao.primeiro_cadastro_pelo_administrador", simNao(pt.primeiro_cadastro_pelo_administrador ?? true), txt("tela.cfg_pt_cadastro",
+         "Ligado (fábrica), só o primeiro administrador cadastra a própria segunda senha; os outros a recebem de um administrador liberado. Desligado, a senha de login basta — e quem a roubou cadastra a segunda antes do dono.")],
+       ["protecao.prazo_comando_ms", pt.prazo_comando_ms ?? 0, txt("tela.cfg_pt_prazo",
+         "Prazo de todo comando, em ms; 0 é sem prazo (fábrica: o tempo que uma varredura segura a trava não foi medido). Com prazo, a operação que passar dele é cancelada — inclusive o relatório legítimo.")],
+       ["protecao.prazo_comando_modo", pt.prazo_comando_modo || "proteger", txt("tela.cfg_pt_prazo_modo",
+         "proteger cancela no prazo; observar deixa terminar e só registra a ocorrência.")],
+       ["protecao.modo_dispensa_a_senha", simNao(pt.modo_dispensa_a_senha), txt("tela.cfg_pt_dispensa",
+         "Desligado (fábrica), a linha em observar ou desligado de phxsys.protecao só muda o monitoramento, e a segunda senha continua exigida. Ligado, ela tira o comando da exigência.")],
+       ["seguranca.poupar_loopback", simNao(seg.poupar_loopback ?? true), txt("tela.cfg_pt_loopback",
+         "Ligado (fábrica), 127.0.0.0/8 nunca é bloqueado, para o banco não se trancar para fora. Desligado, cinco senhas erradas da própria máquina trancam a tela e a TV.")],
+     ])}
+     <p class="leg">${esc(txt("tela.cfg_pt_porque",
+       "Nenhum destes se grava pela tela: uma sessão roubada não pode baixar a guarda que existe para pará-la."))}</p>
 
      <div class="nota">
        <p><strong>O que esta tela grava é uma lista fechada, e quem a declara é
@@ -12256,6 +12608,30 @@ const PINO_DO_ESTADO = {
   nunca_rodou: { cor:"ndx", rot:"nunca rodou", txt:"tela.jb_est_nunca_rodou" },
 };
 
+/** Dá ao job a senha de execução (765/767, P12): quantas corridas e por
+ *  quantos dias, os dois com o teto do servidor. Quem autoriza prova a
+ *  PRÓPRIA segunda senha -- e quem a pede é a `api()`, pelo 4009, no diálogo
+ *  de sempre. Revogar fica no botão vermelho ao lado, e não pede nada. */
+async function autorizarJob(nome) {
+  const r = await perguntarCampos({
+    titulo: preencher(txt("tela.tt_autorizar_job","Autorizar o job {nome}"), {nome}),
+    sub: txt("tela.jb_autorizar_sub",
+      "O job passa a rodar o comando perigoso dele sem pedir a segunda senha, só este pedido e só sob o usuário dele. Regravar o job com outro pedido apaga a autorização."),
+    campos: [
+      { id:"jaUsos", rotulo:txt("tela.rot_jb_usos","corridas que libera"), tipo:"number", min:1, valor:1,
+        legenda:txt("tela.leg_jb_teto","o servidor recusa acima do teto dele, e diz qual") },
+      { id:"jaDias", rotulo:txt("tela.rot_jb_dias","dias de validade"), tipo:"number", min:1, valor:30 },
+    ],
+    textoOk: txt("tela.jb_autorizar_ok","Autorizar"),
+  });
+  if (!r) return;
+  try {
+    const res = await api("job_autorizar", { nome, usos: Number(r.jaUsos), dias: Number(r.jaDias) });
+    avisar(preencher(txt("tela.g_job_autorizado","job {nome} autorizado: {usos} corrida(s)"), {nome, usos: res.usos}));
+  } catch (e) { avisar(`${e}`, true); }
+  return telaJobs();
+}
+
 async function telaJobs() {
   const vez = tomarPainel();
   const j = await api("jobs", { historico: 40 });
@@ -12296,6 +12672,18 @@ async function telaJobs() {
     if (x.parado) return `<div>${quando}</div><span class="pino mal">${esc(txt("tela.jb_parado","parado"))}</span>`;
     if (x.vencido) return `<div>${quando}</div><div class="leg">${esc(txt("tela.jb_proxima_volta","na próxima volta do relógio"))}</div>`;
     return `<div>${quando}</div>`;
+  };
+  // A autorizacao do job: o que esta gravado, com a validade lida AGORA. A
+  // vencida e a sem uso continuam aparecendo (riscadas no texto, nao
+  // escondidas): a pessoa precisa saber por que o job voltou a recusar.
+  const celAutorizacao = x => {
+    const a = x.autorizacao;
+    if (!a) return `<span class="leg">${esc(txt("tela.jb_sem_autorizacao","não autorizado"))}</span>`;
+    const vale = a.usos > 0 && Date.now() < a.ate_ms;
+    return `<span class="pino ${vale ? "ok" : "mal"}">${esc(vale
+        ? txt("tela.jb_autorizado","autorizado") : txt("tela.jb_autorizacao_vencida","vencida"))}</span>
+      <div class="leg">${esc(preencher(txt("tela.jb_autorizacao_resto","{usos} corrida(s) · até {ate} · por {por}"),
+        { usos: fmt(a.usos), ate: dt(a.ate_ms), por: a.por || "—" }))}</div>`;
   };
   // O quadro do aviso por e-mail diz a verdade da configuração: quem será
   // avisado, ou o que falta para alguém ser. Sem bloco de e-mail, nada muda —
@@ -12370,12 +12758,22 @@ async function telaJobs() {
           formato:v => v ? esc(v) : `<span class="leg">${esc(txt("tela.jb_sem_cadastro","sem cadastro"))}</span>` },
         { campo:"ultima", titulo:txt("tela.col_ultima_corrida","última corrida"), formato:(_, l) => celUltima(l) },
         { campo:"proximo_ms", titulo:txt("tela.col_proxima","próxima"), formato:(_, l) => celProxima(l) },
+        // A senha de execucao DADA ao job (765/767, P12): quantas corridas
+        // ainda libera e ate quando. A impressao amarra ao pedido de agora, e
+        // o servidor a confere -- a tela so diz o que esta gravado.
+        { campo:"__autorizacao", titulo:txt("tela.jb_col_autorizacao","senha de execução"),
+          ordenavel:false, filtravel:false, formato:(_, l) => celAutorizacao(l) },
         { campo:"__acoes", titulo:"", ordenavel:false, filtravel:false,
           formato:(_, l) => `
             <button class="botao mini alterar bt-rodar" title="${esc(txt("tela.jb_rodar_dica","roda agora, fora da agenda"))}"
               data-n="${esc(l.nome)}">${esc(txt("tela.jb_rodar","Rodar"))}</button>
             <button class="botao mini alterar bt-ligar" data-n="${esc(l.nome)}"
               data-l="${l.ligado ? 0 : 1}">${esc(l.ligado ? txt("tela.jb_desligar","Desligar") : txt("tela.jb_ligar","Ligar"))}</button>
+            <button class="botao mini alterar bt-autorizar" data-n="${esc(l.nome)}"
+              title="${esc(txt("tela.jb_autorizar_dica","dá ao job a sua segunda senha, por um teto de corridas e de dias"))}">${
+              esc(txt("tela.jb_autorizar","Autorizar…"))}</button>
+            ${l.autorizacao ? `<button class="botao mini excluir bt-revogar" data-n="${esc(l.nome)}">${
+              esc(txt("tela.jb_revogar","Revogar"))}</button>` : ""}
             <button class="botao mini excluir bt-excluir" data-n="${esc(l.nome)}">${esc(txt("tela.ficha_excluir","Excluir"))}</button>` },
       ],
       dados: jobs,
@@ -12401,6 +12799,18 @@ async function telaJobs() {
             avisar(txt("tela.g_ligado_relogio_jobs_nao_subiu",
               "ligado — mas o relógio de jobs não subiu neste arranque: reinicie para ele andar sozinho, ou rode pela tela."), true);
           }
+        } catch (e) { avisar(`${e}`, true); }
+        return telaJobs();
+      }
+
+      const bAutorizar = ev.target.closest(".bt-autorizar");
+      if (bAutorizar) return autorizarJob(bAutorizar.dataset.n);
+
+      const bRevogar = ev.target.closest(".bt-revogar");
+      if (bRevogar) {
+        try {
+          await api("job_autorizar", { nome: bRevogar.dataset.n, revogar: true });
+          avisar(preencher(txt("tela.g_job_revogado","job {nome}: autorização revogada"), {nome: bRevogar.dataset.n}));
         } catch (e) { avisar(`${e}`, true); }
         return telaJobs();
       }

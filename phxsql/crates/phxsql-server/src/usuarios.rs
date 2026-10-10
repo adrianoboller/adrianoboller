@@ -423,6 +423,9 @@ impl Atividade {
             // leva de proposito. Ver o login dos outros e poder de quem
             // administra (o mesmo do `acessos`), e nao de quem so monitora.
             "ocorrencias" => Atividade::Administrar,
+            // O perfil habitual (765, P15) diz que tabelas cada usuario usa e
+            // a que horas: e o movimento dos outros, o poder do `acessos`.
+            "perfis" => Atividade::Administrar,
             // `config_gravar` esta aqui declarado, e nao so caindo no `_`:
             // a operacao que reescreve o config.json e a ultima que deveria
             // depender do padrao para negar. A op ainda confere por dentro.
@@ -603,6 +606,10 @@ pub const OPS_DO_SERVIDOR: &[&str] = &[
     "acessos",
     // O fato de seguranca de todas as bases, com login e IP (495, F9).
     "ocorrencias",
+    // O perfil habitual de cada usuario (765, P15): o login e as tabelas
+    // que cada um usa e a que horas -- o movimento dos outros, como o
+    // `acessos`.
+    "perfis",
     "ips",
     "estatisticas",
     "estatisticas_uso",

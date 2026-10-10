@@ -72,6 +72,7 @@
 #btPinar
 #btPrever
 #btProcTexto
+#btPtSemear
 #btRecarregarTabs
 #btRestaurarFicha
 #btRodar
@@ -128,6 +129,7 @@
 #fu_addBaseBtn
 #fu_excluir
 #fu_salvar
+#fu_senha_exec
 #fu_voltar
 #iaAprovar
 #iaCriar
@@ -159,6 +161,8 @@
 #opBackup
 #opConferir
 #opRestaurar
+#pcNao
+#pcSim
 #pfLigar
 #pfLimpar
 #pfParar
@@ -217,6 +221,7 @@
 .aqt-k-encerrar
 .aqt-k-fechar
 .botao
+.bt-autorizar
 .bt-editar
 .bt-editar-usuario
 .bt-explicar-oc
@@ -226,6 +231,9 @@
 .bt-kill
 .bt-killweb
 .bt-lg
+.bt-pt-aplicar
+.bt-pt-perfil
+.bt-revogar
 .bt-seq
 .cf-cor-zero
 .conex-cabeca
@@ -371,8 +379,8 @@
 [data-i="8"]
 [data-i="9"]
 [data-i]
-[data-id="1791632612215010"]
-[data-id="1791632612215022"]
+[data-id="1791635672105009"]
+[data-id="1791635672105023"]
 [data-id]
 [data-idi="Frances"]
 [data-idi]
@@ -390,8 +398,8 @@
 [data-kill="20"]
 [data-kill="4"]
 [data-kill]
-[data-killweb="5732a084"]
-[data-killweb="bf3c73b7"]
+[data-killweb="072552f8"]
+[data-killweb="427fce8e"]
 [data-killweb]
 [data-login="fichausuc"]
 [data-login="fichausue"]
@@ -414,6 +422,8 @@
 [data-n="2"]
 [data-n="batjobc_ping"]
 [data-n="batjobe_ping"]
+[data-n="protc_job"]
+[data-n="prote_job"]
 [data-n]
 [data-nivel="estacoes"]
 [data-nivel="todas"]
@@ -429,7 +439,7 @@
 [data-op="7"]
 [data-op="8"]
 [data-op]
-[data-origem="/tmp/phx-bateria-zAqBrc/backups"]
+[data-origem="/tmp/phx-bateria-q5HvLR/backups"]
 [data-origem]
 [data-p="1"]
 [data-p="2"]
@@ -448,6 +458,7 @@
 [data-rodape="1"]
 [data-rodape]
 [data-rowid="1"]
+[data-rowid="7"]
 [data-rowid]
 [data-sug="0"]
 [data-sug]
@@ -474,8 +485,10 @@
 [data-todos="abrir"]
 [data-todos="fechar"]
 [data-todos]
-[data-uuid="01a125a5-580d-7267-b766-94ce967b3161"]
-[data-uuid="01a125ab-0459-768c-b9c7-62a02e7e5136"]
+[data-u="adm"]
+[data-u]
+[data-uuid="01a125d4-0a63-7109-a9c0-8e93b3167835"]
+[data-uuid="01a125d9-fc38-761c-8a9f-cc9b16967d83"]
 [data-uuid]
 [data-x="0"]
 [data-x="1"]
