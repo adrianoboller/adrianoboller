@@ -545,6 +545,29 @@ impl Contadores for ContadorPrevisto<'_> {
     }
 }
 
+/// O que os eventos anteriores de UM grupo da replica ja teriam feito numa
+/// tabela -- o estado do [`Table::ensaiar_evento`] (pedido 299, F1). Nada
+/// disto vai ao disco: e a conta que deixa o ensaio prever sem reservar slot.
+#[derive(Debug, Default)]
+pub struct EnsaioDaTabela {
+    /// Confere os indices unicos tambem (custa decodificar a imagem). Ver
+    /// [`Table::ensaiar_evento`].
+    pub unicidade: bool,
+    /// Inclusoes ensaiadas: a proxima sai `slot_count + nascidas + 1`.
+    nascidas: u64,
+    /// Rowids que uma exclusao do grupo ja teria liberado.
+    livres: HashSet<RowId>,
+}
+
+impl EnsaioDaTabela {
+    pub fn novo(unicidade: bool) -> EnsaioDaTabela {
+        EnsaioDaTabela {
+            unicidade,
+            ..EnsaioDaTabela::default()
+        }
+    }
+}
+
 /// Uma escrita pendente, na lingua do `store` -- que nao conhece `BEGIN` nem
 /// conjunto de escrita, so «este rowid passa a ser isto».
 #[derive(Debug, Clone, Copy)]
@@ -8304,6 +8327,142 @@ impl Table {
         r
     }
 
+    /// O rowid que a PROXIMA inclusao daqui teria, com `a_mais` inclusoes
+    /// antes dela -- ou `None` quando a conta nao e do `.reg` sozinho.
+    ///
+    /// O `.reg` nunca reaproveita slot, entao fora da particao por letra o
+    /// rowid e sempre `slot_count + 1` (`RegFile::inserir_no_periodo`): e uma
+    /// conta, e nao uma leitura. Na particao por letra o rowid depende do
+    /// balde da linha e de quantas o balde ja tem -- o ensaio nao o preve, e
+    /// a conferencia de depois da gravacao continua sendo o cinto.
+    ///
+    /// UMA conta para o aplicador (que recusa ANTES de gravar) e para o
+    /// ensaio do grupo da replica (pedido 299, F1): se as duas divergissem, o
+    /// ensaio aprovaria o grupo que o aplicador recusa no meio.
+    fn rowid_previsto(&self, a_mais: u64) -> Option<RowId> {
+        if self.esquema.paginacao().modo.por_letra() {
+            return None;
+        }
+        Some(self.reg.slots() + a_mais + 1)
+    }
+
+    /// A recusa da inclusao cujo rowid nao bate com o do source -- a frase
+    /// e UMA, do aplicador e do ensaio.
+    fn rowid_divergiu(&self, rowid: RowId, meu: RowId) -> PhxError {
+        PhxError::Corrompido(format!(
+            "replica divergiu em {}: o source diz rowid {rowid} e aqui saiu {meu}. A \
+             replicacao para aqui em vez de espalhar a divergencia",
+            self.nome
+        ))
+    }
+
+    /// O ENSAIO A SECO de um evento da replica fiel -- pedido 299, F1.
+    /// Responde «o [`Table::aplicar_evento`] deste evento recusaria?» sem
+    /// gravar nada e sem reservar slot: a resposta e um erro do mesmo tipo
+    /// que o aplicador daria.
+    ///
+    /// # Por que existe
+    ///
+    /// O grupo da replica e uma transacao da origem, e ele so pode entrar
+    /// inteiro. O erro DETERMINISTICO no meio dele (a linha que nao existe
+    /// aqui, o carimbo que nao confere, o rowid que sairia outro) bate de novo
+    /// em toda completacao, e desfazer o que ja entrou devolveria slot -- a
+    /// ordem de digitacao proibe. Entao a recusa tem de acontecer ANTES do
+    /// primeiro evento, e e isto que a prevê. Os quatro maduros desfazem a
+    /// metade; aqui se ensaia antes e se anda so para a frente.
+    ///
+    /// # O que ele confere, e de onde sai cada conferencia
+    ///
+    /// - a recusa da tabela marcada sem cofre (613), a mesma funcao;
+    /// - inclusao: o rowid, pela conta de [`Table::rowid_previsto`] -- zero
+    ///   leitura;
+    /// - alteracao e exclusao: a linha existe aqui (uma leitura do slot) e e
+    ///   a mesma do source ([`Table::conferir_identidade`], a mesma funcao);
+    /// - `unicidade` ligada: os indices unicos, contra o disco mais o que o
+    ///   grupo ja teria escrito (a sobreposicao deste handle, a mesma da
+    ///   pre-conferencia do COMMIT). So vale para a replica que pode ter
+    ///   divergido por escrita local -- numa fiel de verdade a origem ja
+    ///   conferiu, na mesma ordem.
+    ///
+    /// `ensaio` guarda o que os eventos anteriores do MESMO grupo nesta tabela
+    /// ja teriam feito. Use um handle proprio: a sobreposicao que a unicidade
+    /// monta fica nele.
+    ///
+    /// # O que ele NAO alcanca
+    ///
+    /// O rowid da particao por letra, o conteudo da imagem fora da unicidade
+    /// (decodificar cada inclusao custaria o laco quente), o erro de E/S. O
+    /// aplicador continua conferindo tudo, e o que escapa daqui cai la como
+    /// antes -- o cinto.
+    pub fn ensaiar_evento(
+        &mut self,
+        operacao: Operacao,
+        rowid: RowId,
+        imagem: &[u8],
+        ensaio: &mut EnsaioDaTabela,
+    ) -> Result<()> {
+        self.recusar_marcada_sem_cofre()?;
+        if operacao != Operacao::Exclusao && imagem.is_empty() {
+            return Err(PhxError::Esquema(format!(
+                "evento de {} no rowid {rowid} veio sem imagem: o source gravou o diario com `imagem_da_linha` desligada",
+                operacao.nome()
+            )));
+        }
+        let nascida_no_grupo = rowid > self.reg.slots();
+        match operacao {
+            Operacao::Inclusao => {
+                if let Some(meu) = self.rowid_previsto(ensaio.nascidas) {
+                    if meu != rowid {
+                        return Err(self.rowid_divergiu(rowid, meu));
+                    }
+                }
+                if ensaio.unicidade {
+                    let valores = self.valores_da_imagem(imagem)?;
+                    self.conferir_unicidade(&valores, None)?;
+                    self.sobrepor_mais(rowid, Pendente::Insercao(&valores))?;
+                }
+                ensaio.nascidas += 1;
+            }
+            Operacao::Alteracao | Operacao::Exclusao => {
+                let daqui = if ensaio.livres.contains(&rowid) || rowid == 0 {
+                    None
+                } else if nascida_no_grupo {
+                    // Nasceu num evento anterior do grupo: existe, e a
+                    // identidade e a da imagem que a fez nascer.
+                    (rowid <= self.reg.slots() + ensaio.nascidas).then(Vec::new)
+                } else {
+                    self.reg.ler(rowid)?
+                };
+                let Some(daqui) = daqui else {
+                    return Err(PhxError::Corrompido(format!(
+                        "replica divergiu em {}: o source fez {} no rowid {rowid} e \
+                         aqui ele nao existe",
+                        self.nome,
+                        operacao.nome()
+                    )));
+                };
+                if !daqui.is_empty() && !imagem.is_empty() {
+                    if let Some(i) = self.esquema.coluna_rowstamp() {
+                        let (de_la, _) = Table::abrir_imagem(imagem)?;
+                        let do_source = self.rowstamp_do_payload(&de_la, i)?;
+                        self.conferir_identidade(operacao, rowid, Some(do_source), &daqui)?;
+                    }
+                }
+                if operacao == Operacao::Exclusao {
+                    if ensaio.unicidade {
+                        self.sobrepor_mais(rowid, Pendente::Exclusao)?;
+                    }
+                    ensaio.livres.insert(rowid);
+                } else if ensaio.unicidade {
+                    let valores = self.valores_da_imagem(imagem)?;
+                    self.conferir_unicidade(&valores, Some(rowid))?;
+                    self.sobrepor_mais(rowid, Pendente::Alteracao(&valores, &[]))?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn aplicar_evento_interno(
         &mut self,
         operacao: Operacao,
@@ -8358,15 +8517,25 @@ impl Table {
                         operacao.nome()
                     )));
                 }
+                if operacao == Operacao::Inclusao {
+                    // Pedido 299: o rowid se confere ANTES de gravar. Conferido
+                    // so depois, a linha ja tinha entrado no rowid errado --
+                    // num slot que a ordem de digitacao nao devolve -- e o
+                    // diario daqui saia da historia da origem com ela.
+                    if let Some(meu) = self.rowid_previsto(0) {
+                        if meu != rowid {
+                            return Err(self.rowid_divergiu(rowid, meu));
+                        }
+                    }
+                }
                 let (payload, externos) = Table::abrir_imagem_com_selo(imagem)?;
                 let valores = self.decodificar_com_externos(&payload, &externos)?;
                 if operacao == Operacao::Inclusao {
                     let meu = self.inserir(&valores)?;
+                    // O cinto: a particao por letra, que a conta de cima nao
+                    // preve.
                     if meu != rowid {
-                        return Err(PhxError::Corrompido(format!(
-                            "replica divergiu em {}: o source diz rowid {rowid} e aqui saiu {meu}. A replicacao para aqui em vez de espalhar a divergencia",
-                            self.nome
-                        )));
+                        return Err(self.rowid_divergiu(rowid, meu));
                     }
                     Ok(meu)
                 } else {

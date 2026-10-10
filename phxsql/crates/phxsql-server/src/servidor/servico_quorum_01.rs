@@ -607,13 +607,13 @@ impl Servidor {
                         origem,
                         &mut marcas,
                     ) {
-                        Ok(Grupo::Aplicado { rompidas, .. }) => {
-                            for i in rompidas {
-                                juntador.largar(i);
-                                atras = true;
-                            }
-                        }
-                        Ok(Grupo::Andou) => {
+                        Ok(Grupo::Aplicado { .. }) => {}
+                        // Pedido 299, F2, o irmao do pull: a continuidade que
+                        // rompe recusa o grupo inteiro, e o database fica
+                        // para o pull -- que diz a ruptura e monta a barreira
+                        // por transacao. Largar so a tabela aqui deixaria as
+                        // irmas da mesma venda entrarem pelo quorum.
+                        Ok(Grupo::Rompidas(_)) | Ok(Grupo::Andou) => {
                             atras = true;
                             break Ok(());
                         }

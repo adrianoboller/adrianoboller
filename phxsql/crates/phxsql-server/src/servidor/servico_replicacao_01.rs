@@ -121,11 +121,42 @@ pub(super) fn sigkill_de_teste(aviso: &str) -> ! {
 
 /// O que um grupo do alcance deu. Ver `Servidor::aplicar_grupo_da_replica`.
 pub(super) enum Grupo {
-    /// Aplicou `n` eventos; as tabelas em `rompidas` sairam da rodada.
-    Aplicado { n: u64, rompidas: Vec<usize> },
+    /// Aplicou `n` eventos.
+    Aplicado { n: u64 },
     /// A posicao local de alguma tabela andou com a trava solta: nada se
     /// aplicou.
     Andou,
+    /// A continuidade destas tabelas nao confere (fila, motivo): NADA do
+    /// grupo se aplicou -- pedido 299, F2. A rodada sai, e a seguinte para na
+    /// primeira transacao que toca alguma delas.
+    Rompidas(Vec<(usize, String)>),
+}
+
+/// De onde uma tabela de continuidade rompida segura o database -- pedido
+/// 299, F2. Ver `Servidor::barreira_da_rompida`.
+#[derive(Clone, Copy)]
+pub(super) struct BarreiraDaRompida {
+    /// O estado em que a conta foi feita: a posicao local e quantos eventos
+    /// os dois diarios tinham em comum para comparar. Mudou um dos dois, a
+    /// conta se refaz.
+    posicao: u64,
+    alcance: u64,
+    /// O id da transacao do primeiro evento da origem que esta replica nao
+    /// tem nesta tabela. `None`: a origem ainda nao escreveu nada nela que
+    /// falte aqui, e nada fica segurado.
+    tx: Option<u64>,
+}
+
+/// O que o preparo de uma tabela decidiu. Ver
+/// `Servidor::preparar_para_alcancar`.
+pub(super) enum Preparo {
+    /// Entra no alcance, a partir desta posicao local.
+    Fila(u64),
+    /// Nada a fazer nesta rodada.
+    Fora,
+    /// A continuidade nao confere: a tabela nao entra, e -- com `tx` -- toda
+    /// transacao da origem a partir de `tx` fica segurada (pedido 299, F2).
+    Rompida { tx: Option<u64> },
 }
 
 /// Quantas dicas de posicao do diario guardar por tabela.
@@ -1076,8 +1107,26 @@ impl Servidor {
     /// com o motivo em `replicacao_estado` e no log do processo -- UMA vez,
     /// porque a recusa fica guardada por posicao e a rodada seguinte nao a
     /// repete. Nao e erro da rodada: as outras tabelas continuam.
-    fn romper_continuidade(&self, origem: &str, chave: &str, posicao: u64, motivo: String) {
-        eprintln!("replicacao [{origem}]: {chave}: {motivo}");
+    ///
+    /// `tx` e a transacao da origem que a ruptura segura (pedido 299, F2): o
+    /// alarme e o log a nomeiam, porque a tabela rompida para o database
+    /// inteiro dali em diante, e quem le a pedra precisa saber em que venda.
+    fn romper_continuidade(
+        &self,
+        origem: &str,
+        chave: &str,
+        posicao: u64,
+        motivo: String,
+        tx: Option<u64>,
+    ) {
+        match tx {
+            Some(tx) => eprintln!(
+                "replicacao [{origem}]: {chave}: {motivo} -- a transacao {tx} da origem \
+                 toca esta tabela, e ela e as seguintes ficam seguradas no database \
+                 inteiro (pedido 299)"
+            ),
+            None => eprintln!("replicacao [{origem}]: {chave}: {motivo}"),
+        }
         let ja_rompida = match self.continuidade_da_replica.lock() {
             Ok(mut c) => c.insert(chave.to_string(), (posicao, false)) == Some((posicao, false)),
             Err(_) => false,
@@ -1087,7 +1136,24 @@ impl Servidor {
         // por ruptura: o ramo da OUTRA historia nao consulta o veredito
         // guardado, e repetiria a pedra a cada rodada.
         if !ja_rompida {
-            crate::telemetria::sinal(crate::aquario::Alarme::ContinuidadeRompida, chave);
+            // Em PEDIDO JSON, como o do atraso: a camada redige analisando, e
+            // so o pedido deixa o database e a tabela sobreviverem como forma.
+            // O `tx` vira `?` na ocorrencia e mora no `replicacao_estado`
+            // (`transacoes_paradas`), que e a `op` citada.
+            let (database, tabela) = chave.split_once('/').unwrap_or(("", chave));
+            let mut campos = vec![
+                ("op", Json::texto_de("replicacao_estado")),
+                ("database", Json::texto_de(database)),
+                ("tabela", Json::texto_de(tabela)),
+                ("origem", Json::texto_de(origem)),
+            ];
+            if let Some(tx) = tx {
+                campos.push(("tx", Json::de_u64(tx)));
+            }
+            crate::telemetria::sinal(
+                crate::aquario::Alarme::ContinuidadeRompida,
+                &Json::objeto(campos).escrever(),
+            );
         }
         self.anotar_estado(origem, |e| {
             e.recusas.insert(chave.to_string(), motivo);
@@ -1305,27 +1371,39 @@ impl Servidor {
         database: &str,
         no: &crate::replica::NoSource,
         origem: &str,
-    ) -> Result<Option<u64>> {
+    ) -> Result<Preparo> {
         let Some((posicao, outra_historia)) = self.abrir_para_replicar(database, no)? else {
-            return Ok(None);
+            return Ok(Preparo::Fora);
         };
         // Pedido 496, F7: a amostra vem ANTES de toda saida daqui -- a tabela
         // de continuidade rompida e a que fica parada com a origem gravando,
         // e e justamente ela que o atraso tem de ver.
         self.amostrar_atraso(origem, database, &no.nome, no.eventos, posicao);
         let chave = Self::chave_do_diario(database, &no.nome);
+        // Pedido 299, F2: toda saida por ruptura passa pelo `rompida`, e a
+        // tabela rompida deixa de ser so «fora da rodada» -- ela diz de que
+        // transacao em diante o database inteiro espera.
+        let rompida = |cliente: &mut crate::replica::Cliente,
+                       motivo: Option<String>,
+                       outra: bool|
+         -> Result<Preparo> {
+            let tx = self.barreira_da_rompida(cliente, database, no, posicao, outra)?;
+            if let Some(motivo) = motivo {
+                self.romper_continuidade(origem, &chave, posicao, motivo, tx);
+            }
+            Ok(Preparo::Rompida { tx })
+        };
         // Pedido 601: de OUTRA historia, nada se aplica -- e a recusa vai pelo
         // MESMO canal da tabela apagada e recriada, que e um dos dois casos
         // que ela pega (o outro e a tabela criada por conta aqui). Antes de
         // qualquer evento, inclusive com a posicao em zero: a insercao e o
         // que a conferencia do carimbo nunca pega.
         if let Some(motivo) = outra_historia {
-            self.romper_continuidade(origem, &chave, posicao, motivo);
-            return Ok(None);
+            return rompida(cliente, Some(motivo), true);
         }
         if posicao > 0 {
             if self.continuidade_guardada(&chave, posicao) == Some(false) {
-                return Ok(None);
+                return rompida(cliente, None, false);
             }
             if no.eventos < posicao {
                 // A causa sai do MESMO motor da conferencia evento a evento
@@ -1335,25 +1413,20 @@ impl Servidor {
                 // replica culpava o source pelo que foi escrito nela. O evento
                 // que a vida daqui tomou e o primeiro que o source ainda nao
                 // tem, `no.eventos`.
-                self.romper_continuidade(
-                    origem,
-                    &chave,
-                    posicao,
-                    format!(
-                        "o diario do source tem {} evento(s) e esta replica tem \
-                         {posicao}: ele nao continua o daqui -- {}. Esta tabela \
-                         ficou como estava; para segui-la de novo, apague-a nesta \
-                         replica e ela renasce do esquema do source",
-                        no.eventos,
-                        self.por_que_nao_continua(&chave, no.eventos),
-                    ),
+                let motivo = format!(
+                    "o diario do source tem {} evento(s) e esta replica tem \
+                     {posicao}: ele nao continua o daqui -- {}. Esta tabela \
+                     ficou como estava; para segui-la de novo, apague-a nesta \
+                     replica e ela renasce do esquema do source",
+                    no.eventos,
+                    self.por_que_nao_continua(&chave, no.eventos),
                 );
-                return Ok(None);
+                return rompida(cliente, Some(motivo), false);
             }
         }
         if posicao >= no.eventos {
             if posicao == 0 || self.continuidade_guardada(&chave, posicao) == Some(true) {
-                return Ok(None);
+                return Ok(Preparo::Fora);
             }
             // FORA da trava, como todo `puxar`: um evento, o que ja esta aqui.
             let Some(dele) = crate::replica::puxar_um(cliente, database, &no.nome, posicao - 1)?
@@ -1361,7 +1434,7 @@ impl Servidor {
                 // O source contou `posicao` eventos e nao entrega o ultimo:
                 // corrida com uma exclusao de tabela la. A proxima rodada ve
                 // a contagem nova e decide.
-                return Ok(None);
+                return Ok(Preparo::Fora);
             };
             match self.aplicar_lote_da_replica(
                 database,
@@ -1369,12 +1442,111 @@ impl Servidor {
                 posicao,
                 std::slice::from_ref(&dele),
             )? {
-                Lote::Rompido(motivo) => self.romper_continuidade(origem, &chave, posicao, motivo),
+                Lote::Rompido(motivo) => return rompida(cliente, Some(motivo), false),
                 Lote::Aplicado => self.confirmar_continuidade(origem, &chave, posicao),
             }
-            return Ok(None);
+            return Ok(Preparo::Fora);
         }
-        Ok(Some(posicao))
+        Ok(Preparo::Fila(posicao))
+    }
+
+    /// De que transacao da origem em diante a tabela ROMPIDA segura o
+    /// database -- pedido 299, F2. `None`: a origem nao tem, nesta tabela,
+    /// evento que falte aqui, e nada fica segurado.
+    ///
+    /// # A conta
+    ///
+    /// A transacao que nao pode entrar e a do primeiro evento da origem que
+    /// esta replica NAO tem: o fim do prefixo comum dos dois diarios. A
+    /// conferencia de continuidade so compara o evento `posicao - 1`, e isso
+    /// nao basta -- com duas escritas locais, o evento `posicao - 1` da
+    /// origem e o SEGUNDO que falta, e a transacao do primeiro passaria. O
+    /// prefixo se acha por busca binaria (dois diarios iguais ate um ponto e
+    /// diferentes dali em diante), um evento da origem por passo: log2 da
+    /// tabela em idas e voltas, UMA vez por estado -- a conta fica guardada
+    /// ate a posicao local ou o alcance mudar.
+    ///
+    /// De `outra` historia (pedido 601) nada e comum: o prefixo e zero.
+    ///
+    /// O evento que nao se le de um dos lados (expurgado, a origem que nao o
+    /// entrega) conta como diferente: errar ai para o lado de SEGURAR mais
+    /// custa disponibilidade, e errar para o outro lado custaria a venda.
+    fn barreira_da_rompida(
+        &self,
+        cliente: &mut crate::replica::Cliente,
+        database: &str,
+        no: &crate::replica::NoSource,
+        posicao: u64,
+        outra: bool,
+    ) -> Result<Option<u64>> {
+        let chave = Self::chave_do_diario(database, &no.nome);
+        let alcance = if outra { 0 } else { posicao.min(no.eventos) };
+        if let Some(b) = self
+            .barreiras_das_rompidas
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&chave).copied())
+            .filter(|b| b.posicao == posicao && b.alcance == alcance)
+        {
+            return Ok(b.tx);
+        }
+        let mut dele = |i: u64| crate::replica::puxar_um(cliente, database, &no.nome, i);
+        // A busca: o primeiro indice em [0, alcance) em que os diarios
+        // diferem; nenhum, e o prefixo e o alcance inteiro.
+        let (mut lo, mut hi) = (0u64, alcance);
+        while lo < hi {
+            let meio = lo + (hi - lo) / 2;
+            let iguais = match dele(meio)? {
+                Some(e) => self.evento_local_e(database, &no.nome, meio, &e),
+                None => false,
+            };
+            if iguais {
+                lo = meio + 1;
+            } else {
+                hi = meio;
+            }
+        }
+        let tx = if lo < no.eventos {
+            // O evento que falta: a origem que nao o entrega segura tudo (o
+            // zero e a menor barreira que existe).
+            Some(dele(lo)?.map_or(0, |e| e.tx))
+        } else {
+            None
+        };
+        if let Ok(mut m) = self.barreiras_das_rompidas.lock() {
+            m.insert(
+                chave,
+                BarreiraDaRompida {
+                    posicao,
+                    alcance,
+                    tx,
+                },
+            );
+        }
+        Ok(tx)
+    }
+
+    /// O evento `i` do diario LOCAL e o `dele`? Os mesmos quatro campos da
+    /// conferencia de continuidade ([`Self::diario_local_continua`]). O que
+    /// nao se le conta como diferente.
+    fn evento_local_e(
+        &self,
+        database: &str,
+        tabela: &str,
+        i: u64,
+        dele: &crate::replica::EventoRecebido,
+    ) -> bool {
+        let meu = (|| -> Result<Option<phxsql_store::log::Evento>> {
+            let trava = self.travar_dados()?;
+            let db = trava.abrir_database(database)?;
+            let mut t = db.abrir_qualificada(tabela)?;
+            Ok(t.diario(i, 1)?.into_iter().next())
+        })();
+        matches!(meu, Ok(Some(m))
+            if m.carimbo == dele.carimbo_ms
+                && m.operacao == dele.operacao
+                && m.rowid == dele.rowid
+                && m.versao == dele.versao)
     }
 
     /// Traz um DATABASE inteiro ate a fronteira do `posicao`, aplicando cada
@@ -1408,9 +1580,16 @@ impl Servidor {
         origem: &str,
     ) -> Result<u64> {
         let mut filas: Vec<FilaDaReplica> = Vec::new();
+        // Pedido 299, F2: a menor transacao segurada por uma tabela rompida
+        // (ou pelo ensaio da rodada anterior), e a parada que a diz.
+        let mut parada: Option<crate::bidirecional::ParadaDaTransacao> = self
+            .segurar_no_ensaio
+            .lock()
+            .ok()
+            .and_then(|mut m| m.remove(&format!("{origem}|{database}")));
         for no in nos {
-            if let Some(posicao) = self.preparar_para_alcancar(cliente, database, &no, origem)? {
-                filas.push(FilaDaReplica {
+            match self.preparar_para_alcancar(cliente, database, &no, origem)? {
+                Preparo::Fila(posicao) => filas.push(FilaDaReplica {
                     chave: Self::chave_do_diario(database, &no.nome),
                     conferir: posicao > 0,
                     conferencia: None,
@@ -1418,10 +1597,15 @@ impl Servidor {
                     aplicados: 0,
                     ordem: 0,
                     no,
-                });
+                }),
+                Preparo::Rompida { tx: Some(tx) } => {
+                    self.segurar_pela_rompida(&mut parada, origem, database, &no.nome, tx);
+                }
+                Preparo::Rompida { tx: None } | Preparo::Fora => {}
             }
         }
         if filas.is_empty() {
+            self.dizer_a_parada(origem, database, parada);
             return Ok(0);
         }
         let vezes = ordem_das_maes(&filas.iter().map(|f| &f.no).collect::<Vec<_>>());
@@ -1431,6 +1615,9 @@ impl Servidor {
         let alvos: Vec<(u64, u64)> = filas.iter().map(|f| (f.posicao, f.no.eventos)).collect();
         let mut juntador =
             crate::replica::Juntador::novo(&alvos, phxsql_store::log::teto_da_transacao());
+        if let Some(p) = &parada {
+            juntador.barrar(p.tx);
+        }
         let mut aplicados = 0u64;
         let mut avisadas = 0u64;
         let mut marcas: Vec<PathBuf> = Vec::new();
@@ -1491,16 +1678,44 @@ impl Servidor {
                         origem,
                         &mut marcas,
                     ) {
-                        Ok(Grupo::Aplicado { n, rompidas }) => {
-                            aplicados += n;
-                            for i in rompidas {
-                                juntador.largar(i);
-                            }
-                        }
+                        Ok(Grupo::Aplicado { n }) => aplicados += n,
                         // A posicao local andou com a trava solta: o que esta
                         // na mao foi pedido de outra posicao. A rodada sai, e
                         // a proxima recomeca de onde a replica esta.
                         Ok(Grupo::Andou) => break Ok(()),
+                        // Pedido 299, F2: nada do grupo entrou. A ruptura fica
+                        // dita e guardada, com a transacao que ela segura, e a
+                        // rodada sai -- o grupo ja saiu do `Juntador`, e a
+                        // proxima monta a barreira desde o preparo.
+                        Ok(Grupo::Rompidas(rompidas)) => {
+                            let mut r = Ok(());
+                            for (i, motivo) in rompidas {
+                                let f = &filas[i];
+                                match self
+                                    .barreira_da_rompida(cliente, database, &f.no, f.posicao, false)
+                                {
+                                    Ok(tx) => {
+                                        self.romper_continuidade(
+                                            origem, &f.chave, f.posicao, motivo, tx,
+                                        );
+                                        if let Some(tx) = tx {
+                                            self.segurar_pela_rompida(
+                                                &mut parada,
+                                                origem,
+                                                database,
+                                                &f.no.nome,
+                                                tx,
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        r = Err(e);
+                                        break;
+                                    }
+                                }
+                            }
+                            break r;
+                        }
                         Err(e) => break Err(e),
                     }
                 }
@@ -1511,6 +1726,17 @@ impl Servidor {
             let partidas = juntador.em_pedacos;
             self.anotar_estado(origem, |e| e.transacoes_em_pedacos += partidas);
         }
+        // A parada se diz pelo que a rodada viu: as tabelas da transacao
+        // segurada que ja estavam na mao, alem da que a segurou.
+        if let Some(p) = parada.as_mut() {
+            for i in juntador.tabelas_de(p.tx) {
+                let nome = &filas[i].no.nome;
+                if !p.tabelas.contains(nome) {
+                    p.tabelas.push(nome.clone());
+                }
+            }
+        }
+        self.dizer_a_parada(origem, database, parada);
         for f in &filas {
             if f.aplicados > 0 {
                 self.sincronizar_replicada(database, &f.no.nome)?;
@@ -1531,15 +1757,88 @@ impl Servidor {
         saida.map(|()| aplicados)
     }
 
+    /// A tabela rompida `tabela` segura a transacao `tx`: vira a `parada` do
+    /// database se for a menor. O detalhe e a recusa que a ruptura ja
+    /// escreveu -- uma frase so para o mesmo fato.
+    fn segurar_pela_rompida(
+        &self,
+        parada: &mut Option<crate::bidirecional::ParadaDaTransacao>,
+        origem: &str,
+        database: &str,
+        tabela: &str,
+        tx: u64,
+    ) {
+        if parada.as_ref().is_some_and(|p| p.tx <= tx) {
+            return;
+        }
+        let chave = Self::chave_do_diario(database, tabela);
+        let detalhe = self
+            .estado_replicacao
+            .lock()
+            .ok()
+            .and_then(|e| e.get(origem).and_then(|o| o.recusas.get(&chave).cloned()))
+            .unwrap_or_default();
+        *parada = Some(crate::bidirecional::ParadaDaTransacao {
+            tx,
+            tabelas: vec![tabela.to_string()],
+            motivo: "continuidade_rompida".into(),
+            tabela: tabela.to_string(),
+            detalhe,
+            em_ms: crate::agora_ms(),
+        });
+    }
+
+    /// A parada por transacao de um database (pedido 299, F2) vai ao
+    /// `replicacao_estado`, ou sai dele quando a rodada nao segurou nada. O
+    /// log diz UMA vez por transacao, e diz quando ela solta.
+    fn dizer_a_parada(
+        &self,
+        origem: &str,
+        database: &str,
+        parada: Option<crate::bidirecional::ParadaDaTransacao>,
+    ) {
+        let mut antes = None;
+        let agora = parada.as_ref().map(|p| p.tx);
+        self.anotar_estado(origem, |e| {
+            antes = match parada {
+                // A mesma transacao parada de antes guarda o `desde` dela: a
+                // parada e remontada a cada rodada, e o instante e o da
+                // primeira vez.
+                Some(mut p) => {
+                    if let Some(v) = e.transacoes_paradas.get(database).filter(|v| v.tx == p.tx) {
+                        p.em_ms = v.em_ms;
+                    }
+                    e.transacoes_paradas.insert(database.to_string(), p)
+                }
+                None => e.transacoes_paradas.remove(database),
+            }
+            .map(|p| p.tx);
+        });
+        match (antes, agora) {
+            (a, Some(tx)) if a != Some(tx) => eprintln!(
+                "replicacao [{origem}]: {database}: PARADA na transacao {tx} da origem -- \
+                 nem ela nem as seguintes entram ate o motivo sair \
+                 (replicacao_estado.transacoes_paradas; pedido 299)"
+            ),
+            (Some(tx), None) => eprintln!(
+                "replicacao [{origem}]: {database}: a transacao {tx} da origem nao esta \
+                 mais parada"
+            ),
+            _ => {}
+        }
+    }
+
     /// Aplica um grupo do [`crate::replica::Juntador`] -- eventos de uma ou
     /// mais transacoes INTEIRAS, em varias tabelas -- sob UMA tomada da trava
     /// de escrita. Pedido 676.
     ///
     /// Tudo o que pode recusar o grupo se confere ANTES do primeiro evento: a
     /// posicao local de cada tabela (alguem escreveu aqui com a trava solta?)
-    /// e a continuidade da que ainda nao foi conferida. A tabela rompida sai
-    /// do grupo e da rodada -- ela ja parou de ser seguida, e as outras
-    /// continuam, como sempre foi.
+    /// e a continuidade da que ainda nao foi conferida. A tabela rompida
+    /// recusa o grupo INTEIRO (pedido 299, F2): tira-la do grupo deixava as
+    /// irmas da mesma transacao entrarem, a venda sem o pagamento. E, ja com
+    /// a trava, o ENSAIO (pedido 299, F1): o grupo que pararia no meio por
+    /// erro do dado nao comeca.
     ///
     /// # A queda do PROCESSO no meio -- pedido 682
     ///
@@ -1557,11 +1856,10 @@ impl Servidor {
     /// antes abriria a janela em que o dado nao esta no disco e nao ha
     /// bilhete para traze-lo.
     ///
-    /// O que NAO e atomico, e e de proposito: o `aplicar_evento` que falha no
-    /// meio (rowid que nao bate -- a replica ja divergiu) deixa o que entrou
-    /// antes dele e devolve o erro, o fail-stop de sempre, e a marca sai ali
-    /// mesmo -- completar no arranque bateria no mesmo erro. Desfazer pediria
-    /// a Sombra, que esta parada por decisao do dono.
+    /// O erro do dado que escapa do ensaio e para no meio completa para a
+    /// FRENTE, com a mesma trava (pedido 713); o que nem assim fecha fica com
+    /// a marca no disco. Desfazer pediria a Sombra, parada por decisao do
+    /// dono, e devolveria slot.
     ///
     /// # Onde a marca vai parar -- `marcas`
     ///
@@ -1585,6 +1883,25 @@ impl Servidor {
         let mut rompidas: Vec<(usize, String)> = Vec::new();
         let mut aplicadas: Vec<usize> = Vec::new();
         let mut total = 0u64;
+        // Pedido 299, F1: o ensaio confere a unicidade so na tabela que
+        // ACEITOU escrita local desde o arranque. Medido
+        // (`--example custo-do-ensaio -p phxsql-store`, release, 50.000
+        // eventos, 90/10, cinco pares): sem a unicidade o ensaio custa +1,1%,
+        // dentro do ruido; com ela, +57,8%, faixas separadas -- decodificar
+        // cada imagem dobra o laco. O desenho pedia tambem «sem
+        // `somente_leitura`», e o padrao de fabrica e sem: toda replica
+        // comum pagaria os 58%. E nao compraria nada, porque a escrita local
+        // pelo servidor vai ao diario daqui e a continuidade a pega antes de
+        // qualquer grupo; o que a unicidade ainda alcanca e o caso contado.
+        // O portao vem antes do trabalho.
+        let unicidade_no_ensaio = |chave: &str| {
+            self.escritas_locais_na_replica
+                .lock()
+                .ok()
+                .and_then(|m| m.get(chave).copied())
+                .unwrap_or(0)
+                > 0
+        };
         // A conferencia de continuidade so existe no primeiro grupo depois de
         // (re)ligar, e ela tem de vir ANTES da marca: a tabela rompida nao
         // pode entrar no bilhete, senao o arranque que completasse a marca
@@ -1607,6 +1924,9 @@ impl Servidor {
                 }
             }
         }
+        if !rompidas.is_empty() {
+            return Ok(Grupo::Rompidas(rompidas));
+        }
         // O bilhete do grupo, gravado e sincronizado ANTES do primeiro evento
         // (pedido 682) -- e ANTES da trava: o `fsync` da marca com a trava
         // global na mao parava todo leitor e todo escritor do servidor pelo
@@ -1617,7 +1937,7 @@ impl Servidor {
         // (`aplicar_evento_da_marca`): diario na posicao, aplica; diario que
         // andou por escrita local, o evento nao confere e a marca sai como
         // impossivel, sem gravar nada.
-        let marca = self.marcar_o_grupo(database, filas, &grupo, &rompidas)?;
+        let marca = self.marcar_o_grupo(database, filas, &grupo)?;
         // So em `debug`, pedido 715: o N-esimo grupo com marca PARA aqui -- a
         // marca no disco e a trava ainda nao tomada --, para a prova pegar uma
         // transacao local que nasce DEPOIS da marca e entra ANTES do grupo. A
@@ -1681,6 +2001,48 @@ impl Servidor {
                     return Err(e);
                 }
             };
+            // Pedido 299, F1: o ENSAIO, com a trava na mao e antes do primeiro
+            // evento -- o disco que ele le e o que o grupo vai encontrar. Se
+            // algum evento pararia, nenhum entra: a marca sai, e a transacao
+            // dele fica segurada no database inteiro. Os handles abertos aqui
+            // sao os do aplicador: o ensaio sem a unicidade nao sobrepoe nada,
+            // e nao abre tabela a mais.
+            let mut abertas: Vec<Table> = Vec::with_capacity(grupo.len());
+            for (i, eventos) in &grupo {
+                let f = &filas[*i];
+                let abrir = || db.abrir_qualificada(&f.no.nome);
+                let mut t = match abrir() {
+                    Ok(t) => t,
+                    Err(e) => {
+                        soltar(&marca);
+                        return Err(e);
+                    }
+                };
+                let unicidade = unicidade_no_ensaio(&f.chave);
+                // A unicidade monta a sobreposicao do grupo NO handle: ela
+                // ensaia num handle proprio, que morre aqui, e o aplicador le
+                // o disco pelo dele -- sem desligar depois (a catraca de
+                // `ver_so_o_disco`).
+                let mut proprio = match unicidade.then(abrir).transpose() {
+                    Ok(h) => h,
+                    Err(e) => {
+                        soltar(&marca);
+                        return Err(e);
+                    }
+                };
+                let alvo = proprio.as_mut().unwrap_or(&mut t);
+                let mut ensaio = phxsql_store::table::EnsaioDaTabela::novo(unicidade);
+                for e in eventos {
+                    if let Err(erro) =
+                        alvo.ensaiar_evento(e.operacao, e.rowid, &e.imagem, &mut ensaio)
+                    {
+                        soltar(&marca);
+                        return Err(self.recusa_do_ensaio(origem, database, &f.no.nome, e.tx, erro));
+                    }
+                }
+                drop(proprio);
+                abertas.push(t);
+            }
             // EM VOO so agora, com a trava na mao: um panico no meio do grupo
             // e reparado completando ESTA marca (pedido 451, M1).
             if let Some(m) = &marca {
@@ -1710,18 +2072,8 @@ impl Servidor {
             // e os dois `?` a deixavam na lista que a rodada apaga depois do
             // `fsync`. As tres deixavam a venda pela metade para sempre.
             let mut parou: Option<PhxError> = None;
-            'grupo: for (i, eventos) in &grupo {
-                if rompidas.iter().any(|(j, _)| j == i) {
-                    continue;
-                }
+            'grupo: for ((i, eventos), mut t) in grupo.iter().zip(abertas) {
                 let f = &mut filas[*i];
-                let mut t = match db.abrir_qualificada(&f.no.nome) {
-                    Ok(t) => t,
-                    Err(e) => {
-                        parou = Some(e);
-                        break 'grupo;
-                    }
-                };
                 // Pedido 300 §2.7: a replica nao julga a chave estrangeira --
                 // CONTA a filha que entra sem a mae.
                 t.contar_orfas();
@@ -1851,18 +2203,46 @@ impl Servidor {
         }
         // Os recados saem com a trava SOLTA: sao mutex de replicacao, e
         // empilha-los sob a trava de dados nao compra nada.
-        for (i, motivo) in &rompidas {
-            let f = &filas[*i];
-            self.romper_continuidade(origem, &f.chave, f.posicao, motivo.clone());
-        }
         for i in aplicadas {
             let f = &filas[i];
             self.confirmar_continuidade(origem, &f.chave, f.posicao);
         }
-        Ok(Grupo::Aplicado {
-            n: total,
-            rompidas: rompidas.into_iter().map(|(i, _)| i).collect(),
-        })
+        Ok(Grupo::Aplicado { n: total })
+    }
+
+    /// A recusa do ensaio (pedido 299, F1): o erro que o evento daria, com a
+    /// nota de que NADA da transacao entrou -- e a transacao segurada na
+    /// rodada seguinte, que aplica o que veio antes dela e para nela.
+    fn recusa_do_ensaio(
+        &self,
+        origem: &str,
+        database: &str,
+        tabela: &str,
+        tx: u64,
+        erro: PhxError,
+    ) -> PhxError {
+        let detalhe = erro.to_string();
+        if let Ok(mut m) = self.segurar_no_ensaio.lock() {
+            m.insert(
+                format!("{origem}|{database}"),
+                crate::bidirecional::ParadaDaTransacao {
+                    tx,
+                    tabelas: vec![tabela.to_string()],
+                    motivo: "ensaio".into(),
+                    tabela: tabela.to_string(),
+                    detalhe,
+                    em_ms: crate::agora_ms(),
+                },
+            );
+        }
+        com_nota(
+            erro,
+            &format!(
+                "o ensaio do grupo da replica recusou a transacao {tx} da origem em \
+                 {database}.{tabela} ANTES do primeiro evento: nada dela entrou, e ela e \
+                 as seguintes ficam seguradas no database inteiro (pedido 299)"
+            ),
+        )
     }
 
     /// Grava e sincroniza a marca do grupo da replica (pedido 682), SEM a
@@ -1881,13 +2261,9 @@ impl Servidor {
         database: &str,
         filas: &[FilaDaReplica],
         grupo: &[(usize, Vec<crate::replica::EventoRecebido>)],
-        rompidas: &[(usize, String)],
     ) -> Result<Option<PathBuf>> {
         let mut eventos = Vec::new();
         for (i, lista) in grupo {
-            if rompidas.iter().any(|(j, _)| j == i) {
-                continue;
-            }
             let f = &filas[*i];
             for (k, e) in lista.iter().enumerate() {
                 eventos.push(crate::transacao::EventoDoGrupo {

@@ -801,6 +801,15 @@ pub struct Servidor {
     /// conferida UMA vez por posicao -- e nao a cada rodada --, e uma
     /// recusada fica recusada ate a posicao local mudar.
     continuidade_da_replica: Mutex<HashMap<String, (u64, bool)>>,
+    /// Pedido 299, F2: de onde a tabela rompida segura o database -- a
+    /// conta do prefixo comum dos dois diarios, que custa idas e voltas, feita
+    /// UMA vez por estado. Ver `Servidor::barreira_da_rompida`.
+    barreiras_das_rompidas: Mutex<HashMap<String, BarreiraDaRompida>>,
+    /// Pedido 299, F1: a transacao que o ensaio recusou, por
+    /// `"origem|database"`. Vale UMA rodada: a seguinte aplica o que veio
+    /// antes dela e para nela; a outra ensaia de novo, e o conserto feito no
+    /// dado no meio-tempo deixa a transacao entrar.
+    segurar_no_ensaio: Mutex<HashMap<String, crate::bidirecional::ParadaDaTransacao>>,
     profiler: Mutex<crate::profiler::Profiler>,
     /// Espelho de `profiler.ligado`, para o caminho quente nao tomar a trava.
     ///

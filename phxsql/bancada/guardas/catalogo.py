@@ -22608,9 +22608,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "pedido 300 §2.7. A replica aplica e nao julga (medido), e os tres "
             "maduros CONTAM a divergencia do aplicador. Reposto, as tres filhas "
             "que chegam antes da mae entram e `orfas_na_replica` fica vazio. "
-            "Desde o 676 a prova fabrica a mae que NAO chega (de outra "
-            "historia): a filha que so chegava antes pelo nome deixou de ser "
-            "orfa."
+            "Desde o 676 a prova fabrica a mae que NAO esta aqui: ate o 299 era "
+            "a de outra historia; desde o 299 (F2) essa segura as filhas, e a "
+            "fabrica e a mae que saiu da replica por fora do diario (498 H3)."
         ),
         "arquivo": "crates/phxsql-store/src/table.rs",
         "trecho": """                Err(PhxError::Integridade(_)) => Some(true),""",
@@ -22880,9 +22880,9 @@ const LETRAS_DA_SENHA: [&str; 1] = ["PASSWORD"];
             "a escrita local com o source parado sai culpando o source."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
-        "trecho": """                        self.por_que_nao_continua(&chave, no.eventos),""",
-        "troca": """                        // DEFEITO REPOSTO (626): a frase fixa culpa o source.
-                        String::from("a tabela foi apagada e recriada no source"),""",
+        "trecho": """                    self.por_que_nao_continua(&chave, no.eventos),""",
+        "troca": """                    // DEFEITO REPOSTO (626): a frase fixa culpa o source.
+                    String::from("a tabela foi apagada e recriada no source"),""",
         "pacote": "phxsql-server",
         "alvo": ["--test", "continuidade-da-replica"],
         "caem": ["escrita_local_sem_o_source_andar_rompe_pela_contagem_dizendo_a_causa"],
@@ -26916,7 +26916,7 @@ fn anotar(""",
             "retrato (0, 3, 0) -- itens sem venda. Com a marca, (1, 5, 1)."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
-        "trecho": """        let marca = self.marcar_o_grupo(database, filas, &grupo, &rompidas)?;
+        "trecho": """        let marca = self.marcar_o_grupo(database, filas, &grupo)?;
 """,
         "troca": """        // DEFEITO REPOSTO (682): o grupo nao grava marca.
         let marca: Option<PathBuf> = None;
@@ -27632,9 +27632,12 @@ fn anotar(""",
             "nao chamava o produtor."
         ),
         "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
-        "trecho": """            crate::telemetria::sinal(crate::aquario::Alarme::ContinuidadeRompida, chave);
+        "trecho": """            crate::telemetria::sinal(
+                crate::aquario::Alarme::ContinuidadeRompida,
+                &Json::objeto(campos).escrever(),
+            );
 """,
-        "troca": """            let _ = (crate::aquario::Alarme::ContinuidadeRompida, chave);
+        "troca": """            let _ = (crate::aquario::Alarme::ContinuidadeRompida, &campos);
 """,
         "pacote": "phxsql-server",
         "alvo": ["--test", "continuidade-da-replica"],
@@ -29564,5 +29567,136 @@ fn anotar(""",
         "seguem": [
             "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
         ],
+    },
+    {
+        "id": "299-ruptura-larga-so-a-tabela",
+        "titulo": "a tabela de continuidade rompida saia so ela da rodada, e as irmas da mesma transacao entravam: a venda sem o pagamento (pedido 299, R1/F2)",
+        "porque": (
+            "pedido 299, R1: medido no HEAD edbd6180, (1, ITENS, 0) -- a venda "
+            "entra em vendas e itens e nunca em pagamentos, legivel e "
+            "indistinguivel de uma venda sem pagamento. Os tres maduros param o "
+            "FLUXO, e nao a tabela. Reposto (a barreira nao chega ao Juntador), "
+            "a venda volta pela metade e as filhas da mae de outra historia "
+            "voltam a entrar."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
+        "trecho": """        if let Some(p) = &parada {
+            juntador.barrar(p.tx);
+        }""",
+        "troca": """        // DEFEITO REPOSTO (299, F2): a parada volta a ser por tabela.
+        let _ = &parada;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-ruptura-da-replica"],
+        "caem": ["a_tabela_rompida_segura_a_transacao_inteira_e_as_seguintes"],
+        "seguem": [
+            "a_divergencia_no_meio_do_grupo_nao_deixa_metade_no_arranque",
+            "a_inclusao_que_diverge_nao_grava_no_rowid_errado",
+        ],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-barreira-so-do-ultimo-evento",
+        "titulo": "a barreira da tabela rompida saia do evento `posicao - 1`, e nao do fim do prefixo comum: com duas escritas locais a venda do PRIMEIRO evento que falta passava (pedido 299, F2)",
+        "porque": (
+            "pedido 299, F2: a conferencia de continuidade compara so o evento "
+            "posicao - 1; com duas escritas locais ele e o SEGUNDO evento da "
+            "origem que falta aqui, e a transacao do primeiro passava inteira "
+            "nas irmas. Reposto (a busca comeca no fim), a venda 3 volta a "
+            "(1, ITENS, 0)."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
+        "trecho": """        let (mut lo, mut hi) = (0u64, alcance);""",
+        "troca": """        // DEFEITO REPOSTO (299, F2): so o ultimo evento conta.
+        let (mut lo, mut hi) = (alcance.saturating_sub(1), alcance);""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-ruptura-da-replica"],
+        "caem": ["a_tabela_rompida_segura_a_transacao_inteira_e_as_seguintes"],
+        "seguem": ["a_divergencia_no_meio_do_grupo_nao_deixa_metade_no_arranque"],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-juntador-sem-barreira",
+        "titulo": "o Juntador aplicava a transacao que toca uma tabela parada e as seguintes (pedido 299, F2)",
+        "porque": (
+            "pedido 299, F2, provado sem rede e sem disco: com a barreira na "
+            "transacao 3, so a 1 e a 2 entram. Reposto, o grupo leva a 3 e a 4."
+        ),
+        "arquivo": "crates/phxsql-server/src/replica.rs",
+        "trecho": """            if self.barreira.is_some_and(|b| tx >= b) {
+                self.segurou = true;
+                break;
+            }""",
+        "troca": """            // DEFEITO REPOSTO (299, F2): a barreira nao segura nada.""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": ["replica::testes_do_juntador::a_barreira_segura_a_transacao_inteira_e_as_seguintes"],
+        "seguem": ["replica::testes_do_juntador::sem_barreira_nada_fica_segurado"],
+    },
+    {
+        "id": "299-grupo-fiel-sem-ensaio",
+        "titulo": "o grupo da replica fiel comecava sem ensaio: o erro deterministico no meio batia de novo na completacao e no arranque, e a metade ficava (pedido 299, R2/F1)",
+        "porque": (
+            "pedido 299, R2: medido no HEAD edbd6180, ((0, 4, 0), (0, 4, 0)) -- "
+            "com o central vivo e depois do arranque, que conta a marca como "
+            "impossivel e a apaga. Os quatro maduros desfazem a metade; aqui "
+            "desfazer devolveria slot, entao se ensaia antes. Reposto, a venda "
+            "volta pela metade nas duas provas."
+        ),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_replicacao_01.rs",
+        "trecho": """                for e in eventos {
+                    if let Err(erro) =
+                        alvo.ensaiar_evento(""",
+        "troca": """                // DEFEITO REPOSTO (299, F1): o grupo nao se ensaia.
+                for e in eventos.iter().take(0) {
+                    if let Err(erro) =
+                        alvo.ensaiar_evento(""",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-ruptura-da-replica"],
+        "caem": [
+            "a_divergencia_no_meio_do_grupo_nao_deixa_metade_no_arranque",
+            "a_inclusao_que_diverge_nao_grava_no_rowid_errado",
+        ],
+        "seguem": ["a_tabela_rompida_segura_a_transacao_inteira_e_as_seguintes"],
+        "prazo": 1800,
+    },
+    {
+        "id": "299-rowid-conferido-depois-de-gravar",
+        "titulo": "a inclusao replicada conferia o rowid DEPOIS de gravar: a linha entrava no slot errado antes da recusa (pedido 299)",
+        "porque": (
+            "pedido 299, achado da F0: medido no HEAD edbd6180, a replica com "
+            "um slot a mais gravava a inclusao do source no rowid 2 e so entao "
+            "recusava -- um slot que a ordem de digitacao nunca devolve, e o "
+            "diario daqui fora do da origem. Reposto, o .reg cresce na recusa."
+        ),
+        "arquivo": "crates/phxsql-store/src/table.rs",
+        "trecho": """                    if let Some(meu) = self.rowid_previsto(0) {""",
+        "troca": """                    // DEFEITO REPOSTO (299): o rowid so depois de gravar.
+                    if let Some(meu) = self.rowid_previsto(0).filter(|_| false) {""",
+        "pacote": "phxsql-store",
+        "alvo": ["--test", "replicacao"],
+        "caem": ["a_inclusao_divergente_e_recusada_sem_gravar"],
+        "seguem": ["o_ensaio_aprova_o_grupo_sao_e_nao_grava"],
+    },
+    {
+        "id": "299-nota-do-corrompido-calada",
+        "titulo": "a nota de um erro Corrompido sumia calada: «nada entrou» e «a marca fica para o arranque» nao chegavam a quem le (pedido 299)",
+        "porque": (
+            "pedido 299: `com_nota` devolvia o Corrompido como veio, e a "
+            "divergencia da replica e Corrompido -- a nota do ensaio, e a do "
+            "713 que manda esperar o arranque, sumiam. Envolver nao e "
+            "substituir. Reposto, a parada deixa de dizer que foi o ensaio."
+        ),
+        "arquivo": "crates/phxsql-core/src/error.rs",
+        "trecho": """            PhxError::Corrompido(m) => PhxError::Corrompido(junta(m)),
+""",
+        "troca": "",
+        "pacote": "phxsql-server",
+        "alvo": ["--test", "venda-inteira-na-ruptura-da-replica"],
+        "caem": [
+            "a_divergencia_no_meio_do_grupo_nao_deixa_metade_no_arranque",
+            "a_inclusao_que_diverge_nao_grava_no_rowid_errado",
+        ],
+        "seguem": ["a_tabela_rompida_segura_a_transacao_inteira_e_as_seguintes"],
+        "prazo": 1800,
     },
 ]

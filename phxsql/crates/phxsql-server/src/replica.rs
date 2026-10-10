@@ -854,6 +854,12 @@ pub struct Juntador {
     partida: Option<u64>,
     /// Quantas transacoes passaram do teto nesta rodada.
     pub em_pedacos: u64,
+    /// Daqui em diante nada se aplica: a transacao com este id (ou maior)
+    /// toca uma tabela que parou -- pedido 299, F2. Ver [`Juntador::barrar`].
+    barreira: Option<u64>,
+    /// A rodada chegou a barreira com transacao na mao: alguma ficou
+    /// segurada.
+    pub segurou: bool,
 }
 
 impl Juntador {
@@ -872,7 +878,39 @@ impl Juntador {
             teto,
             partida: None,
             em_pedacos: 0,
+            barreira: None,
+            segurou: false,
         }
+    }
+
+    /// A transacao `tx` toca uma tabela que PAROU (continuidade rompida, ou
+    /// o ensaio que recusou): ela e toda transacao depois dela ficam fora
+    /// desta rodada, em TODAS as tabelas -- pedido 299, F2.
+    ///
+    /// # Por que a parada e por transacao, e nao por tabela
+    ///
+    /// Largar so a tabela rompida deixava as irmas da mesma transacao
+    /// entrarem: a venda chegava sem o pagamento, legivel e indistinguivel de
+    /// uma venda sem pagamento. E as transacoes DEPOIS dela tambem esperam,
+    /// porque podem depender da que parou -- os tres maduros param o fluxo, e
+    /// nao a tabela (o `worker.c` do PostgreSQL, a thread SQL do MySQL e do
+    /// MariaDB). As de ANTES que nao a tocam entram: os ids sao estritamente
+    /// crescentes, entao nenhuma delas depende da parada.
+    ///
+    /// Varias barreiras na mesma rodada: vale a menor.
+    pub fn barrar(&mut self, tx: u64) {
+        self.barreira = Some(self.barreira.map_or(tx, |b| b.min(tx)));
+    }
+
+    /// As tabelas cuja mao ja tem algum evento da transacao `tx` -- o que a
+    /// parada diz de onde a transacao segurada mexe.
+    pub fn tabelas_de(&self, tx: u64) -> Vec<usize> {
+        self.filas
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.eventos.iter().any(|e| e.tx == tx))
+            .map(|(i, _)| i)
+            .collect()
     }
 
     /// O lote que chegou para a tabela `fila`, a partir do `desde` que o
@@ -1006,6 +1044,13 @@ impl Juntador {
             else {
                 break;
             };
+            // A barreira vem ANTES de tudo, inclusive do «puxe o resto»: a
+            // transacao segurada nao precisa estar inteira na mao para nao
+            // entrar.
+            if self.barreira.is_some_and(|b| tx >= b) {
+                self.segurou = true;
+                break;
+            }
             let incompleta = if tx == 0 {
                 None
             } else {
@@ -2053,6 +2098,48 @@ mod testes_do_juntador {
         assert!(inteiro);
         assert_eq!(g, vec![(0, vec![5, 5, 5, 9]), (1, vec![5])]);
         assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    /// **Pedido 299, F2: a parada e por TRANSACAO.** A transacao 3 toca uma
+    /// tabela que parou (a barreira): ela nao entra em NENHUMA tabela, nem a 4
+    /// que vem depois; a 1 e a 2, de antes, entram. Com a parada por tabela
+    /// de antes (so a fila rompida largada), o grupo levava a 3 e a 4 nas
+    /// filas 0 e 1 -- a venda sem o pagamento.
+    #[test]
+    fn a_barreira_segura_a_transacao_inteira_e_as_seguintes() {
+        let mut j = Juntador::novo(&[(0, 2), (0, 2), (0, 1)], TETO_DA_TRANSACAO);
+        j.barrar(3);
+        assert_eq!(puxar(&mut j), (0, 0));
+        j.receber(0, vec![ev(1, 1), ev(3, 1)]);
+        assert_eq!(puxar(&mut j), (1, 0));
+        j.receber(1, vec![ev(3, 1), ev(4, 1)]);
+        assert_eq!(puxar(&mut j), (2, 0));
+        j.receber(2, vec![ev(2, 1)]);
+        let (g, inteiro) = aplicar(&mut j);
+        assert!(inteiro);
+        assert_eq!(g, vec![(0, vec![1]), (2, vec![2])]);
+        assert!(matches!(j.passo(), Passo::Fim));
+        assert!(j.segurou);
+        assert_eq!(j.tabelas_de(3), vec![0, 1]);
+        // A menor barreira vale.
+        j.barrar(9);
+        assert!(matches!(j.passo(), Passo::Fim));
+    }
+
+    /// O comportamento VELHO: sem barreira, as mesmas filas entram inteiras
+    /// e nada fica segurado.
+    #[test]
+    fn sem_barreira_nada_fica_segurado() {
+        let mut j = Juntador::novo(&[(0, 2), (0, 2), (0, 1)], TETO_DA_TRANSACAO);
+        assert_eq!(puxar(&mut j), (0, 0));
+        j.receber(0, vec![ev(1, 1), ev(3, 1)]);
+        assert_eq!(puxar(&mut j), (1, 0));
+        j.receber(1, vec![ev(3, 1), ev(4, 1)]);
+        assert_eq!(puxar(&mut j), (2, 0));
+        j.receber(2, vec![ev(2, 1)]);
+        let (g, _) = aplicar(&mut j);
+        assert_eq!(g, vec![(0, vec![1, 3]), (1, vec![3, 4]), (2, vec![2])]);
+        assert!(!j.segurou);
     }
 
     /// Transacoes inteiras seguidas dividem a tomada: o alcance de um diario

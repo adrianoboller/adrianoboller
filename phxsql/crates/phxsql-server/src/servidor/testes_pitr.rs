@@ -795,3 +795,112 @@ fn o_restaurado_so_aparece_com_o_diario_ja_reaplicado() {
     );
     assert_eq!(linhas(&s, "b_atomico").len(), LINHAS as usize);
 }
+
+/// **O RED do R3 do pedido 299** -- o PITR corta evento a evento, e um commit
+/// de varias tabelas cujo relogio atravessa um milissegundo, com o `ate`
+/// dentro dele, restaura MEIA venda.
+///
+/// A venda e um `COMMIT` so: uma linha em `vendas`, os itens em `itens`, uma
+/// em `pagamentos`. O carimbo e o relogio de CADA evento, entao uma venda
+/// grande atravessa o milissegundo sozinha (a prova confere que atravessou, e
+/// dobra a venda se nao). O corte vai no carimbo do PRIMEIRO item.
+///
+/// Vermelho medido no HEAD `edbd6180`: `(1, k, 0)` no restaurado, com
+/// `0 < k < itens`. O conserto e a F3 do desenho
+/// (`docs/propostas/atomicidade-na-replica-299.md` §6: o PITR pelo
+/// `Juntador`, a transacao entra se o MAIOR carimbo dela <= `ate`) -- fora
+/// da frente F1+F2, e por isso a prova fica `ignore` ate la: ela e o aceite
+/// da F3, e roda com `--ignored`.
+#[test]
+#[ignore = "RED do R3 (pedido 299): o conserto e a F3, fora da frente F1+F2"]
+fn o_pitr_nao_restaura_meia_venda() {
+    let dir = DirTemp::novo("pitr-meia-venda");
+    let s = servidor(&dir.0, true);
+    let pede = |corpo: &str| {
+        let mut ses = Sessao {
+            ligacao: 299,
+            ip: "127.0.0.1".into(),
+            ..Sessao::default()
+        };
+        let (_, _, r) = s.despachar(
+            &format!(r#"{{"token":"t",{corpo}}}"#),
+            &mut ses,
+            "127.0.0.1",
+        );
+        r.unwrap_or_else(|e| panic!("{corpo}: {e}"))
+    };
+    pede(r#""op":"criar_database","database":"b""#);
+    for tabela in ["vendas", "itens", "pagamentos"] {
+        pede(&format!(
+            r#""op":"criar_tabela","database":"b","tabela":"{tabela}",
+               "colunas":[{{"nome":"id","tipo":"Int8","obrigatoria":true}},
+                          {{"nome":"venda","tipo":"Int8"}}],
+               "indices":[{{"nome":"pk_id","colunas":["id"],"unico":true,"primario":true}}]"#
+        ));
+    }
+    passa_um_ms();
+    let destino = dir.0.join("copias").display().to_string();
+    let zip = pede(&format!(
+        r#""op":"backup","destino":"{destino}","database":"b","zip":true"#
+    ))
+    .texto_ou("arquivo", "")
+    .to_string();
+    passa_um_ms();
+
+    let carimbos_dos_itens = || -> Vec<i64> {
+        s.executar(
+            "diario",
+            &ped(r#"{"database":"b","tabela":"itens","max":100000}"#),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("eventos")
+        .and_then(Json::lista)
+        .unwrap()
+        .iter()
+        .map(|e| e.campo("carimbo_ms").and_then(Json::inteiro).unwrap())
+        .collect()
+    };
+    // A venda, num COMMIT so, grande o bastante para o relogio andar dentro
+    // dela: medido, 600 inclusoes num COMMIT de `debug` levam varios ms.
+    let itens = 600usize;
+    pede(r#""op":"begin","database":"b""#);
+    pede(r#""op":"inserir","database":"b","tabela":"vendas","linha":{"id":1,"venda":1}"#);
+    for i in 1..=itens {
+        pede(&format!(
+            r#""op":"inserir","database":"b","tabela":"itens","linha":{{"id":{i},"venda":1}}"#
+        ));
+    }
+    pede(r#""op":"inserir","database":"b","tabela":"pagamentos","linha":{"id":1,"venda":1}"#);
+    pede(r#""op":"commit""#);
+    let carimbos = carimbos_dos_itens();
+    assert!(
+        carimbos.first() != carimbos.last(),
+        "o relogio nao andou dentro da venda de {itens} itens: a prova nao tem corte \
+         no meio -- aumente a venda"
+    );
+    let corte = carimbos[0];
+
+    pede(&format!(
+        r#""op":"restaurar_backup","origem":"{zip}","database":"b_meia","ate_ms":{corte}"#
+    ));
+    let conta = |tabela: &str| {
+        s.executar(
+            "varrer",
+            &ped(&format!(r#"{{"database":"b_meia","tabela":"{tabela}"}}"#)),
+            &Sessao::default(),
+        )
+        .unwrap()
+        .campo("linhas")
+        .and_then(Json::lista)
+        .map_or(0, <[Json]>::len)
+    };
+    let r = (conta("vendas"), conta("itens"), conta("pagamentos"));
+    assert!(
+        r == (0, 0, 0) || r == (1, itens, 1),
+        "o PITR restaurou MEIA venda (vendas, itens, pagamentos) = {r:?}, com o \
+         corte em {corte} e os itens de {} a {}",
+        carimbos[0],
+        carimbos[carimbos.len() - 1]
+    );
+}

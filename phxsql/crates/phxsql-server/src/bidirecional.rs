@@ -795,6 +795,54 @@ fn tamanho_em_bytes(v: &phxsql_core::value::Value) -> usize {
     }
 }
 
+/// Por que a replicacao FIEL de um database esta parada numa transacao da
+/// origem -- pedido 299, F2.
+///
+/// # Por que nao mora em [`EstadoOrigem::paradas`]
+///
+/// Aquele mapa e por tabela e e o que `replicacao_pular` consome: pular um
+/// evento do bidirecional anda a posicao de UM par. Aqui a parada e de uma
+/// TRANSACAO inteira, em varias tabelas, e pular nao entra (papel C, desenho
+/// do 299 §5.5): na replica fiel pular diverge a numeracao do `.reg`, e a
+/// saida e reconstruir a tabela, como sempre foi. Juntar os dois mapas daria
+/// ao `replicacao_pular` uma porta que ele nao pode abrir.
+///
+/// Derivada do dado, como a [`ParadaDaTabela`]: a rodada seguinte remarca
+/// sozinha, e a que nao encontra mais o motivo a tira.
+#[derive(Debug, Clone, Default)]
+pub struct ParadaDaTransacao {
+    /// O id da transacao da origem que nao entrou -- e nenhuma depois dela.
+    pub tx: u64,
+    /// As tabelas que a transacao toca, das que esta replica ja viu.
+    pub tabelas: Vec<String>,
+    /// Em CHAVE: `"continuidade_rompida"` ou `"ensaio"`.
+    pub motivo: String,
+    /// A tabela que parou a transacao.
+    pub tabela: String,
+    /// O porque, ja dito por quem parou.
+    pub detalhe: String,
+    pub em_ms: i64,
+}
+
+impl ParadaDaTransacao {
+    pub fn para_json(&self) -> Json {
+        Json::objeto(vec![
+            ("tx", Json::de_u64(self.tx)),
+            ("motivo", Json::texto_de(&self.motivo)),
+            ("tabela", Json::texto_de(&self.tabela)),
+            (
+                "tabelas",
+                Json::Lista(self.tabelas.iter().map(Json::texto_de).collect()),
+            ),
+            ("detalhe", Json::texto_de(&self.detalhe)),
+            (
+                "desde",
+                Json::texto_de(phxsql_core::datahora::instante_iso(self.em_ms)),
+            ),
+        ])
+    }
+}
+
 /// O que o laco de uma origem conta para a operacao `replicacao_estado`.
 #[derive(Debug, Default, Clone)]
 pub struct EstadoOrigem {
@@ -821,6 +869,9 @@ pub struct EstadoOrigem {
     /// que aparece cheio em toda instalacao sa e mapa que ninguem le quando
     /// enche. Ver [`ParadaDaTabela`] e a operacao `replicacao_pular`.
     pub paradas: BTreeMap<String, ParadaDaTabela>,
+    /// "database" -> a transacao da origem em que a replica FIEL parou
+    /// (pedido 299, F2). Vazio no caso comum. Ver [`ParadaDaTransacao`].
+    pub transacoes_paradas: BTreeMap<String, ParadaDaTransacao>,
     /// Proxima janela do agendamento, ms desde a epoca. Zero = streaming.
     pub proxima_janela_ms: i64,
     /// Por que o laco esta PARADO, quando esta. Vazio enquanto ele roda.
@@ -954,6 +1005,15 @@ impl EstadoOrigem {
                 "paradas",
                 Json::Objeto(
                     self.paradas
+                        .iter()
+                        .map(|(k, v)| (k.clone(), v.para_json()))
+                        .collect(),
+                ),
+            ),
+            (
+                "transacoes_paradas",
+                Json::Objeto(
+                    self.transacoes_paradas
                         .iter()
                         .map(|(k, v)| (k.clone(), v.para_json()))
                         .collect(),

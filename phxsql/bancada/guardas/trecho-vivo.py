@@ -996,7 +996,12 @@ TETO_TESTE_SEM_MODULO = 0
 # desligado, conta, a sessao do poupado termina, so a forma conta, o
 # empilhado uma vez, o leitor do interruptor, a sessao web, a classificacao
 # sem o observador e a entrega das classes). Provadas com `--so` nas 19.
-PISO_DAS_ENTRADAS = 966
+# +6 (pedido 299, F0-F2, 10/10/2026): a ruptura que larga so a tabela, a
+# barreira tirada so do ultimo evento, o Juntador sem barreira, o grupo fiel
+# sem ensaio, o rowid conferido depois de gravar e a nota do Corrompido
+# calada. RED de cada uma pelo provador com `--so`.
+# 972 = 966 (P7/P8) + 6 (299 F0-F2), somados na integracao.
+PISO_DAS_ENTRADAS = 972
 
 # ------------------------------------------------------------- APOSENTADAS
 #

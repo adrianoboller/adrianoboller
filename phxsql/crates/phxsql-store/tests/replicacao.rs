@@ -581,3 +581,139 @@ fn replicacao_fiel_continua_aplicando_byte_a_byte() {
     assert_eq!(r.registros(), s.registros(), "contagem de registros");
     assert_eq!(r.marcadas(), s.marcadas(), "contagem de marcadas");
 }
+
+// ------------------------------------------- o ensaio do grupo (pedido 299)
+
+use phxsql_store::table::EnsaioDaTabela;
+
+/// **Pedido 299: o rowid se confere ANTES de gravar.** A replica que ja tem
+/// uma linha a mais recusa a inclusao do source sem tocar no `.reg`. Vermelho
+/// medido no HEAD `edbd6180`: a linha entrava no rowid 2 antes da recusa --
+/// um slot que a ordem de digitacao nunca devolve.
+#[test]
+fn a_inclusao_divergente_e_recusada_sem_gravar() {
+    let ds = DirTemp::novo("rep-pre-s");
+    let dr = DirTemp::novo("rep-pre-r");
+    let (mut s, mut r) = par(&ds, &dr);
+    r.inserir(&linha(999)).unwrap();
+    s.inserir(&linha(1)).unwrap();
+    let (e, imagem) = s.diario_com_imagem(0, 0).unwrap().remove(0);
+    let antes = (r.slots(), r.eventos().unwrap());
+    // O ensaio diz o mesmo que o aplicador, sem gravar.
+    let ensaio = r.ensaiar_evento(
+        e.operacao,
+        e.rowid,
+        &imagem,
+        &mut EnsaioDaTabela::novo(false),
+    );
+    assert!(ensaio.unwrap_err().to_string().contains("e aqui saiu 2"));
+    assert_eq!((r.slots(), r.eventos().unwrap()), antes, "o ensaio gravou");
+    let erro = r.aplicar_evento(e.operacao, e.rowid, &imagem).unwrap_err();
+    assert!(erro.to_string().contains("e aqui saiu 2"), "{erro}");
+    assert_eq!(
+        (r.slots(), r.eventos().unwrap()),
+        antes,
+        "a inclusao divergente gravou a linha antes de recusar"
+    );
+}
+
+/// O ensaio aprova o grupo SAO -- inclusoes, a alteracao e a exclusao de uma
+/// linha que NASCEU no proprio grupo -- e nao toca o disco; o aplicador
+/// depois aplica o mesmo grupo inteiro. E o comportamento velho: o ensaio
+/// nao pode recusar replicacao legitima.
+#[test]
+fn o_ensaio_aprova_o_grupo_sao_e_nao_grava() {
+    let ds = DirTemp::novo("rep-ens-s");
+    let dr = DirTemp::novo("rep-ens-r");
+    let (mut s, mut r) = par(&ds, &dr);
+    s.inserir(&linha(1)).unwrap();
+    s.inserir(&linha(2)).unwrap();
+    let mut nova = linha(1);
+    nova[1] = Value::Str("Cliente alterado".into());
+    s.atualizar(1, &nova).unwrap();
+    s.excluir(2).unwrap();
+    s.inserir(&linha(3)).unwrap();
+    let eventos = s.diario_com_imagem(0, 0).unwrap();
+    assert_eq!(eventos.len(), 5);
+    for unicidade in [false, true] {
+        let mut ensaio = EnsaioDaTabela::novo(unicidade);
+        for (e, imagem) in &eventos {
+            r.ensaiar_evento(e.operacao, e.rowid, imagem, &mut ensaio)
+                .unwrap_or_else(|erro| panic!("o ensaio recusou o grupo sao: {erro}"));
+        }
+        r.ver_so_o_disco();
+        assert_eq!((r.slots(), r.eventos().unwrap()), (0, 0), "o ensaio gravou");
+    }
+    replicar(&mut s, &mut r, 0);
+    assert_eq!(r.slots(), 3);
+}
+
+/// A linha que o grupo vai alterar nao existe aqui -- excluida por fora, ou
+/// por um evento ANTERIOR do mesmo grupo: o ensaio recusa antes do primeiro
+/// evento, com o rowid.
+#[test]
+fn o_ensaio_ve_a_linha_que_falta() {
+    let ds = DirTemp::novo("rep-falta-s");
+    let dr = DirTemp::novo("rep-falta-r");
+    let (mut s, mut r) = par(&ds, &dr);
+    s.inserir(&linha(1)).unwrap();
+    replicar(&mut s, &mut r, 0);
+    let mut nova = linha(1);
+    nova[1] = Value::Str("Cliente alterado".into());
+    s.atualizar(1, &nova).unwrap();
+    let (alt, imagem_alt) = s.diario_com_imagem(1, 0).unwrap().remove(0);
+    assert_eq!(alt.operacao, Operacao::Alteracao);
+
+    // Dentro do grupo: a exclusao do rowid 1 e, depois, a alteracao dele.
+    let mut ensaio = EnsaioDaTabela::novo(false);
+    r.ensaiar_evento(Operacao::Exclusao, 1, &[], &mut ensaio)
+        .unwrap();
+    let erro = r
+        .ensaiar_evento(alt.operacao, alt.rowid, &imagem_alt, &mut ensaio)
+        .unwrap_err();
+    assert!(erro.to_string().contains("nao existe"), "{erro}");
+
+    // Por fora: a linha saiu daqui.
+    r.excluir(1).unwrap();
+    let erro = r
+        .ensaiar_evento(
+            alt.operacao,
+            alt.rowid,
+            &imagem_alt,
+            &mut EnsaioDaTabela::novo(false),
+        )
+        .unwrap_err();
+    assert!(erro.to_string().contains("rowid 1"), "{erro}");
+}
+
+/// A unicidade so entra com o portao ligado -- a replica que pode ter sido
+/// escrita aqui. A linha alterada localmente toma a chave que o source vai
+/// incluir: com o portao, o ensaio recusa; sem ele, passa (e o aplicador e o
+/// cinto).
+#[test]
+fn a_unicidade_do_ensaio_so_entra_pedida() {
+    let ds = DirTemp::novo("rep-uni-s");
+    let dr = DirTemp::novo("rep-uni-r");
+    let (mut s, mut r) = par(&ds, &dr);
+    s.inserir(&linha(1)).unwrap();
+    replicar(&mut s, &mut r, 0);
+    r.atualizar(1, &linha(7)).unwrap();
+    s.inserir(&linha(7)).unwrap();
+    let (e, imagem) = s.diario_com_imagem(1, 0).unwrap().remove(0);
+    r.ensaiar_evento(
+        e.operacao,
+        e.rowid,
+        &imagem,
+        &mut EnsaioDaTabela::novo(false),
+    )
+    .unwrap();
+    let erro = r
+        .ensaiar_evento(
+            e.operacao,
+            e.rowid,
+            &imagem,
+            &mut EnsaioDaTabela::novo(true),
+        )
+        .unwrap_err();
+    assert!(erro.to_string().contains("indice unico"), "{erro}");
+}

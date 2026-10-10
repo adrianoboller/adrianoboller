@@ -246,3 +246,38 @@ pela parada com o `tx` e pela `ultima_tx_da_origem`.
 
 O que fica dito para não voltar: H2 (diário de transação separado) e H6 (*undo* na réplica) estão
 **recusadas** — a primeira duplica a pergunta que o `tx` responde, a segunda devolve slot.
+
+---
+
+## 8. F0–F2, medido (10/10/2026, papel B, base `edbd6180`)
+
+| | RED no HEAD | Prova | Depois do conserto |
+|---|---|---|---|
+| R1 | **vivo**: `(1, 4, 0)` | `venda-inteira-na-ruptura-da-replica::a_tabela_rompida_segura_a_transacao_inteira_e_as_seguintes` (duas escritas locais) | `(0, 0, 0)`; a venda anterior que não toca entra; `transacoes_paradas` nomeia o `tx` |
+| R2 | **vivo**, com forma diferente da prevista: `((0, 4, 0), (0, 4, 0))` vivo e depois do arranque — a ordem do grupo é a do nome, `itens` antes | `…::a_divergencia_no_meio_do_grupo_nao_deixa_metade_no_arranque` (alteração de linha que saiu por fora do diário) | `(0, 0, 0)` nos dois; o erro diz «ensaio» |
+| R2' (achado) | **vivo**: `(1, 4, 1)` com o pagamento no rowid 3 — o `aplicar_evento` conferia o rowid **depois** de gravar | `…::a_inclusao_que_diverge_nao_grava_no_rowid_errado` | `(0, 0, 0)` |
+| R3 | **vivo**: `(1, 15, 0)` no restaurado | `servidor::testes_pitr::o_pitr_nao_restaura_meia_venda` (`#[ignore]`, aceite da F3) | — (F3, fora desta frente; **não** é o mesmo motor: o PITR não passa pelo `Juntador`) |
+
+**Custo do ensaio** (`cargo run --release --example custo-do-ensaio -p phxsql-store`,
+50.000 eventos, 90/10, grupos de 500, cinco pares intercalados): sem a unicidade
+**+1,1%**, faixas se cruzam (5,83 [5,72–6,17] × 5,76 [5,73–5,87] µs/evento); com a
+unicidade **+57,8%**, faixas separadas (9,40 × 5,96). Daí a divergência do §4: a
+unicidade só entra na tabela com escrita local contada, e não «sem
+`somente_leitura`» (o padrão de fábrica — toda réplica comum pagaria 58% sem
+comprar nada, porque a escrita local pelo servidor já rompe a continuidade antes
+de qualquer grupo).
+
+**Três desvios do desenho, com motivo:** (1) a parada vai em
+`replicacao_estado.origens.<o>.transacoes_paradas.<database>` e não em `paradas`,
+que é o mapa por tabela que o `replicacao_pular` consome (§5.5: pular não entra);
+(2) o ensaio da fiel e o do bidi continuam dois — perguntas diferentes (rowid ×
+chave com «mais recente vence»), e a decisão comum (a identidade, o rowid
+previsto) é UMA função do `Table` que o aplicador também chama; (3) a barreira
+sai do fim do prefixo comum dos diários, e não do evento conferido — ver
+`docs/cognicao/cognicao_a-conferencia-de-continuidade-ve-o-ultimo-evento-nao-o-primeiro-que-falta_20261010_0500.md`.
+
+**Consequência que muda comportamento velho, de propósito:** a tabela de outra
+história (601) agora segura o database a partir da primeira transação da origem
+que a toca (`orfas-na-replica::a_mae_de_outra_historia_segura_as_filhas`). A
+prova da órfã contada mudou de fábrica: a mãe que saiu da réplica por fora do
+diário.

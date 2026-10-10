@@ -165,9 +165,16 @@ impl PhxError {
     /// quem precisa dizer ONDE o erro caiu sem trocar o codigo dele. Mora aqui
     /// porque o servidor e o `store` fazem a mesma pergunta (pedido 574), e as
     /// familias sem texto proprio voltam como vieram.
+    ///
+    /// `Corrompido` entra (pedido 299): e a familia do erro do DADO no meio
+    /// de um grupo -- «a replica divergiu» --, e as notas que diziam «nada
+    /// entrou» ou «a marca fica no disco para o arranque» sumiam caladas
+    /// justamente nela. Nota que se declara dita e nao aparece e o defeito do
+    /// «envolver nao e substituir».
     pub fn com_nota(self, nota: &str) -> PhxError {
         let junta = |m: String| format!("{m}; {nota}");
         match self {
+            PhxError::Corrompido(m) => PhxError::Corrompido(junta(m)),
             PhxError::Esquema(m) => PhxError::Esquema(junta(m)),
             PhxError::Tipo(m) => PhxError::Tipo(junta(m)),
             PhxError::NaoEncontrado(m) => PhxError::NaoEncontrado(junta(m)),

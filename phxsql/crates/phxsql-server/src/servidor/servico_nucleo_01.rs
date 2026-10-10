@@ -516,6 +516,8 @@ impl Servidor {
             transacoes_abertas: AtomicUsize::new(0),
             marcas_do_diario: Mutex::new(HashMap::new()),
             continuidade_da_replica: Mutex::new(HashMap::new()),
+            barreiras_das_rompidas: Mutex::new(HashMap::new()),
+            segurar_no_ensaio: Mutex::new(HashMap::new()),
             profiler: Mutex::new(crate::profiler::Profiler::default()),
             profiler_ligado: AtomicBool::new(false),
             rotinas: Mutex::new(rotinas),

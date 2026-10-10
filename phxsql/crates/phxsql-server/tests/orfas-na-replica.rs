@@ -14,9 +14,19 @@
 //! de transacao e aplica cada grupo sob UMA tomada, com a mae antes da filha
 //! (`ordem_das_maes`) -- a filha que so chegava antes por causa do nome deixou
 //! de ser orfa, e conta-la seria alarme falso. A orfa que sobra e a de
-//! verdade: a mae que NAO chega. A fabrica agora e essa -- a `clientes` da
-//! replica e de OUTRA historia (criada por conta, posta antes de ela subir),
-//! entao a replica a recusa e as filhas entram sem mae nenhuma.
+//! verdade: a mae que NAO esta aqui.
+//!
+//! # E o que mudou com o pedido 299
+//!
+//! A fabrica do 676 era a `clientes` de OUTRA historia: a replica a recusava
+//! e as filhas entravam sem mae. Desde o 299 (F2) a tabela rompida segura a
+//! transacao que a toca e todas as seguintes, em TODAS as tabelas -- as
+//! filhas daquela fabrica deixaram de entrar, que e o conserto (os tres
+//! maduros param o fluxo, e nao a tabela), e a prova disso mora em
+//! [`a_mae_de_outra_historia_segura_as_filhas`]. A orfa da replica fiel agora
+//! e a da linha que saiu daqui POR FORA do diario (o 498 H3): o diario
+//! continua o da origem, a continuidade confere, e a filha que chega aponta
+//! para uma mae que nao esta mais no `.reg`.
 
 mod comum;
 use comum::DirTemp;
@@ -236,30 +246,72 @@ fn orfas(porta: u16) -> Json {
         .unwrap_or(Json::Nulo)
 }
 
-/// **A prova real.** A `clientes` desta replica e de OUTRA historia: a
-/// replica a recusa (a mae nunca chega), as tres filhas entram sem mae (a
-/// replica nao recusa -- recusar perderia as tres) e as tres sao CONTADAS. O
-/// numero fica, porque conta o que ACONTECEU, como o `apply_error_count` do
-/// PostgreSQL.
+/// **A prova real.** As maes chegaram a esta replica e SAIRAM por fora do
+/// diario -- a exclusao que cai entre o `.reg` e o diario (o 498 H3, pelo
+/// panico de teste de `debug`). O diario daqui continua o da origem, entao a
+/// continuidade confere e nada para; as tres filhas da origem entram sem mae
+/// (a replica nao recusa -- recusar perderia as tres) e as tres sao CONTADAS.
+/// O numero fica, porque conta o que ACONTECEU, como o `apply_error_count`
+/// do PostgreSQL.
 ///
 /// **Defeito reposto** (o ramo da replica em `Table::conferir_as_maes` sem o
 /// veredito -- `pendente` sempre `None`, que e o silencio de antes): o campo
 /// vem vazio e o teste cai na asercao da contagem.
 #[test]
 fn a_filha_cuja_mae_nao_chega_e_contada() {
-    // A mae de outra historia: criada por um servidor a parte, com o mesmo
-    // esquema e outra linhagem, e posta na replica antes de ela subir.
-    let base_x = DirTemp::novo("orfas-outra-historia");
+    use phxsql_store::ndx::panico_de_teste::{armar, Ponto};
+    // As maes, escritas por um servidor que para; o diretorio dele vira a
+    // origem E a replica, por copia -- a mesma historia dos dois lados.
+    let base_x = DirTemp::novo("orfas-maes");
     {
-        let x = subir(config(&base_x.0, "outro", Papel::Source));
-        exigir(x.porta, r#""op":"criar_database","database":"loja""#);
-        exigir(x.porta, CLIENTES);
+        let x = subir(config(&base_x.0, "fonte", Papel::Source));
+        tabelas(x.porta, "a_itens");
+        for i in 1..=LINHAS {
+            exigir(
+                x.porta,
+                &format!(
+                    r#""op":"inserir","database":"loja","tabela":"clientes","linha":{{"id":{i}}}"#
+                ),
+            );
+        }
     }
     let base_s = DirTemp::novo("orfas-source-sem-mae");
     let base_r = DirTemp::novo("orfas-replica-sem-mae");
+    copiar(&base_x.0.join("loja"), &base_s.0.join("loja"));
     copiar(&base_x.0.join("loja"), &base_r.0.join("loja"));
+    // As maes saem da replica sem evento no diario.
+    {
+        let inst = phxsql_store::catalogo::Instancia::nova(&base_r.0).unwrap();
+        let db = inst.abrir_database("loja").unwrap();
+        // A copia saiu de um servidor que acabou de parar: o indice que ele
+        // deixou marcado se reconstroi aqui, como o arranque faria -- a
+        // exclusao confere as filhas pelo indice delas.
+        for t in ["clientes", "a_itens"] {
+            db.abrir_qualificada(t).unwrap().reindexar().unwrap();
+        }
+        for i in 1..=LINHAS as u64 {
+            let mut t = db.abrir_qualificada("clientes").unwrap();
+            let eventos = t.eventos().unwrap();
+            let caiu = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                armar(Ponto::ExcluirDepoisDoSlot);
+                let _ = t.excluir_de_vez(i, "teste");
+            }));
+            assert!(caiu.is_err(), "o panico de teste nao disparou");
+            drop(t);
+            let mut t = db.abrir_qualificada("clientes").unwrap();
+            assert_eq!(t.eventos().unwrap(), eventos, "a exclusao foi ao diario");
+        }
+    }
     let s = subir(config(&base_s.0, "fonte", Papel::Source));
-    source_com(s.porta, "a_itens");
+    for i in 1..=LINHAS {
+        exigir(
+            s.porta,
+            &format!(
+                r#""op":"inserir","database":"loja","tabela":"a_itens",
+                   "linha":{{"id":{i},"cliente":{i}}}"#
+            ),
+        );
+    }
     let r = replica_de(&base_r.0, s.porta, false);
     esperar("a filha chegar", || {
         contar(r.porta, "a_itens") >= LINHAS as usize
@@ -267,7 +319,7 @@ fn a_filha_cuja_mae_nao_chega_e_contada() {
     assert_eq!(
         contar(r.porta, "clientes"),
         0,
-        "a mae de outra historia recebeu linha"
+        "as maes que sairam por fora voltaram"
     );
     let o = orfas(r.porta);
     let t = o
@@ -277,6 +329,52 @@ fn a_filha_cuja_mae_nao_chega_e_contada() {
     assert_eq!(t.inteiro_ou("sem_conferir", -1), 0, "{}", o.escrever());
     // E a replica NAO recusou: as tres filhas estao la.
     assert_eq!(contar(r.porta, "a_itens"), LINHAS as usize);
+    drop(r);
+    drop(s);
+}
+
+/// **Pedido 299, F2: a mae de OUTRA historia segura as filhas.** A
+/// `clientes` desta replica foi criada por conta (outra linhagem), entao a
+/// replica a recusa -- e, desde o 299, a primeira transacao da origem que a
+/// toca para o database inteiro: as filhas, que vem DEPOIS das maes na
+/// origem, nao entram, e a parada nomeia a tabela. Ate o 299 elas entravam
+/// sem mae (era a fabrica da orfa): a venda sem o pagamento, pela porta da
+/// continuidade.
+#[test]
+fn a_mae_de_outra_historia_segura_as_filhas() {
+    let base_x = DirTemp::novo("orfas-outra-historia");
+    {
+        let x = subir(config(&base_x.0, "outro", Papel::Source));
+        exigir(x.porta, r#""op":"criar_database","database":"loja""#);
+        exigir(x.porta, CLIENTES);
+    }
+    let base_s = DirTemp::novo("orfas-source-outra");
+    let base_r = DirTemp::novo("orfas-replica-outra");
+    copiar(&base_x.0.join("loja"), &base_r.0.join("loja"));
+    let s = subir(config(&base_s.0, "fonte", Papel::Source));
+    source_com(s.porta, "a_itens");
+    let r = replica_de(&base_r.0, s.porta, false);
+    let parada = || {
+        exigir(r.porta, r#""op":"replicacao_estado""#)
+            .campo("origens")
+            .and_then(|o| o.campo("fonte"))
+            .and_then(|o| o.campo("transacoes_paradas"))
+            .and_then(|p| p.campo("loja"))
+            .cloned()
+    };
+    esperar("a parada da transacao", || parada().is_some());
+    // Rodadas de folga: o que se le e o que fica.
+    std::thread::sleep(Duration::from_millis(2500));
+    let p = parada().unwrap();
+    assert_eq!(
+        contar(r.porta, "a_itens"),
+        0,
+        "as filhas entraram sem a mae: a tabela rompida saiu da rodada e as \
+         transacoes seguintes passaram. Parada: {}",
+        p.escrever()
+    );
+    assert_eq!(p.texto_ou("tabela", ""), "clientes", "{}", p.escrever());
+    assert!(p.inteiro_ou("tx", 0) > 0, "{}", p.escrever());
     drop(r);
     drop(s);
 }
