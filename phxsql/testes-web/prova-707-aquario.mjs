@@ -437,7 +437,13 @@ try {
     const linhas = await page.evaluate(() => api('aquario_log', { desde: Date.now() - 280000, max: 2000 }).then(r => r.linhas));
     const estourada = linhas.filter(l => l.evento === 'estourou' && l.tabela === TAB && l.ms >= 1000).pop();
     await page.click('#aqTela .aqt-bt-volta');
-    await page.waitForSelector('#aqTela .aqt-selo[data-estado="reprise"]', { timeout: 5000 }).catch(() => {});
+    // Espera a reprise PINTADA, e nao so o selo: o selo vira «reprise» antes
+    // de o log dos 5 min chegar, e com a carga segurando a trava o log
+    // demora. Ler o `.aqt-quando` vazio dava `NaN`, e o trilho com `NaN`
+    // cai no MEIO (150000) -- medido no segundo tema (pedido 784).
+    await page.waitForFunction(() => document.querySelector('#aqTela .aqt-selo')?.dataset.estado === 'reprise'
+      && Number.isFinite(Date.parse(document.querySelector('#aqTela .aqt-quando')?.dateTime || '')),
+    undefined, { timeout: 20000 }).catch(() => {});
     const r0 = (() => { let n = 0; return { ini: () => n, inc: () => n++ }; })();
     const contaRetrato = r => { if (r.url().endsWith('/api') && /"op":"aquario_retrato"/.test(r.postData() || '')) r0.inc(); };
     page.on('request', contaRetrato);
@@ -450,13 +456,14 @@ try {
         const q = document.querySelector('#aqTela .aqt-quando');
         const ini = Date.parse(q.dateTime) - (+tr.value);
         tr.value = String(m - ini); tr.dispatchEvent(new Event('input'));
-        return { ini, valor: tr.value };
+        return { ini, valor: tr.value, pedido: m - ini, max: tr.max, quando: q.dateTime };
       }, meio);
       await dormir(800);
       const bolhas = await page.evaluate(() => [...document.querySelectorAll('#aqTela .aq-b:not(.aq-fim)')]
         .map(g => ({ id: g.getAttribute('data-id'), t: g.querySelector('title')?.textContent || '' })));
       achouVelha = bolhas.some(b => b.id.startsWith('volta:') && b.t.includes(TAB));
-      comoVelha = `trilho ${res.valor} ms; ${bolhas.length} bolhas, ${bolhas.filter(b => b.id.startsWith('volta:')).length} do log`;
+      comoVelha = `trilho ${res.valor} ms (pedido ${res.pedido} de ${res.max}, quando ${res.quando}, estourou ha ${Date.now() - estourada.quando_ms} ms com ${estourada.ms} ms); `
+        + `${bolhas.length} bolhas, ${bolhas.filter(b => b.id.startsWith('volta:')).length} do log`;
     }
     nota(achouVelha, 'voltar 5 min mostra a bolha que ja estourou', comoVelha);
     await dormir(2500);
@@ -506,7 +513,12 @@ try {
       if (!r.url().endsWith('/api') || !(r.request().postData() || '').includes('"op":"aquario_retrato"')) return;
       try { const j = await r.json(); if (j.ok) retratoMon = j.resultado; } catch {}
     });
-    await entrar(mon, servidor.url + '?tela=aquario', { usuario: 'tv', senha: SENHA, token: TOKEN });
+    // `liberar: false`: quem so MONITORA nao roda comando da lista de perigo,
+    // e desde a P12/P13 do 767 so o primeiro administrador se cadastra
+    // sozinho na senha de execucao -- o `entrar` liberado recusaria a TV
+    // (pedido 784), e cadastrar por outra aba poria um 403 no console que
+    // esta mesma prova confere.
+    await entrar(mon, servidor.url + '?tela=aquario', { usuario: 'tv', senha: SENHA, token: TOKEN }, { liberar: false });
     await mon.waitForSelector('#aqTela .aq-b', { timeout: 20000 });
     await dormir(3000);
     const umaBolha = retratoMon && (retratoMon.tarefas || []).find(t => t.tabela === TAB);

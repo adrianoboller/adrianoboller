@@ -2840,7 +2840,8 @@ LIGAR
           "sessao_minutos": 15,
           "sessao_teto_horas": 12,
           "atras_de_proxy": false,
-          "integracao_claude": true
+          "integracao_claude": true,
+          "dissuadir_inspecao": true
         }
 
     "sessao_minutos" e quanto a sessao vive SEM USO (cada clique renova);
@@ -2855,6 +2856,16 @@ LIGAR
     (API da Anthropic) nesta instalacao: a origem da Anthropic sai da
     politica de seguranca da pagina e o proprio navegador barra a chamada.
     Nasce true. Ver docs/CLAUDE-IA.md 3.
+
+    "dissuadir_inspecao" (nasce true) faz a tela ignorar o botao direito
+    fora dos campos de digitacao e os atalhos das ferramentas do
+    desenvolvedor do navegador (F12, Ctrl+Shift+I/J/C, Ctrl+U). Serve para
+    desencorajar o curioso, e SO isso: o menu do proprio navegador, o
+    JavaScript desligado ou qualquer cliente HTTP chegam ao mesmo lugar, e
+    nenhuma garantia do PhxSql depende disto -- quem guarda o dado e o
+    servidor. Colar, selecionar, copiar pelo menu sobre texto selecionado,
+    o Shift+F10 e o leitor de tela continuam como sempre. Quem depura a
+    tela escreve false.
 
     Depois: phxsqld --config config.json
 

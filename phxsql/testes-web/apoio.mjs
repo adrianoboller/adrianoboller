@@ -88,17 +88,30 @@ export async function entrar(page, url, credenciais = CREDENCIAL, { liberar = tr
   // dele em `cadastradaPor`, e e ela que cadastra, como na vida real.
   if (liberar) {
     const login = credenciais.usuario ?? credenciais.USUARIO;
-    const liberou = await page.evaluate(async ([senhaLogin, senhaExec]) => {
-      try { await api('liberar_execucao', { senha: senhaExec }, true); return true; }
-      catch {
-        try {
-          await api('senha_execucao_definir',
-            { senha: senhaLogin, nova_senha_execucao: senhaExec }, true);
-        } catch { return false; }
-        await api('liberar_execucao', { senha: senhaExec }, true);
-        return true;
+    // Bater no `liberar_execucao` SEM saber se ha senha cadastrada custava um
+    // 403 no console do navegador na primeira entrada de cada login -- e a
+    // prova que confere «console sem erro» reprovava por um pedido que o
+    // AJUDANTE fez, e nao a tela (pedido 784). O ajudante lembra quem ja
+    // cadastrou NESTE servidor e, na primeira vez, cadastra antes de liberar,
+    // que e o que a pessoa faz no dialogo («Ainda nao tenho: cadastrar»).
+    const chave = `${new URL(url).origin} ${login}`;
+    const jaTem = CADASTRADOS.has(chave);
+    const liberou = await page.evaluate(async ([senhaLogin, senhaExec, jaTem]) => {
+      const liberar = () => api('liberar_execucao', { senha: senhaExec }, true);
+      const cadastrar = () => api('senha_execucao_definir',
+        { senha: senhaLogin, nova_senha_execucao: senhaExec }, true);
+      if (jaTem) {
+        try { await liberar(); return true; } catch { /* trocaram a senha: cai no caminho longo */ }
       }
-    }, [credenciais.senha ?? credenciais.SENHA, SENHA_EXECUCAO]);
+      try { await cadastrar(); } catch {
+        // Ou ja tinha (servidor que sobreviveu a outra corrida), ou nao se
+        // cadastra sozinho (nao e o primeiro administrador).
+        try { await liberar(); return true; } catch { return false; }
+      }
+      await liberar();
+      return true;
+    }, [credenciais.senha ?? credenciais.SENHA, SENHA_EXECUCAO, jaTem]);
+    if (liberou) CADASTRADOS.add(chave);
     if (!liberou) {
       if (!cadastradaPor) {
         throw new Falha(`${login} nao se cadastra sozinho na senha de execucao (o primeiro cadastro e do administrador): passe { cadastradaPor: <aba do supervisor> } ou { liberar: false }`);
@@ -106,9 +119,13 @@ export async function entrar(page, url, credenciais = CREDENCIAL, { liberar = tr
       await api(cadastradaPor, 'senha_execucao_definir', { login, nova_senha_execucao: SENHA_EXECUCAO });
       await page.evaluate(async senhaExec => { await api('liberar_execucao', { senha: senhaExec }, true); },
         SENHA_EXECUCAO);
+      CADASTRADOS.add(chave);
     }
   }
 }
+
+/** Quem ja tem senha de execucao cadastrada, por servidor (origem) e login. */
+const CADASTRADOS = new Set();
 
 /** A senha de execucao de quem a bateria faz entrar. Diferente de toda senha
  *  de login daqui, como o servidor exige. */

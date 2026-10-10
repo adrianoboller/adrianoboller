@@ -2250,14 +2250,23 @@ const est = { sessao:null, usuario:null, token:"", demo:false,
 
 async function api(op, params = {}, jaPediuASenha = false) {
   if (est.demo) return demo(op, params);
+  // O id com que ESTE pedido saiu. O servidor devolve no corpo o id que leu
+  // na chegada, e um pedido lento (a trava de dados ocupada) volta DEPOIS
+  // de outro ter girado a sessao -- `liberar_execucao` (767) e o login (719)
+  // giram, e o id velho morre na hora. Adotar o id de uma resposta que saiu
+  // com um id que ja nao e o vigente era ressuscitar o morto: o pedido
+  // seguinte caia em «faca login antes» (pedido 784, medido no aquario com
+  // carga: a sondagem de 2 s em voo durante o liberar). So adota quem saiu
+  // com o id vigente -- e e exatamente quem pode ter girado.
+  const enviada = est.sessao;
   const r = await fetch("/api", {
     method:"POST",
     headers:{ "Content-Type":"application/json",
-              ...(est.sessao ? {"X-Sessao":est.sessao} : {}) },
+              ...(enviada ? {"X-Sessao":enviada} : {}) },
     body: JSON.stringify({ token: est.token, op, ...params })
   });
   const j = await r.json();
-  if (j.sessao) est.sessao = j.sessao;
+  if (j.sessao && est.sessao === enviada) est.sessao = j.sessao;
   if (!j.ok) {
     // O texto é para quem lê; o nome e o código são para quem programa. Sem
     // eles pendurados aqui, distinguir «conflito de escrita» de qualquer
@@ -2613,6 +2622,64 @@ function celulaValorTexto(v) {
 
 
 // =====================================================================
+// Dissuasao de F12, «Inspecionar» e botao direito (pedido 772)
+// =====================================================================
+/* ORDEM DO DONO, com a ressalva que ele aceitou: e DISSUASAO DE CURIOSO, e
+ * NAO seguranca. Tudo o que esta pagina tem ja esta na maquina de quem a
+ * abriu; o menu do navegador, o JS desligado, um `curl` ou o fonte chegam la
+ * do mesmo jeito. Nenhuma garantia depende disto -- e por isso a tela nao
+ * diz nada quando suprime: aviso de «protegido» seria prometer o que nao ha.
+ *
+ * O que NAO pode quebrar, e como cada um passa:
+ *   - colar/copiar pelo mouse: o menu nativo continua DENTRO de campo
+ *     editavel e SOBRE texto selecionado;
+ *   - selecao de texto: nada aqui toca `selectstart` nem `user-select`;
+ *   - teclado e leitor de tela: so os atalhos das ferramentas do
+ *     desenvolvedor sao suprimidos, e o menu de contexto aberto PELO
+ *     TECLADO (Shift+F10, tecla de menu) passa -- e o caminho de quem nao
+ *     usa mouse;
+ *   - os menus da propria tela (o da arvore): so `preventDefault`, nunca
+ *     `stopPropagation` -- quem escuta depois continua ouvindo.
+ *
+ * Liga pelo `/saude` (`web.dissuadir_inspecao`, nasce `true`): servidor que
+ * nao manda o campo deixa a tela como sempre foi. */
+function dissuadirInspecao() {
+  if (est.dissuasao) return;
+  est.dissuasao = true;
+  const editavel = el => !!(el && el.closest
+    && el.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])"));
+  const temSelecao = () => {
+    const s = getSelection && getSelection();
+    return !!s && !s.isCollapsed && String(s).trim() !== "";
+  };
+  let peloTeclado = false;
+  addEventListener("keydown", ev => {
+    if (ev.key === "ContextMenu" || (ev.shiftKey && ev.key === "F10")) {
+      // O menu aberto pelo teclado chega logo depois (no keydown ou no
+      // keyup, conforme o sistema); a marca nao sobrevive a ele.
+      peloTeclado = true;
+      setTimeout(() => { peloTeclado = false; }, 1000);
+      return;
+    }
+    const c = ev.code || "";
+    const ferramenta = ev.key === "F12"
+      // Ctrl+Shift+I/J/C (Windows/Linux) e Cmd+Shift+C (Mac)
+      || ((ev.ctrlKey || ev.metaKey) && ev.shiftKey && !ev.altKey && /^Key[IJC]$/.test(c))
+      // Cmd+Opt+I/J/C/U (Mac)
+      || (ev.metaKey && ev.altKey && /^Key[IJCU]$/.test(c))
+      // Ctrl+U, ver o fonte -- menos dentro de campo, onde pode ser do editor
+      || (ev.ctrlKey && !ev.shiftKey && !ev.altKey && c === "KeyU" && !editavel(ev.target));
+    if (ferramenta) ev.preventDefault();
+  }, true);
+  addEventListener("contextmenu", ev => {
+    if (peloTeclado) { peloTeclado = false; return; }
+    if (ev.defaultPrevented || editavel(ev.target) || temSelecao()) return;
+    ev.preventDefault();
+  });
+}
+
+
+// =====================================================================
 // Entrada
 // =====================================================================
 async function detectarModo() {
@@ -2638,6 +2705,9 @@ async function detectarModo() {
     // servidor diz aqui. So `false` explicito desliga: servidor velho, sem o
     // campo, mantem o comportamento de antes.
     est.integracaoClaude = saude.integracao_claude !== false;
+    // Pedido 772: so `true` explicito liga -- servidor velho, sem o campo,
+    // deixa a tela como sempre foi.
+    if (saude.dissuadir_inspecao === true) dissuadirInspecao();
     $("#pt").value = est.portaLocal;
     $("#campoChave").hidden = !saude.exige_chave;
     if (est.servidores.length) {

@@ -110,6 +110,18 @@ async function corpo(ctx, extras) {
   // nao e a minha»: o servidor da bateria e UM so para a corrida inteira, e as
   // sessoes de casos anteriores (e do outro tema) continuam na lista.
   const idDoOutro = await outro.evaluate(() => est.sessao);
+  // E A GRADE E PAGINADA (pedido 784): cada caso que entra deixa uma sessao
+  // viva no servidor unico da corrida, e no tema claro a do outro navegador
+  // ja caia fora da primeira pagina -- procurar so nas linhas desenhadas
+  // reprovava dizendo «nao achei», que e a mensagem certa para a causa
+  // errada. A pessoa faz o que se faz aqui: digita o comeco do id na busca
+  // da grade. O comeco e o que a coluna mostra (o servidor publica o id
+  // CORTADO), entao a busca usa o tamanho do que esta na tela.
+  const corte = await page.$eval('#gradeSessoesWeb [data-killweb]', b => b.getAttribute('data-killweb').length);
+  await page.fill('#gradeSessoesWeb .phx-busca-in', idDoOutro.slice(0, corte));
+  await page.waitForFunction(id => [...document.querySelectorAll('#gradeSessoesWeb [data-killweb]')]
+    .some(x => id.startsWith(x.getAttribute('data-killweb'))), idDoOutro, { timeout: ESPERA })
+    .catch(() => {});
   const alvoWeb = await page.evaluate(id => {
     const bt = [...document.querySelectorAll('#gradeSessoesWeb [data-killweb]')]
       .find(x => id.startsWith(x.getAttribute('data-killweb')));

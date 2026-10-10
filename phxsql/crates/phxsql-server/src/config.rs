@@ -3525,6 +3525,26 @@ pub struct Web {
     /// integracao hoje continua usando, e quem nao quer que o esquema saia
     /// da empresa escreve `false`.
     pub integracao_claude: bool,
+    /// A tela suprime o menu de contexto e os atalhos das ferramentas do
+    /// desenvolvedor (F12, Ctrl+Shift+I/J/C, Cmd+Opt+I/J/C/U, Ctrl+U)?
+    /// Pedido 772, ordem do dono.
+    ///
+    /// E DISSUASAO DE CURIOSO, e nao seguranca -- a ressalva aceita pelo dono
+    /// e escrita aqui para ninguem a ler ao contrario: tudo o que a pagina
+    /// tem ja esta na maquina de quem a abriu, e o menu do navegador, o JS
+    /// desligado, um `curl` ou o fonte do binario chegam la do mesmo jeito.
+    /// Nenhuma garantia do PhxSql depende disto; o que protege o dado e o
+    /// servidor (sessao, direito por tabela, senha de execucao).
+    ///
+    /// Nasce `true`, e o porque: e ordem do dono para o produto como ele sai,
+    /// e um interruptor que nasce desligado deixa a ordem inerte em toda
+    /// instalacao que nao conhece o campo. A regra «guarda nova entra
+    /// pedida» protege CLIENTE que pararia de funcionar, e aqui nada para: o
+    /// menu nativo continua dentro dos campos editaveis e sobre texto
+    /// selecionado (colar e copiar pelo mouse), o teclado do Shift+F10 e da
+    /// tecla de menu passa, e nenhum outro atalho e tocado (leitor de tela e
+    /// navegacao intactos). Quem depura a tela escreve `false`.
+    pub dissuadir_inspecao: bool,
 }
 
 /// TLS nativo numa porta HTTP (pedido 572): `tls`, `tls_certificado` e
@@ -3686,6 +3706,7 @@ impl Default for Web {
             atras_de_proxy: false,
             tls: TlsPorta::de_fabrica_http(),
             integracao_claude: true,
+            dissuadir_inspecao: true,
         }
     }
 }
@@ -3708,6 +3729,7 @@ impl Web {
                 atras_de_proxy: w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy),
                 tls: TlsPorta::de_json(w, !w.booleano_ou("atras_de_proxy", padrao.atras_de_proxy)),
                 integracao_claude: w.booleano_ou("integracao_claude", padrao.integracao_claude),
+                dissuadir_inspecao: w.booleano_ou("dissuadir_inspecao", padrao.dissuadir_inspecao),
             },
         }
     }
@@ -5484,6 +5506,7 @@ const SECOES_CONHECIDAS: [(&str, &[&str]); 21] = [
             "tls_certificado",
             "tls_chave",
             "integracao_claude",
+            "dissuadir_inspecao",
         ],
     ),
     (
@@ -6861,6 +6884,10 @@ impl Config {
                     ),
                     ("atras_de_proxy", Json::Bool(self.web.atras_de_proxy)),
                     ("integracao_claude", Json::Bool(self.web.integracao_claude)),
+                    (
+                        "dissuadir_inspecao",
+                        Json::Bool(self.web.dissuadir_inspecao),
+                    ),
                     ("tls", Json::Bool(self.web.tls.ligado)),
                     ("tls_certificado", Json::texto_de(&self.web.tls.certificado)),
                     ("tls_chave", Json::texto_de(&self.web.tls.chave)),
@@ -10113,6 +10140,19 @@ mod tests {
         let txt = r#"{"token":"x","web":{"integracao_claude":false}}"#;
         let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
         assert!(!c.web.integracao_claude);
+        assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
+    }
+
+    /// Pedido 772: `web.dissuadir_inspecao` e LIDO e nasce ligado. Os dois
+    /// sentidos: sem o campo, ligado (a ordem do dono vale sem ninguem
+    /// escrever nada); com `false`, desligado -- e nao vira campo estranho.
+    #[test]
+    fn dissuadir_inspecao_e_lida_e_nasce_ligada() {
+        let velho = Config::de_json(&Json::analisar(r#"{"token":"x","web":{}}"#).unwrap()).unwrap();
+        assert!(velho.web.dissuadir_inspecao);
+        let txt = r#"{"token":"x","web":{"dissuadir_inspecao":false}}"#;
+        let c = Config::de_json(&Json::analisar(txt).unwrap()).unwrap();
+        assert!(!c.web.dissuadir_inspecao);
         assert!(c.estranhas.is_empty(), "{:?}", c.estranhas);
     }
 

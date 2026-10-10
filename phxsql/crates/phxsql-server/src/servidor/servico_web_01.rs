@@ -183,6 +183,14 @@ impl Servidor {
                             "integracao_claude",
                             Json::Bool(self.config.web.integracao_claude),
                         ),
+                        (
+                            // Pedido 772: a dissuasao de F12 e do botao
+                            // direito. Vem ANTES do login porque a tela de
+                            // entrada tambem e tela; e nao e segredo nenhum
+                            // -- e dissuasao, nao seguranca.
+                            "dissuadir_inspecao",
+                            Json::Bool(self.config.web.dissuadir_inspecao),
+                        ),
                     ]),
                 );
             }
