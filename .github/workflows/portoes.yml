@@ -17,7 +17,10 @@ on:
 jobs:
   portoes:
     name: fmt + clippy + testes
-    runs-on: ubuntu-latest
+    # Fixado em 24.04 por decisao do dono, 10/10/2026: o ubuntu-latest vira
+    # Ubuntu 26 em 19/10/2026, e o CI quebraria sozinho sem nada nosso mudar.
+    # A ida para o 26 e pedido proprio, medido antes de trocar.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         # O Cargo.toml do workspace mora em phxsql/, nao na raiz do repo.
