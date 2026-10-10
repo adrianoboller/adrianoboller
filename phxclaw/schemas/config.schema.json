@@ -101,6 +101,29 @@
       },
       "type": "object"
     },
+    "ambiente": {
+      "additionalProperties": false,
+      "properties": {
+        "//": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "string",
+            "array"
+          ]
+        },
+        "auto_instalar": {
+          "default": false,
+          "description": "Auto-instalar o ambiente de desenvolvimento no arranque quando a permissão do instalador (environment.install) foi concedida; false (padrão) só propõe, nunca instala sozinho (ambiente: PHXCLAW_AMBIENTE_AUTO_INSTALAR)",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "api": {
       "additionalProperties": false,
       "properties": {

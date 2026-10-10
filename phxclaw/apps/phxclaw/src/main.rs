@@ -543,6 +543,9 @@ async fn servir(args: &[String]) -> Result<()> {
         }
         None => None,
     };
+    // As capacidades concedidas, antes de `m` entrar na fabrica: o arranque decide com elas
+    // se pode disparar o instalador ou so propor.
+    let m_caps = m.capabilities.clone();
     let factory: AgentFactory = Arc::new(move |modelo: &str| m.agent(modelo));
     let state = estado_api(&raiz, store, factory, token)?;
     // O interruptor das metricas, uma vez, antes do primeiro pedido: desligado, nenhuma
@@ -551,6 +554,10 @@ async fn servir(args: &[String]) -> Result<()> {
         phxclaw_agent::config::booleano_de("api.metricas").unwrap_or(false),
     );
     ligar_otel(&raiz, "servir")?;
+    // Auto-instalar o ambiente sob permissao (parte C): le `ambiente.auto_instalar`, mede o
+    // `--health` do instalador assinado e, so com a chave ligada E a permissao concedida,
+    // dispara; senao PROPOE. Padrao false => nada muda para quem ja usa o agente.
+    phxclaw_agent::ambiente_auto::verificar_no_arranque(&m_caps);
     // `--modo fila`: as execucoes vao para o PostgreSQL e os `phxclaw worker` as rodam. O
     // esquema se confere AGORA: servidor que aceita tarefa numa fila sem tabela so descobriria
     // na primeira execucao.

@@ -26,6 +26,12 @@
     "skills_dir": null,
     "tentativas_argumento": 2
   },
+  "ambiente": {
+    "//": [
+      "auto_instalar: Auto-instalar o ambiente de desenvolvimento no arranque quando a permissão do instalador (environment.install) foi concedida; false (padrão) só propõe, nunca instala sozinho [booleano; ambiente PHXCLAW_AMBIENTE_AUTO_INSTALAR]"
+    ],
+    "auto_instalar": false
+  },
   "api": {
     "//": [
       "host: Endereço em que a API escuta; expor é decisão do operador [texto; ambiente PHXCLAW_API_HOST]",

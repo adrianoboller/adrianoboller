@@ -8,6 +8,7 @@ pub mod acao_github;
 pub mod acp;
 pub mod adaptadores;
 pub mod agenda;
+pub mod ambiente_auto;
 pub mod api;
 pub mod arquivos;
 pub mod avaliacao;

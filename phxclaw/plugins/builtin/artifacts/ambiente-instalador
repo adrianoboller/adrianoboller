@@ -1,23 +1,54 @@
 #!/usr/bin/env bash
 # Plugin com.phxclaw.tool.ambiente: instala e atualiza o ambiente de desenvolvimento do
-# PhxClaw no Linux (Debian/Ubuntu): Rust, PostgreSQL e Python com as bibliotecas de
-# desenvolvimento de sistemas. Pedido do dono, 01/10/2026.
+# PhxClaw no Linux (Debian/Ubuntu): Rust, PostgreSQL, Python, Node.js e Ollama com as
+# bibliotecas de desenvolvimento de sistemas. Pedido do dono, 01/10/2026; Node e Ollama
+# em 10/10/2026.
 #
-#   ambiente-instalador [--rust VERSAO] [--postgres MAJOR] [--python VERSAO] [tudo|rust|postgres|python]
+#   ambiente-instalador [--rust VERSAO] [--postgres MAJOR] [--python VERSAO]
+#                       [--node VERSAO] [--node-canal lts|current] [--ollama VERSAO]
+#                       [tudo|rust|postgres|python|node|ollama]
 #   ambiente-instalador --health        # so confere e imprime as versoes; sai 0 se tudo esta la
 #
-# Sem argumento de versao, pega a MAIS NOVA de cada fonte oficial, lida na hora:
-# o channel-rust-stable.toml, o indice do PGDG e o indice do python.org. Idempotente:
-# cada passo confere antes de agir, entao rodar duas vezes nao refaz nada.
+# Sem argumento de versao, pega a MAIS NOVA de cada fonte oficial, lida na hora: o
+# channel-rust-stable.toml, o indice do PGDG, o indice do python.org e o index.json do Node
+# (LTS corrente por padrao). O Ollama e a EXCECAO: a versao e FIXA aqui e o hash e PINADO,
+# porque a fonte dele nao tem assinatura -- o selo e a assinatura ed25519 do manifesto, que
+# cobre o sha256 DESTE arquivo. Idempotente: cada passo confere antes de agir.
 #
-# Exige root (instala pacote de sistema). As fontes sao so as oficiais, e a chave do
-# repositorio PGDG e conferida pela impressao digital publicada pelo projeto, nunca
-# aceita como vier.
+# Exige root (instala pacote de sistema). As fontes sao so as oficiais. Node se confere por
+# GPG com as 8 impressoes digitais oficiais PINADAS abaixo (como o PGDG), e nenhuma chave e
+# aceita como vem: so entra a que casa a impressao digital pinada. O Ollama se confere pelo
+# SHA-256 pinado.
 set -euo pipefail
 
-RUST_VER="" PG_MAJOR="" PY_VER="" ALVO="tudo"
+RUST_VER="" PG_MAJOR="" PY_VER="" NODE_VER="" NODE_CANAL="lts" OLLAMA_VER="" ALVO="tudo"
 PY_ENV=${PHXCLAW_PYTHON_ENV:-/opt/phxclaw-python}
 PGDG_DIGITAL="B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8"
+
+# As 8 chaves de release ATIVAS do Node (github.com/nodejs/release-keys, lidas em
+# 10/10/2026). Pinadas como o PGDG: qual delas assinou um release varia, por isso se pina o
+# conjunto e o `.sig` diz qual casou. Nenhuma e aceita como vem -- so importa a que a propria
+# impressao digital confirma ser a pinada.
+NODE_FPRS=(
+  "5BE8A3F6C8A5C01D106C0AD820B1A390B168D356"
+  "DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7"
+  "CC68F5A3106FF448322E48ED27F5E38D5B0A215F"
+  "890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4"
+  "C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C"
+  "108F52B48DB57BB0CC439B2997B01419BD92F80A"
+  "655F3B5C1FB3FA8D1A0CA6BDE4A7D232B936D2FD"
+  "A363A499291CBBC940DD62E41F10027AF002F8B0"
+)
+
+# Ollama: versao FIXA e hash PINADO por arquitetura. Obtidos do sha256sum.txt do release
+# oficial em 10/10/2026. A fonte do Ollama nao tem assinatura (nem GPG nem Sigstore), entao
+# a garantia e integridade-contra-corrupcao + o selo ed25519 do manifesto sobre este arquivo
+# -- nao autenticidade-por-assinatura como o Node. Subir de versao e editar estas tres linhas
+# e re-assinar o manifesto (decisao do dono).
+OLLAMA_VERSAO_PINADA="v0.40.2"
+OLLAMA_SHA_amd64="726bee78706c281b0eeef00746efe51a044d71c592c3f0b195820707f31fdf04"
+OLLAMA_SHA_arm64="92b3ef3d5e10f5849273bfa1345000f2a8ce8bc834e95061ff5b9df5d08e3c3f"
+
 # Bibliotecas de desenvolvimento de sistemas, por papel. O maturin e a ponte Rust<->Python
 # (PyO3); o psycopg fala com o PostgreSQL; o resto e web, dados, documentos e qualidade.
 PY_LIBS=(
@@ -30,12 +61,95 @@ PY_LIBS=(
   cryptography
 )
 
+# A arquitetura do Node/Ollama, no vocabulario de cada um (amd64/arm64 para os dois tarballs;
+# o Node chama o amd64 de x64 na URL).
+arch_debian() {
+  case "$(uname -m)" in
+    x86_64|amd64) echo amd64 ;;
+    aarch64|arm64) echo arm64 ;;
+    *) echo "arquitetura nao suportada: $(uname -m)" >&2; return 1 ;;
+  esac
+}
+
+# Confere o SHA-256 de um arquivo contra o esperado. Devolve 0 so se casar. E o portao do
+# Ollama e a segunda metade do portao do Node (depois do GPG).
+conferir_sha256() {
+  local arquivo=$1 esperado=$2 visto
+  visto=$(sha256sum "$arquivo" | awk '{print $1}')
+  [ "$visto" = "$esperado" ] || { echo "sha256 NAO confere: $arquivo ($visto, esperado $esperado)" >&2; return 1; }
+}
+
+# Confere a assinatura GPG de um arquivo (SHASUMS256.txt) contra o `.asc`, num GNUPGHOME que
+# so tem as chaves pinadas. E o portao FORTE do Node: um SHASUMS adulterado nao passa mesmo
+# que o sha256 do tarball case com a linha adulterada, porque a assinatura quebra.
+conferir_gpg() {
+  local gnupg=$1 arquivo=$2 asc=$3
+  GNUPGHOME="$gnupg" gpg --verify "$asc" "$arquivo" 2>/dev/null \
+    || { echo "GPG NAO confere: $arquivo" >&2; return 1; }
+}
+
+# A impressao digital esta no conjunto pinado?
+pinada() {
+  local x=$1 f
+  for f in "${NODE_FPRS[@]}"; do [ "$f" = "$x" ] && return 0; done
+  return 1
+}
+
+# Devolve 0 so se o arquivo .asc traz APENAS chaves pinadas e a esperada esta entre elas.
+# Fecha o furo do bundle [chave-pinada, chave-do-atacante]: conferir so a primeira impressao
+# e importar o arquivo inteiro injetaria a do atacante no keyring -- o oposto do que o pino
+# promete. Confere TODAS as chaves PRIMARIAS (a `fpr` que segue cada `pub`; a de subchave
+# segue `sub` e nao conta), e reprova o arquivo inteiro se qualquer uma nao for pinada.
+conferir_bundle_pinado() {
+  local gnupg=$1 arquivo=$2 esperada=$3 pfpr achou=1 primarias
+  primarias=$(GNUPGHOME="$gnupg" gpg --show-keys --with-colons "$arquivo" 2>/dev/null \
+    | awk -F: '/^pub/{p=1} /^sub/{p=0} /^fpr/&&p{print $10; p=0}')
+  [ -n "$primarias" ] || return 1
+  for pfpr in $primarias; do
+    pinada "$pfpr" || { echo "chave Node ignorada: bundle traz impressao nao pinada $pfpr" >&2; return 1; }
+    [ "$pfpr" = "$esperada" ] && achou=0
+  done
+  return $achou
+}
+
+# Importa, num GNUPGHOME dado, SO arquivos que trazem exclusivamente chaves pinadas (e a
+# esperada): nunca aceita a chave como vem, nem um bundle com uma estranha a tiracolo.
+# Devolve 0 se ao menos uma entrou.
+importar_chaves_node() {
+  local gnupg=$1 fpr t entrou=1
+  for fpr in "${NODE_FPRS[@]}"; do
+    t=$(mktemp)
+    if curl -fsS "https://raw.githubusercontent.com/nodejs/release-keys/main/keys/$fpr.asc" -o "$t" \
+       && conferir_bundle_pinado "$gnupg" "$t" "$fpr"; then
+      GNUPGHOME="$gnupg" gpg -q --import "$t" 2>/dev/null && entrou=0
+    fi
+    rm -f "$t"
+  done
+  return $entrou
+}
+
+# Imprime "nome versao" ou "nome AUSENTE"; devolve 0 se o executavel esta no PATH. A palavra
+# AUSENTE e o que o arranque (parte C) procura para saber o que falta.
+estado_de() {
+  local nome=$1 bin=$2
+  shift 2
+  if command -v "$bin" >/dev/null 2>&1; then
+    printf '%-8s %s\n' "$nome" "$("$bin" "$@" 2>/dev/null | head -1)"
+    return 0
+  fi
+  printf '%-8s %s\n' "$nome" AUSENTE
+  return 1
+}
+
 saude() {
   local ok=0
   printf 'rust     %s\n' "$(rustc --version 2>/dev/null || echo AUSENTE)"
   printf 'cargo    %s\n' "$(cargo --version 2>/dev/null || echo AUSENTE)"
   printf 'postgres %s\n' "$(ls /usr/lib/postgresql 2>/dev/null | sort -n | tr '\n' ' ' || true)"
   printf 'python   %s\n' "$("$PY_ENV/bin/python" --version 2>/dev/null || echo AUSENTE)"
+  estado_de node node --version || ok=1
+  estado_de npm npm --version || ok=1
+  estado_de ollama ollama --version || ok=1
   command -v rustc >/dev/null || ok=1
   [ -n "$(ls /usr/lib/postgresql 2>/dev/null)" ] || ok=1
   [ -x "$PY_ENV/bin/python" ] || ok=1
@@ -46,18 +160,6 @@ saude() {
   fi
   return $ok
 }
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --health) saude; exit $? ;;
-    --rust) RUST_VER=$2; shift 2 ;;
-    --postgres) PG_MAJOR=$2; shift 2 ;;
-    --python) PY_VER=$2; shift 2 ;;
-    tudo|rust|postgres|python) ALVO=$1; shift ;;
-    *) echo "argumento desconhecido: $1" >&2; exit 2 ;;
-  esac
-done
-[ "$(id -u)" = 0 ] || { echo "precisa de root: instala pacote de sistema" >&2; exit 2; }
 
 rust() {
   # O awk le ATE O FIM e imprime so a primeira versao: saindo na primeira linha, quem
@@ -147,10 +249,119 @@ python() {
   echo "python: $("$PY_ENV/bin/python" --version), $(wc -l < "$PY_ENV/versoes.txt") pacotes em $PY_ENV"
 }
 
-case "$ALVO" in
-  tudo) rust; postgres; python ;;
-  rust) rust ;;
-  postgres) postgres ;;
-  python) python ;;
-esac
-saude
+# Nome `instalar_node`, nao `node`: uma funcao chamada `node` faria `command -v node` (no
+# --health e na idempotencia) achar a FUNCAO em vez do binario, e o ambiente apareceria
+# sempre presente. Medido ao exercitar (papel F, 10/10).
+instalar_node() {
+  local deb x64 base ver
+  deb=$(arch_debian); [ "$deb" = amd64 ] && x64=x64 || x64=arm64
+  base="https://nodejs.org/dist"
+  # A versao: pinada pelo operador (--node), ou a mais nova lida na hora do index.json.
+  # Padrao: a LTS corrente (primeira entrada com lts != false); --node-canal current pega o
+  # topo (a mais nova de todas).
+  if [ -n "$NODE_VER" ]; then
+    ver=$NODE_VER
+  else
+    local idx; idx=$(curl -fsS "$base/index.json")
+    if [ "$NODE_CANAL" = current ]; then
+      ver=$(printf '%s' "$idx" | grep -oE '"version":"v[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | grep -oE 'v[0-9.]+')
+    else
+      # Primeira entrada cujo "lts" nao e false: o grep casa o par version+lts na ordem do
+      # arquivo (do mais novo pro mais velho), e para na primeira LTS.
+      ver=$(printf '%s' "$idx" \
+        | grep -oE '"version":"v[0-9.]+","date":"[0-9-]+","[^}]*"lts":("[^"]+"|false)' \
+        | awk -F'"lts":' '$2 !~ /^false/{print; exit}' \
+        | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+    fi
+  fi
+  [ -n "$ver" ] || { echo "node: nao achei a versao na fonte oficial" >&2; exit 3; }
+  local prefixo="/opt/node-$ver"
+  if [ -x "$prefixo/bin/node" ] && "$prefixo/bin/node" --version 2>/dev/null | grep -qx "$ver"; then
+    echo "node: $ver ja instalado"; return
+  fi
+  local t; t=$(mktemp -d)
+  local tar="node-$ver-linux-$x64.tar.xz"
+  curl -fsS -o "$t/$tar" "$base/$ver/$tar"
+  curl -fsS -o "$t/SHASUMS256.txt" "$base/$ver/SHASUMS256.txt"
+  curl -fsS -o "$t/SHASUMS256.txt.asc" "$base/$ver/SHASUMS256.txt.asc"
+  local gnupg="$t/gnupg"; mkdir -m 700 "$gnupg"
+  importar_chaves_node "$gnupg" || { echo "node: nenhuma chave oficial importada" >&2; rm -rf "$t"; exit 3; }
+  # PORTAO FORTE: a assinatura das somas. Sem este passo, um SHASUMS trocado (com o hash de
+  # um tarball trocado) passaria na conferencia de sha256 abaixo.
+  conferir_gpg "$gnupg" "$t/SHASUMS256.txt" "$t/SHASUMS256.txt.asc" || { rm -rf "$t"; exit 3; }
+  # E so entao a soma do tarball, contra a linha ja autenticada.
+  local esperado; esperado=$(awk -v f="$tar" '$2==f{print $1}' "$t/SHASUMS256.txt")
+  [ -n "$esperado" ] || { echo "node: $tar fora do SHASUMS256.txt" >&2; rm -rf "$t"; exit 3; }
+  conferir_sha256 "$t/$tar" "$esperado" || { rm -rf "$t"; exit 3; }
+  # Lado a lado em /opt, como o Python; o npm/npx vem no tarball (lib/node_modules/npm).
+  rm -rf "$prefixo"; mkdir -p "$prefixo"
+  tar -xJf "$t/$tar" -C "$prefixo" --strip-components=1
+  rm -rf "$t"
+  # Exposto no PATH: liga em /usr/local/bin, como um pacote de sistema.
+  local b
+  for b in node npm npx; do ln -sf "$prefixo/bin/$b" "/usr/local/bin/$b"; done
+  echo "node: $("$prefixo/bin/node" --version), npm $("$prefixo/bin/npm" --version)"
+}
+
+# Mesmo motivo de `instalar_node`: nao se chama `ollama`, senao `command -v ollama` acha a
+# funcao e o plugin se declara instalado sem nunca ter instalado.
+instalar_ollama() {
+  local deb ver tar sha
+  deb=$(arch_debian)
+  ver=${OLLAMA_VER:-$OLLAMA_VERSAO_PINADA}
+  if [ "$ver" != "$OLLAMA_VERSAO_PINADA" ]; then
+    echo "ollama: $ver nao e a versao pinada ($OLLAMA_VERSAO_PINADA): sem hash para conferir, recusado" >&2
+    exit 3
+  fi
+  if command -v ollama >/dev/null 2>&1 && ollama --version 2>/dev/null | grep -q "${ver#v}"; then
+    echo "ollama: $ver ja instalado"; return
+  fi
+  case "$deb" in
+    amd64) sha=$OLLAMA_SHA_amd64 ;;
+    arm64) sha=$OLLAMA_SHA_arm64 ;;
+  esac
+  tar="ollama-linux-$deb.tar.zst"
+  local t; t=$(mktemp -d)
+  # Caminho (b): o asset do release oficial no GitHub, nao o install.sh (curl|tar sem
+  # conferencia, recusado). PORTAO: o sha256 pinado -- sem ele, um binario trocado passaria.
+  curl -fsSL -o "$t/$tar" "https://github.com/ollama/ollama/releases/download/$ver/$tar"
+  conferir_sha256 "$t/$tar" "$sha" || { rm -rf "$t"; exit 3; }
+  local prefixo="/opt/ollama-$ver"
+  rm -rf "$prefixo"; mkdir -p "$prefixo"
+  # O tarball do Ollama traz bin/ e lib/ na raiz; zstd + tar desempacotam.
+  tar --use-compress-program=unzstd -xf "$t/$tar" -C "$prefixo"
+  rm -rf "$t"
+  ln -sf "$prefixo/bin/ollama" /usr/local/bin/ollama
+  echo "ollama: $(/usr/local/bin/ollama --version 2>/dev/null | head -1)"
+}
+
+principal() {
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --health) saude; exit $? ;;
+      --rust) RUST_VER=$2; shift 2 ;;
+      --postgres) PG_MAJOR=$2; shift 2 ;;
+      --python) PY_VER=$2; shift 2 ;;
+      --node) NODE_VER=$2; shift 2 ;;
+      --node-canal) NODE_CANAL=$2; shift 2 ;;
+      --ollama) OLLAMA_VER=$2; shift 2 ;;
+      tudo|rust|postgres|python|node|ollama) ALVO=$1; shift ;;
+      *) echo "argumento desconhecido: $1" >&2; exit 2 ;;
+    esac
+  done
+  [ "$(id -u)" = 0 ] || { echo "precisa de root: instala pacote de sistema" >&2; exit 2; }
+  case "$ALVO" in
+    tudo) rust; postgres; python; instalar_node; instalar_ollama ;;
+    rust) rust ;;
+    postgres) postgres ;;
+    python) python ;;
+    node) instalar_node ;;
+    ollama) instalar_ollama ;;
+  esac
+  saude
+}
+
+# Rodado direto, executa; carregado por `source` (a bancada de prova das funcoes), so define.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+  principal "$@"
+fi
