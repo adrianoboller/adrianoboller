@@ -107,8 +107,8 @@ async function diz(cap, txt, ms = 2600) {
       d.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99998;pointer-events:none;'
         + 'background:linear-gradient(0deg,rgba(1,4,24,.97),rgba(1,4,24,.86));'
         + 'border-top:2px solid #ff4d10;padding:9px 28px 11px;color:#dde2eb';
-      d.innerHTML = '<div id="__fcap" style="font-size:11px;letter-spacing:.2em;color:#ff8a1c;margin-bottom:3px"></div>'
-        + '<div id="__ftxt" style="font-size:19px;line-height:1.3;font-weight:500"></div>';
+      d.innerHTML = phxHTML('<div id="__fcap" style="font-size:11px;letter-spacing:.2em;color:#ff8a1c;margin-bottom:3px"></div>'
+        + '<div id="__ftxt" style="font-size:19px;line-height:1.3;font-weight:500"></div>');
       document.body.appendChild(d);
     }
     if (c) document.getElementById('__fcap').textContent = c;
@@ -134,8 +134,8 @@ async function cartaz(numero, texto, ms = 1700) {
         + 'color:#fff;font-weight:600;font-size:34px;line-height:1.25;text-align:center;padding:40px;transition:opacity .25s';
       document.body.appendChild(d);
     }
-    d.innerHTML = `<img src="data:image/png;base64,${ico}" style="width:44px;opacity:.9">`
-      + `<div style="font-size:13px;letter-spacing:.24em;color:#ff8a1c">${n}</div><div>${t}</div>`;
+    d.innerHTML = phxHTML(`<img src="data:image/png;base64,${ico}" style="width:44px;opacity:.9">`
+      + `<div style="font-size:13px;letter-spacing:.24em;color:#ff8a1c">${n}</div><div>${t}</div>`);
     d.style.opacity = '1';
   }, [numero, texto, ICONE]);
   await respirar(ms);
@@ -158,7 +158,7 @@ async function folha(html) {
         + 'padding:26px 40px 70px;overflow:hidden;font-size:14px;line-height:1.45';
       document.body.appendChild(d);
     }
-    d.innerHTML = h;
+    d.innerHTML = phxHTML(h);
   }, html);
 }
 async function semFolha() {

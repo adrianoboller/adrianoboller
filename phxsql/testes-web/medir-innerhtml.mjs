@@ -59,6 +59,7 @@ function fontes() {
   return saida;
 }
 
+const FUNIS = new Set(['phxHTML', 'funilHTML']);
 const SEGUROS_GLOBAIS = new Set(['Number', 'parseInt', 'parseFloat', 'Boolean', 'encodeURIComponent']);
 const METODOS_NUMERICOS = new Set(['toFixed', 'toLocaleString', 'toPrecision', 'getTime', 'toISOString',
   'getFullYear', 'getMonth', 'getDate', 'getHours', 'getMinutes', 'getSeconds', 'indexOf', 'findIndex']);
@@ -293,9 +294,16 @@ function analisarArquivo({ arq, ast }) {
     if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression'
         && n.callee.property.name === 'insertAdjacentHTML') alvo = n.arguments[1];
     if (!alvo) return;
+    // O funil do Trusted Types (pedido 771): `phxHTML(x)` -- ou o
+    // `funilHTML(x)` da grade, que delega nele -- e a porta, e o que se
+    // analisa e o `x` que entra nela. Sink sem funil e o que o navegador
+    // barraria, e por isso se conta a parte.
+    const funil = alvo.type === 'CallExpression' && alvo.callee.type === 'Identifier'
+      && FUNIS.has(alvo.callee.name);
+    if (funil) alvo = alvo.arguments[0];
     const vistas = new Set();
     const s = suspeitas(alvo).filter(x => !vistas.has(x.no) && vistas.add(x.no));
-    achados.push({ arq, linha: n.loc.start.line + n.__f.base, suspeitas: s.map(x => ({ onde: x.no.__f === n.__f ? '' : relative(UI, x.no.__f.arq), linha: x.no.loc.start.line + x.no.__f.base, porque: x.porque, texto: x.no.__f.texto.slice(x.no.start, x.no.end).slice(0, 90).replace(/\s+/g, ' ') })) });
+    achados.push({ funil, arq, linha: n.loc.start.line + n.__f.base, suspeitas: s.map(x => ({ onde: x.no.__f === n.__f ? '' : relative(UI, x.no.__f.arq), linha: x.no.loc.start.line + x.no.__f.base, porque: x.porque, texto: x.no.__f.texto.slice(x.no.start, x.no.end).slice(0, 90).replace(/\s+/g, ' ') })) });
   });
   return achados;
 }
@@ -310,6 +318,10 @@ const comSuspeita = todos.filter(a => a.suspeitas.length);
 const unicas = new Set(comSuspeita.flatMap(a => a.suspeitas.map(x => `${x.onde}:${x.linha}:${x.texto}`)));
 const folhas = unicas.size;
 console.log(`sinks de HTML (innerHTML/outerHTML/insertAdjacentHTML): ${todos.length}`);
+const semFunil = todos.filter(a => !a.funil);
+console.log(`  pelo funil (phxHTML):       ${todos.length - semFunil.length}`);
+console.log(`  SEM o funil:                ${semFunil.length}`);
+for (const a of semFunil) console.log(`    ${relative(resolve(AQUI, '..'), a.arq)}:${a.linha}`);
 console.log(`  sem nenhuma folha suspeita: ${todos.length - comSuspeita.length}`);
 console.log(`  com folha suspeita:         ${comSuspeita.length} (${folhas} folhas distintas)`);
 if (LISTA) {

@@ -284,7 +284,7 @@ window.PhxTelemetria = (function () {
     }
 
     alvo.innerHTML =
-      `<div class="tlm-faixa-cab">
+      phxHTML(`<div class="tlm-faixa-cab">
          <span class="tlm-faixa-t">${esc(cfg.titulo)}</span>
          <span class="tlm-faixa-v">${esc(cfg.valor)}</span>
        </div>
@@ -297,7 +297,7 @@ window.PhxTelemetria = (function () {
        <div class="tlm-faixa-leg">${
          series.map(s => `<span><i data-e-fundo="${esc(s.cor)}"></i>${esc(s.nome)}</span>`).join("")
        }<span class="tlm-topo">${esc(preencher(txt("tela.tl_pico", "pico {v}"),
-          { v: cfg.topoRot ? cfg.topoRot(topo) : topo.toFixed(1) }))}</span></div>`;
+          { v: cfg.topoRot ? cfg.topoRot(topo) : topo.toFixed(1) }))}</span></div>`);
   }
 
   /* ----------------------------------------------------- o arranjo das bolhas
@@ -915,14 +915,14 @@ window.PhxTelemetria = (function () {
     if (!alvo) return;
     const idade = estado.ultimoOkEm ? Date.now() - estado.ultimoOkEm : 0;
     alvo.innerHTML =
-      `<span class="tlm-pastilha mal">${esc(txt("tela.tl_sem_resposta", "sem resposta do servidor"))}</span>
+      phxHTML(`<span class="tlm-pastilha mal">${esc(txt("tela.tl_sem_resposta", "sem resposta do servidor"))}</span>
        <span class="mal"><b>${esc(erro)}</b></span>
        <span>${estado.ultimoOkEm
          ? marcado(txt("tela.tl_na_tela_de", "o que está na tela é de **{quando}**, há **{idade}**"),
                    { quando: estado.ultimoOkRotulo, idade: dur(idade) })
          : esc(txt("tela.tl_nunca_respondeu", "nunca houve resposta nesta sessão"))}</span>
        <span>${esc(preencher(txt("tela.tl_tentativas", "{n} tentativa(s) sem resposta"),
-         { n: estado.falhas }))}</span>`;
+         { n: estado.falhas }))}</span>`);
   }
 
   /* Desenha um retrato inteiro. É público para poder ser exercitado sem
@@ -953,7 +953,7 @@ window.PhxTelemetria = (function () {
     const atraso = num(d.atraso_ms);
     const tarde = d.ligada && atraso > 3000;
     $("#tlmEstado").innerHTML =
-      `<span class="tlm-pastilha ${d.ligada ? "on" : "off"}">${esc(d.ligada
+      phxHTML(`<span class="tlm-pastilha ${d.ligada ? "on" : "off"}">${esc(d.ligada
          ? txt("tela.tl_coletando", "coletando")
          : txt("tela.tl_coleta_off", "coleta desligada"))}</span>
        <span>${marcado(txt("tela.tl_ultima_amostra", "última amostra **{v}**"),
@@ -967,7 +967,7 @@ window.PhxTelemetria = (function () {
        ${estado.pausado ? `<span class="tlm-pastilha pausa">${esc(txt("tela.tl_pausado", "pausado por você"))}</span>` : ""}
        ${d.stress ? `<span class="tlm-stress">${esc(preencher(
          txt("tela.tl_em_stress", "servidor em stress · {por_que}"),
-         { por_que: d.stress_por_que || "" }))}</span>` : ""}`;
+         { por_que: d.stress_por_que || "" }))}</span>` : ""}`);
 
     const col = (campo) => s.map(a => num(a[campo]));
 
@@ -1181,7 +1181,7 @@ window.PhxTelemetria = (function () {
     // A lembranca fica numa PROPRIEDADE do elemento, e nao num `data-`: um
     // atributo com o HTML inteiro dentro aparece no inspetor e confunde quem
     // for ler a arvore depois.
-    if (alvo._trilhaFeita !== h) { alvo.innerHTML = h; alvo._trilhaFeita = h; }
+    if (alvo._trilhaFeita !== h) { alvo.innerHTML = phxHTML(h); alvo._trilhaFeita = h; }
   }
 
   function desenharBolhas(ativs) {
@@ -1203,7 +1203,7 @@ window.PhxTelemetria = (function () {
 
     // O `<defs>` das esferas nasce uma vez e fica. Recriá-lo a cada volta
     // faria o navegador recompor todo gradiente duas vezes por segundo.
-    if (!svg.querySelector("defs")) svg.insertAdjacentHTML("afterbegin", defsDasEsferas());
+    if (!svg.querySelector("defs")) svg.insertAdjacentHTML("afterbegin", phxHTML(defsDasEsferas()));
     let chao = svg.querySelector(".tlm-chao");
     if (!chao) {
       chao = document.createElementNS("http://www.w3.org/2000/svg", "rect");
@@ -1265,11 +1265,11 @@ window.PhxTelemetria = (function () {
         g.setAttribute("tabindex", "0");
         g.setAttribute("role", "button");
         g.innerHTML =
-          `<circle class="tlm-c"></circle>
+          phxHTML(`<circle class="tlm-c"></circle>
            <circle class="tlm-alvo"></circle>
            <text class="tlm-id" text-anchor="middle"></text>
            <text class="tlm-sub" text-anchor="middle"></text>
-           <title></title>`;
+           <title></title>`);
         svg.appendChild(g);
         p = { g, circulo: g.querySelector(".tlm-c"), alvo: g.querySelector(".tlm-alvo"),
               rotulo: g.querySelector(".tlm-id"), sub: g.querySelector(".tlm-sub"),
@@ -1449,7 +1449,7 @@ window.PhxTelemetria = (function () {
       + (ordenadas.length > 1
           ? preencher(txt("tela.tl_escala_min", " e a mais leve, {menor}"), { menor: dur(menor) })
           : ""));
-    alvo.innerHTML = svg;
+    alvo.innerHTML = phxHTML(svg);
   }
 
   /** As faixas de cor, escritas com os limiares que o SERVIDOR mandou. */
@@ -1496,9 +1496,9 @@ window.PhxTelemetria = (function () {
       if (c) { c.style.fill = escolhida; c.style.stroke = escolhida; }
       const t = el.querySelector(".tlm-leg-t");
       if (!t) return;
-      t.innerHTML = `${v.glifo ? esc(v.glifo) + " " : ""}${
+      t.innerHTML = phxHTML(`${v.glifo ? esc(v.glifo) + " " : ""}${
         escolhida ? "" : esc(txt(v.palavraTxt, v.palavra)) + " · "}<b>${
-        esc(txt(v.txt, v.rot))}</b> · ${esc(txt(v.bordaTxt, v.borda))}`;
+        esc(txt(v.txt, v.rot))}</b> · ${esc(txt(v.bordaTxt, v.borda))}`);
       // A cor pelo CSSOM, como o disquinho acima: atributo `style` no HTML a
       // CSP barra (pedido 771).
       if (escolhida) t.querySelector("b").style.color = escolhida;
@@ -1569,8 +1569,8 @@ window.PhxTelemetria = (function () {
     const escolha = alvoDoCartao();
     const a = escolha.a;
     if (!a) {
-      alvo.innerHTML = `<div class="tlm-vazio">${esc(txt("tela.tl_cartao_vazio",
-        "nenhuma atividade aqui — quando houver, clique numa bolha para ver o descritivo completo"))}</div>`;
+      alvo.innerHTML = phxHTML(`<div class="tlm-vazio">${esc(txt("tela.tl_cartao_vazio",
+        "nenhuma atividade aqui — quando houver, clique numa bolha para ver o descritivo completo"))}</div>`);
       return;
     }
     const niv = NIVEIS[a.nivel] || NIVEIS.normal;
@@ -1590,7 +1590,7 @@ window.PhxTelemetria = (function () {
     const podeEncerrar = escolha.escolhida && !!a.op && !!a.tem_ponto && !a.encerrando
       && !a.servico;
     const irmas = (d.atividades || []).filter(x => x.ip === a.ip).length;
-    alvo.innerHTML = `
+    alvo.innerHTML = phxHTML(`
       <div class="tlm-cartao-cab" data-e-n="${
         esc(corDoNivel(NIVEIS[a.nivel] ? a.nivel : "normal"))}">
         <span class="tlm-nivel">${esc(niv.glifo)} ${esc(txt(niv.txt, niv.rot))}</span>
@@ -1674,7 +1674,7 @@ window.PhxTelemetria = (function () {
                     "esta operação tem ponto de cancelamento, mas não está nele neste instante — tipicamente porque espera a trava de dados. A marca vale para o primeiro ponto seguro que vier."))
                 : marcado(txt("tela.tl_nota_sem_ponto",
                     "não cancelável: a operação não tem ponto de cancelamento e vai terminar. Abandonar uma gravação no meio deixaria o arquivo mentindo."))
-      }</p>`;
+      }</p>`);
 
     // O cartão inteiro é reescrito a cada volta porque os números mudam a cada
     // volta. O foco do teclado morreria junto com o botão antigo, e quem

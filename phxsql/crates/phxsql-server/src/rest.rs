@@ -737,7 +737,12 @@ pub mod explorador {
         MOLDURA
             .replace("{titulo}", &escapar(&rest.titulo()))
             .replace("/*ESTILO*/", ESTILO)
-            .replace("// COMPORTAMENTO", COMPORTAMENTO)
+            // O funil do HTML na frente do comportamento: a CSP do explorador
+            // e a mesma da pagina, com Trusted Types (pedido 771).
+            .replace(
+                "// COMPORTAMENTO",
+                &format!("{}\n{COMPORTAMENTO}", crate::http::FUNIL_JS),
+            )
     }
 
     /// O nome do servico vem do `config.json`, entao ele e DADO de fora --

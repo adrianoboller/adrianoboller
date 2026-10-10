@@ -92,7 +92,7 @@ export const caso = {
           travas: [{ tabela: 'loja/pedidos', trava: 'IX', linhas: 2 }],
         }],
       };
-      $('#painel').innerHTML = listaDeTransacoes(dados);
+      $('#painel').innerHTML = phxHTML(listaDeTransacoes(dados));
       ligarGradeTx(dados);
     });
     await page.waitForSelector('#painel table', { timeout: 10000 });

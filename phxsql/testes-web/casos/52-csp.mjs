@@ -30,7 +30,16 @@
  *     tela. Com a CSP velha ele pinta; com a nova o navegador o barra e
  *     relata. E o estilo DINAMICO da casa continua de pe: as barras do Painel
  *     tem a largura pedida (o `PhxEstilo` a pos pelo CSSOM), e um `data-e-*`
- *     com valor fora do crivo e recusado em vez de virar estilo. */
+ *     com valor fora do crivo e recusado em vez de virar estilo.
+ *  7. TRUSTED TYPES (pedido 771, terceira etapa): `require-trusted-types-for
+ *     'script'` e `trusted-types phx`. Desde ela o veneno do item 3 nem chega
+ *     ao analisador de HTML: `innerHTML` com TEXTO cru joga erro e o
+ *     navegador relata `require-trusted-types-for`. O que entra e o que a
+ *     politica `phx` fabricou, e ela so fabrica pelo funil (`phxHTML`), que
+ *     RECUSA manipulador, `javascript:` e elemento que roda. Ninguem cria
+ *     outra politica, nem a segunda `phx`, e endereco de script de texto
+ *     (`script.src = "…"`) morre. Sem a diretiva, o `innerHTML` cru passa --
+ *     e e essa a prova que cai com o defeito reposto. */
 import { entrar, abrirPeloMenu, assentar, verdade, igual, SENHA_EXECUCAO, CREDENCIAL } from '../apoio.mjs';
 
 const CHAVE_FALSA = 'sk-ant-api03-' + 'prova771'.repeat(6);
@@ -69,6 +78,9 @@ export const caso = {
     verdade(!estilo.includes("'unsafe-inline'"),
       `style-src ainda aceita estilo embutido sem hash: ${estilo}`);
     igual(diretiva('style-src-attr'), "style-src-attr 'none'", 'atributo style barrado');
+    igual(diretiva('require-trusted-types-for'), "require-trusted-types-for 'script'",
+      'Trusted Types exigido nos sinks de HTML e de script');
+    igual(diretiva('trusted-types'), 'trusted-types phx', 'uma politica so, a phx, sem duplicata');
     igual(h['cross-origin-opener-policy'], 'same-origin', 'COOP');
     igual(h['cross-origin-resource-policy'], 'same-origin', 'CORP');
     igual(h['x-frame-options'], 'DENY', 'X-Frame-Options');
@@ -112,21 +124,56 @@ export const caso = {
     igual(antes.length, 0, `violacoes da CSP com a pagina em uso: ${JSON.stringify(antes)}`);
 
     // ------------------------------------------- 3. o veneno nao roda
+    // Duas portas, e as duas fecham. (a) TEXTO cru no `innerHTML`: o
+    // Trusted Types recusa antes de analisar, e relata. (b) O mesmo veneno
+    // PELO funil: a politica `phx` o confere e recusa o manipulador.
     const veneno = await page.evaluate(async () => {
       window.__phx771Sonda = true;
       window.__xss771 = 0;
+      const conta = d => window.__viol771.filter(v => v.s && v.d === d).length;
+      const tt0 = conta('require-trusted-types-for');
+      const VENENO = '<img src="x" onerror="window.__xss771=1">';
       const alvo = document.createElement('div');
-      alvo.innerHTML = '<img src="x" onerror="window.__xss771=1">';
       document.body.appendChild(alvo);
+      let cru = 'passou';
+      try { alvo.innerHTML = VENENO; } catch (e) { cru = e.name; }
+      let adjacente = 'passou';
+      try { alvo.insertAdjacentHTML('beforeend', VENENO); } catch (e) { adjacente = e.name; }
+      const r0 = phxHTML.recusados;
+      let recado = '';
+      const ouvir = e => { recado = e.detail; };
+      document.addEventListener('phxhtmlrecusado', ouvir);
+      let funil = 'passou';
+      try { alvo.innerHTML = phxHTML(VENENO); } catch (e) { funil = e.name; }
+      document.removeEventListener('phxhtmlrecusado', ouvir);
+      // O que o funil deixa passar passa: HTML com dado escapado.
+      alvo.innerHTML = phxHTML(`<b>${esc('<img src=x onerror=1>')}</b>`);
+      const escapado = alvo.querySelector('b') && !alvo.querySelector('img');
+      // Nada fabrica script nem outra politica.
+      const recusa = f => { try { f(); return 'passou'; } catch (e) { return e.name; } };
+      const outra = recusa(() => trustedTypes.createPolicy('outra', { createHTML: s => s }));
+      const dupla = recusa(() => trustedTypes.createPolicy('phx', { createHTML: s => s }));
+      const scriptSrc = recusa(() => { document.createElement('script').src = '/x.js'; });
       await new Promise(ok => setTimeout(ok, 600));
       alvo.remove();
       window.__phx771Sonda = false;
-      return { disparou: window.__xss771,
-               barrou: window.__viol771.filter(v => v.s && v.d === 'script-src-attr').length };
+      return { disparou: window.__xss771, cru, adjacente, funil, recado, escapado,
+               recusou: phxHTML.recusados - r0, outra, dupla, scriptSrc,
+               relatou: conta('require-trusted-types-for') - tt0 };
     });
-    igual(veneno.disparou, 0, 'o onerror posto por innerHTML RODOU: a CSP nao barra manipulador');
-    verdade(veneno.barrou >= 1,
-      'o veneno nao rodou mas o navegador nao relatou violacao — a sonda nao provou nada');
+    igual(veneno.disparou, 0, 'o onerror posto por innerHTML RODOU');
+    igual(veneno.cru, 'TypeError',
+      'innerHTML com texto cru PASSOU: o Trusted Types nao esta valendo');
+    igual(veneno.adjacente, 'TypeError', 'insertAdjacentHTML com texto cru PASSOU');
+    verdade(veneno.relatou >= 2,
+      `o navegador barrou mas nao relatou require-trusted-types-for (${veneno.relatou}) — a sonda nao provou nada`);
+    igual(veneno.funil, 'TypeError', 'o funil phxHTML deixou passar um manipulador onerror');
+    igual(veneno.recusou, 1, 'o funil nao contou a recusa');
+    verdade(/onerror/.test(veneno.recado), `o funil nao relatou o motivo: «${veneno.recado}»`);
+    verdade(veneno.escapado, 'o funil barrou (ou desescapou) HTML com dado escapado');
+    verdade(veneno.outra !== 'passou', 'uma segunda politica de Trusted Types foi criada');
+    verdade(veneno.dupla !== 'passou', 'uma segunda politica «phx» foi criada');
+    igual(veneno.scriptSrc, 'TypeError', 'script.src com texto cru PASSOU');
 
     // ---------------------------- 6. o veneno de ESTILO nao pinta
     const pintura = await page.evaluate(async () => {
@@ -134,15 +181,17 @@ export const caso = {
       const conta = () => window.__viol771.filter(v => v.s && v.d === 'style-src-attr').length;
       const antes = conta();
       const alvo = document.createElement('div');
-      alvo.innerHTML = '<div id="vene771" style="position:fixed;inset:0;z-index:99999;'
-        + 'background:rgb(255,0,0)">aviso falso</div>';
+      // Pelo funil: ele nao recusa `style=` (quem barra estilo e a CSP, e e
+      // ela que este item prova), e o texto cru nem chegaria ao analisador.
+      alvo.innerHTML = phxHTML('<div id="vene771" style="position:fixed;inset:0;z-index:99999;'
+        + 'background:rgb(255,0,0)">aviso falso</div>');
       document.body.appendChild(alvo);
       await new Promise(ok => setTimeout(ok, 300));
       const cs = getComputedStyle(document.getElementById('vene771'));
       const pintou = cs.position === 'fixed' || cs.backgroundColor === 'rgb(255, 0, 0)';
       // O crivo do `PhxEstilo`: um valor que nao e cor nao vira estilo.
       const r0 = PhxEstilo.recusados;
-      alvo.innerHTML = '<i id="crivo771" data-e-fundo="url(//exemplo.invalid/x)"></i>';
+      alvo.innerHTML = phxHTML('<i id="crivo771" data-e-fundo="url(//exemplo.invalid/x)"></i>');
       await new Promise(ok => setTimeout(ok, 50));
       const crivo = { recusou: PhxEstilo.recusados - r0,
                       fundo: document.getElementById('crivo771').style.backgroundColor };
@@ -197,7 +246,7 @@ export const caso = {
       const onde = guardado.tudo.filter(x => x.includes(valor));
       verdade(!onde.length, `${oQue} ficou no armazenamento do navegador: ${onde.map(x => x.split('=')[0]).join(', ')}`);
     }
-    ctx.notas.push(`${blocos} scripts e ${folhas} folhas por hash; ${barras.length} barra(s) pelo CSSOM; `
+    ctx.notas.push(`${blocos} scripts e ${folhas} folhas por hash; Trusted Types barrou o cru e o funil o veneno; ${barras.length} barra(s) pelo CSSOM; `
       + `${guardado.tudo.length} chave(s) no armazenamento, nenhuma com poder`);
   },
 };

@@ -2854,13 +2854,13 @@ async function detectarModo() {
       }
       document.body.appendChild(dl);
     }
-    $("#modo").innerHTML = marcado(txt("tela.lg_servidor_achado",
+    $("#modo").innerHTML = phxHTML(marcado(txt("tela.lg_servidor_achado",
         "Servidor encontrado nesta origem. Informe o token do `config.json` e as suas credenciais.")) + "<br>"
       + (podeProvar()
           ? marcado(txt("tela.lg_desafio_resposta", "Login por **desafio‑resposta**: a senha não sai desta máquina."))
           : est.senhaEmClaroPelaRede
             ? marcado(txt("tela.lg_contexto_inseguro", "Contexto não seguro: o login cai em **Base64**, que esconde a senha de quem olha, não de quem captura. Use HTTPS ou um túnel."))
-            : marcado(txt("tela.lg_senha_retida", "Contexto não seguro (**http://** fora deste computador): a senha **não sai** por aqui, porque quem escuta a rede a leria. Abra por **https://** (`tls: true` na seção web), por um túnel ou pelo localhost.")));
+            : marcado(txt("tela.lg_senha_retida", "Contexto não seguro (**http://** fora deste computador): a senha **não sai** por aqui, porque quem escuta a rede a leria. Abra por **https://** (`tls: true` na seção web), por um túnel ou pelo localhost."))));
     $("#t").parentElement.hidden = false;
     // Avisa, ao escolher o destino, se a interface vai cifrar o fio ate ele.
     // Isolado do login de proposito: se algo aqui falhar, o formulario segue
@@ -2870,8 +2870,8 @@ async function detectarModo() {
     mostrarCifraDoDestino();
   } catch {
     est.demo = true;
-    $("#modo").innerHTML = marcado(txt("tela.lg_sem_servidor",
-      "**Nenhum servidor nesta origem.** A interface abre em modo demonstração, com dados embutidos, para ser avaliada antes de instalar. Entre com qualquer coisa."));
+    $("#modo").innerHTML = phxHTML(marcado(txt("tela.lg_sem_servidor",
+      "**Nenhum servidor nesta origem.** A interface abre em modo demonstração, com dados embutidos, para ser avaliada antes de instalar. Entre com qualquer coisa.")));
     $("#t").parentElement.hidden = true;
     $("#s").value = "demonstracao";
   }
@@ -3012,8 +3012,8 @@ async function abrirApp() {
   delete $("#app").dataset.pronto;
   $("#selo").hidden = !est.demo;
   const quemSou = est.usuario.login + (est.usuario.supervisor ? " · supervisor" : "");
-  $("#eu").innerHTML = `<b>${esc(est.usuario.login)}</b>`
-    + (est.usuario.supervisor ? " · supervisor" : "");
+  $("#eu").innerHTML = phxHTML(`<b>${esc(est.usuario.login)}</b>`
+    + (est.usuario.supervisor ? " · supervisor" : ""));
   // Em tela estreita este pedaco corta com reticencias. Corte que avisa e
   // honesto; corte que perde o dado nao -- o texto inteiro fica aqui.
   $("#eu").title = quemSou;
@@ -3185,7 +3185,7 @@ async function montarArvore(abrirPainel = true) {
       esc(txt(ch, rotulo))}</div>`;
 
   const a = $("#arvore");
-  a.innerHTML = html;
+  a.innerHTML = phxHTML(html);
   // A arvore passa pelo `PhxTelas` de proposito: clicar numa tabela JA aberta
   // volta para a aba dela em vez de recarregar -- e e por isso que a grade
   // rolada ate a linha 800 sobrevive a um passeio pela arvore. Sem o modulo,
@@ -3266,8 +3266,8 @@ async function abrirTabela(db, tab) {
   // aqui foi o defeito: dizia CINCO extensoes quando a tabela ja tinha DEZ, e
   // quem contou foi o dono, olhando a tela.
   $("#subtitulo").textContent = db;
-  $("#abas").innerHTML = ABAS.map(([k,r,chave]) =>
-    `<button class="aba ${k===est.aba?"sel":""}" data-aba="${k}">${esc(txt(chave,r))}</button>`).join("");
+  $("#abas").innerHTML = phxHTML(ABAS.map(([k,r,chave]) =>
+    `<button class="aba ${k===est.aba?"sel":""}" data-aba="${k}">${esc(txt(chave,r))}</button>`).join(""));
   $("#abas").querySelectorAll(".aba").forEach(b => b.onclick = () => {
     est.aba = b.dataset.aba; abrirTabela(db, tab);
   });
@@ -3284,12 +3284,12 @@ async function desenharAba() {
   // repinta a grade por cima da tela nova.
   const minhaVez = tomarPainel();
   const p = $("#painel");
-  p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
+  p.innerHTML = phxHTML(`<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   const { db, tab } = est.atual;
   // O corpo chega do servidor; so escreve quem ainda for o dono do painel.
   const por = (html, ligar) => {
     if (!aindaNoPainel(minhaVez)) return;
-    p.innerHTML = html;
+    p.innerHTML = phxHTML(html);
     ligar();
   };
   try {
@@ -3300,7 +3300,7 @@ async function desenharAba() {
     if (est.aba === "integridade") return por(await vIntegridade(db, tab), ligarIntegridade);
   } catch (e) {
     if (!aindaNoPainel(minhaVez)) return;
-    p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
+    p.innerHTML = phxHTML(`<div class="aviso mal">${esc(e.message)}</div>`);
   }
 }
 
@@ -4225,7 +4225,7 @@ function ligarMonitor(segundos = 4) {
     const m = await lerMaquina();
     if (!m) return pararMonitor();
     est.maquina = m;
-    if ($("#maquina")) $("#maquina").innerHTML = maquinaHtml(m);
+    if ($("#maquina")) $("#maquina").innerHTML = phxHTML(maquinaHtml(m));
   }, segundos * 1000);
 }
 
@@ -4251,7 +4251,7 @@ function redesenharHoras() {
   const larg = Math.round(cx.clientWidth);
   if (larg < 200 || String(larg) === cx.dataset.larg) return;
   cx.dataset.larg = String(larg);
-  cx.innerHTML = areaHoras(est.painel.por_hora, est.painel.recusadas_por_hora, larg);
+  cx.innerHTML = phxHTML(areaHoras(est.painel.por_hora, est.painel.recusadas_por_hora, larg));
 }
 
 // Um observador só, criado uma vez. Ele vale para a janela que muda de tamanho
@@ -4498,7 +4498,7 @@ async function telaOcorrencias(p, aindaEMinha) {
   const ia = !!(window.PhxIA && PhxIA.ligada());
   const opt = (v, rot, sel) =>
     `<option value="${esc(v)}"${sel ? " selected" : ""}>${esc(rot)}</option>`;
-  p.innerHTML = `<div class="ferramentas">
+  p.innerHTML = phxHTML(`<div class="ferramentas">
       <label for="ocPeriodo">${esc(txt("tela.oc_periodo", "Período"))}</label>
       <select id="ocPeriodo">${PERIODOS.map(([v, , rot]) =>
         opt(v, rot(), v === filtro.periodo)).join("")}</select>
@@ -4517,7 +4517,7 @@ async function telaOcorrencias(p, aindaEMinha) {
     ${ia ? "" : `<div class="nota">${esc(txt("tela.oc_sem_ia",
       "Para pedir à Claude que explique uma ocorrência, ligue a integração em Configurações → Integração com a Claude. A chave fica só neste navegador."))}</div>`}
     <div id="ocExplicacao"></div>
-    <div id="gradeOcorrencias"></div>`;
+    <div id="gradeOcorrencias"></div>`);
   const linhas = (r.linhas || []).slice().reverse();
   const colunas = [
     { campo:"quando", titulo:txt("tela.col_quando","quando"), fixa:"esq" },
@@ -4572,14 +4572,14 @@ async function abrirAdmin(qual) {
   // Trocar o idioma repinta ESTA tela, e nao a primeira: sem isto, escolher
   // a bandeira na tela de Idiomas jogaria a pessoa no Painel.
   est.repintar = () => abrirAdmin(qual);
-  $("#abas").innerHTML = "";
+  $("#abas").innerHTML = phxHTML("");
   // Esta aba deixou de ser a tabela que era: `est.atual` acabou de virar nulo,
   // e uma aba que continuasse dizendo «sou a tabela clientes» faria o clique
   // seguinte na arvore achar que nao havia nada a recarregar.
   if (window.PhxTelas) PhxTelas.marcar(null);
   pararMonitor();
   const p = $("#painel");
-  p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
+  p.innerHTML = phxHTML(`<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   try {
     if (qual === "painel") {
       $("#titulo").textContent = txt("tela.painel", "Painel");
@@ -4587,7 +4587,7 @@ async function abrirAdmin(qual) {
         "o servidor inteiro numa tela · os monitores da máquina renovam sozinhos");
       const htmlPainel = await vPainel();
       if (!aindaEMinha()) return;
-      p.innerHTML = htmlPainel;
+      p.innerHTML = phxHTML(htmlPainel);
       ligarMonitor();
       ligarLarguraDoGrafico();
       // Aba escondida para de perguntar pela maquina. Sem este par, quatro
@@ -4602,10 +4602,10 @@ async function abrirAdmin(qual) {
         "cadastro do config.json · a senha nunca sai daqui");
       const us = await api("usuarios");
       if (!aindaEMinha()) return;
-      p.innerHTML = `<div class="ferramentas">
+      p.innerHTML = phxHTML(`<div class="ferramentas">
           <button class="botao incluir" id="btNovoUsuario">✚ ${esc(txt("tela.tt_novo_usuario","Novo usuário"))}</button>
         </div>
-        <div id="gradeAdmUsuarios"></div>`;
+        <div id="gradeAdmUsuarios"></div>`);
       // Gap 230: ate aqui a grade so LIA. `usuario_criar`/`usuario_alterar`/
       // `usuario_excluir` existem no protocolo desde o pedido 221 -- o que
       // faltava era o formulario de poder por base e por tabela, que mora em
@@ -4655,8 +4655,8 @@ async function abrirAdmin(qual) {
         "toda tentativa entra, inclusive as recusadas");
       const a = await api("acessos", { max:200 });
       if (!aindaEMinha()) return;
-      p.innerHTML = `<div class="ferramentas"><span class="conta">${marcado(txt("tela.ac_registros_no_log","{n} registros no `acessos.log`"), {n: a.total})}</span></div>
-        <div id="gradeAdmAcessos"></div>`;
+      p.innerHTML = phxHTML(`<div class="ferramentas"><span class="conta">${marcado(txt("tela.ac_registros_no_log","{n} registros no `acessos.log`"), {n: a.total})}</span></div>
+        <div id="gradeAdmAcessos"></div>`);
       PhxGrid.criar("#gradeAdmAcessos", {
         agrupavel: true, buscaGlobal: true, filterRow: true,
         lembrar: "admacessos",
@@ -4690,7 +4690,7 @@ async function abrirAdmin(qual) {
         "os textos da tela em seis idiomas · phxsys.mensagens, uma tabela como as outras");
       const htmlIdiomas = await vIdiomas();
       if (!aindaEMinha()) return;
-      p.innerHTML = htmlIdiomas;
+      p.innerHTML = phxHTML(htmlIdiomas);
       ligarIdiomasAdmin();
     } else {
       $("#titulo").textContent = txt("tela.bloqueios", "Bloqueios");
@@ -4760,7 +4760,7 @@ async function abrirAdmin(qual) {
         </div>
         <pre id="saidaExport" class="rolo" hidden></pre>`;
 
-      p.innerHTML = politicaHtml + bloqueadosHtml + whitelistHtml + exportarHtml;
+      p.innerHTML = phxHTML(politicaHtml + bloqueadosHtml + whitelistHtml + exportarHtml);
 
       if (b.ativos.length) {
         // PADRONIZACAO: PhxGrid. O botao "soltar" nao recebe `onclick` direto
@@ -4814,7 +4814,7 @@ async function abrirAdmin(qual) {
       };
     }
   } catch (e) {
-    p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
+    p.innerHTML = phxHTML(`<div class="aviso mal">${esc(e.message)}</div>`);
   }
 }
 
@@ -5144,7 +5144,7 @@ function dialogoExcluirUsuario(login, aoTerminar) {
   const fundo = document.createElement("div");
   fundo.className = "sobre";
   const tituloBtn = esc(txt("tela.bt_excluir_usuario","Excluir usuário"));
-  fundo.innerHTML = `
+  fundo.innerHTML = phxHTML(`
     <div class="caixa" role="dialog" aria-modal="true" aria-label="${tituloBtn}">
       <h3>${tituloBtn}</h3>
       <div class="sub">${esc(login)}</div>
@@ -5155,7 +5155,7 @@ function dialogoExcluirUsuario(login, aoTerminar) {
         <button class="botao secundario" id="fexcNao">${esc(txt("tela.cancelar","Cancelar"))}</button>
         <button class="botao excluir" id="fexcSim">${tituloBtn}</button>
       </div>
-    </div>`;
+    </div>`);
   document.body.appendChild(fundo);
   const fechar = () => fundo.remove();
   fundo.querySelector("#fexcNao").onclick = ev => { ev.preventDefault(); fechar(); };
@@ -5171,7 +5171,7 @@ function dialogoExcluirUsuario(login, aoTerminar) {
       avisar(preencher(txt("tela.g_usuario_excluido","usuário {login} excluído"), {login: res.login}));
       if (aoTerminar) aoTerminar();
     } catch (err) {
-      fundo.querySelector("#fexcRecado").innerHTML = `<div class="aviso mal">${esc(String(err))}</div>`;
+      fundo.querySelector("#fexcRecado").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(err))}</div>`);
     }
   };
 }
@@ -5322,7 +5322,7 @@ async function telaProcurarTexto(db, tab, indices) {
   const ir = async () => {
     const palavra = $("#ptPalavra").value.trim();
     if (!palavra) return;
-    $("#ptRecado").innerHTML = `<p class="leg">${esc(txt("tela.pt_procurando","procurando…"))}</p>`;
+    $("#ptRecado").innerHTML = phxHTML(`<p class="leg">${esc(txt("tela.pt_procurando","procurando…"))}</p>`);
     try {
       const r = await api("procurar_texto", { database: db, tabela: tab,
                                               indice: $("#ptIndice").value, palavra });
@@ -5331,11 +5331,11 @@ async function telaProcurarTexto(db, tab, indices) {
       // seria mentir sobre o dado. Quando corta, a tela diz que cortou.
       const linhas = r.linhas || [];
       const cortou = r.encontrados > linhas.length;
-      $("#ptRecado").innerHTML = `<div class="aviso ${r.encontrados ? "bom" : ""}"><p>` +
+      $("#ptRecado").innerHTML = phxHTML(`<div class="aviso ${r.encontrados ? "bom" : ""}"><p>` +
         esc(preencher(txt("tela.pt_achou","{n} linha(s) encontrada(s)."), {n: fmt(r.encontrados)})) +
         (cortou ? " " + esc(preencher(txt("tela.pt_cortou","Mostrando as {m} primeiras."), {m: fmt(linhas.length)})) : "") +
-        `</p></div>`;
-      $("#ptGrade").innerHTML = "";
+        `</p></div>`);
+      $("#ptGrade").innerHTML = phxHTML("");
       if (linhas.length) PhxGrid.criar("#ptGrade", {
         buscaGlobal: true, filterRow: true, lembrar: "proctexto",
         nomeVista: "procurar-texto",
@@ -5344,7 +5344,7 @@ async function telaProcurarTexto(db, tab, indices) {
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
     } catch (err) {
-      $("#ptRecado").innerHTML = `<div class="aviso mau"><p>${esc(String(err))}</p></div>`;
+      $("#ptRecado").innerHTML = phxHTML(`<div class="aviso mau"><p>${esc(String(err))}</p></div>`);
     }
   };
   $("#ptIr").onclick = ir;
@@ -5429,7 +5429,7 @@ async function verConteudoEditavel(db, tab, verExcluidos = false, cursor = null)
     ? `<div class="vazio">${esc(txt("tela.ce_nenhuma_excluida","nenhuma linha marcada como excluída"))}</div>`
     : `<div class="vazio">${esc(txt("tela.ce_tabela_vazia","tabela vazia"))}</div>`;
 
-  $("#painel").innerHTML = barra + (r.linhas.length ? `<div id="gradeEdit"></div>` : vazio);
+  $("#painel").innerHTML = phxHTML(barra + (r.linhas.length ? `<div id="gradeEdit"></div>` : vazio));
 
   if (r.linhas.length) {
     // A PADRONIZACAO: esta tela tambem e PhxGrid, com agrupamento dinamico.
@@ -6871,7 +6871,7 @@ async function pivotPasso1() {
     } catch (_) { /* tabela ilegível não trava o assistente */ }
   }
 
-  $("#pvCorpo").innerHTML = `
+  $("#pvCorpo").innerHTML = phxHTML(`
     <h3 class="secao">${esc(txt("tela.pv_tabela_dos_fatos","A tabela dos fatos"))}</h3>
     <p class="leg">${esc(txt("tela.pv_e_a_que_tem_linhas","É a que tem as linhas a somar — vendas, lançamentos, movimentos. As outras entram como consulta, para trazer um campo de descrição."))}</p>
     <div class="rolo"><table><tbody>${nomes.map(n => `<tr class="linha-tab${
@@ -6920,7 +6920,7 @@ async function pivotPasso1() {
 
     <div class="acoes">
       <button class="botao" id="pv_ir2">${esc(txt("tela.pv_escolher_campos","Escolher os campos"))} →</button>
-    </div>` : ""}`;
+    </div>` : ""}`);
 
   $$("#pvCorpo .linha-tab").forEach(tr => tr.onclick = () => {
     if (w.tabela !== tr.dataset.t) { w.tabela = tr.dataset.t; w.juncoes = [];
@@ -6941,9 +6941,9 @@ async function pivotPasso1() {
   if (sel) {
     // As colunas de ligação saem do esquema, e não da digitação.
     const e = await api("esquema", { database: w.db, tabela: w.tabela });
-    $("#pv_jc").innerHTML = `<option value="">— escolha —</option>` +
+    $("#pv_jc").innerHTML = phxHTML(`<option value="">— escolha —</option>` +
       (e.colunas || []).map(c => `<option value="${esc(c.nome)}">${esc(c.nome)}
-        — ${esc(tipoCurto(c.tipo))}</option>`).join("");
+        — ${esc(tipoCurto(c.tipo))}</option>`).join(""));
     sel.onchange = () => {
       if (!$("#pv_jp").value.trim())
         $("#pv_jp").value = sel.value.split(".").pop();
@@ -7017,7 +7017,7 @@ async function pivotPasso2() {
     </div>`;
   };
 
-  $("#pvCorpo").innerHTML = `
+  $("#pvCorpo").innerHTML = phxHTML(`
     <div class="pv-montagem">
       <div class="pv-paleta">
         <div class="pv-zona-cab"><b>Campos</b><span>arraste, ou clique para mandar às linhas</span></div>
@@ -7051,7 +7051,7 @@ async function pivotPasso2() {
       ele conta linhas. Os outros precisam de um campo em <em>Valores</em>.</p>
       <p>Célula vazia quer dizer <strong>nenhuma linha caiu ali</strong>, e não
       zero: zero seria «somou e deu nada».</p>
-    </div>`;
+    </div>`);
 
   // ---- arrastar e soltar, e o clique como atalho
   const solta = (zonaChave, campo) => {
@@ -7117,7 +7117,7 @@ async function pivotPasso2() {
 
 async function pivotPasso3() {
   const w = est.pivot;
-  $("#pvCorpo").innerHTML = `<div class="centro">cruzando no servidor…</div>`;
+  $("#pvCorpo").innerHTML = phxHTML(`<div class="centro">cruzando no servidor…</div>`);
   let r;
   try {
     r = await api("pivotar", {
@@ -7138,7 +7138,7 @@ async function pivotPasso3() {
   const cabLinha = r.campos_linha.map(nome).join(" / ");
   const agRot = (AGREGADORES().find(a => a[0] === r.agregador) || ["", r.agregador])[1];
 
-  $("#pvCorpo").innerHTML = `
+  $("#pvCorpo").innerHTML = phxHTML(`
     <div class="fichas">
       ${ficha(r.rotulos_linha.length, txt("tela.fc_linhas","linhas"))}
       ${ficha(r.rotulos_coluna.length, txt("tela.fc_colunas","colunas"))}
@@ -7182,7 +7182,7 @@ async function pivotPasso3() {
       ${r.valor ? `<p><strong>Dinheiro não perde centavo.</strong> Um campo
       <code>Decimal</code> é somado no domínio inteiro escalado e só vira texto
       na saída; a média divide uma vez, no fim — não a cada parcela.</p>` : ""}
-    </div>`;
+    </div>`);
 
   $("#pv_voltar2").onclick = () => { w.passo = 2; desenharPivot(); };
   $("#pv_csv").onclick = () => {
@@ -7846,26 +7846,26 @@ async function telaRestaurarBackup(pasta) {
 async function listarBackups() {
   const pasta = $("#rstPasta").value.trim();
   const alvo = $("#rstLista");
-  $("#rstDetalhe").innerHTML = "";
-  alvo.innerHTML = `<div class="vazio">procurando…</div>`;
+  $("#rstDetalhe").innerHTML = phxHTML("");
+  alvo.innerHTML = phxHTML(`<div class="vazio">procurando…</div>`);
   try {
     const r = await api("backups", pasta ? { pasta } : {});
     $("#rstRecado").textContent = r.existe
       ? `${r.total} cópia(s) em ${r.pasta}`
       : `a pasta ${r.pasta} não existe`;
     if (!r.backups.length) {
-      alvo.innerHTML = `<div class="vazio">nenhuma cópia do PhxSql nesta pasta</div>`;
+      alvo.innerHTML = phxHTML(`<div class="vazio">nenhuma cópia do PhxSql nesta pasta</div>`);
       return;
     }
-    alvo.innerHTML = `<h3 class="secao">Cópias encontradas</h3><div id="gradeBackups"></div>`;
+    alvo.innerHTML = phxHTML(`<h3 class="secao">Cópias encontradas</h3><div id="gradeBackups"></div>`);
     if (r.escondidos) {
       alvo.insertAdjacentHTML("beforeend",
-        `<p class="leg">${fmt(r.escondidos)} banco(s) ficaram de fora da lista:
-         você não tem permissão de administrar neles.</p>`);
+        phxHTML(`<p class="leg">${fmt(r.escondidos)} banco(s) ficaram de fora da lista:
+         você não tem permissão de administrar neles.</p>`));
     }
     ligarBackups(r.backups);
   } catch (e) {
-    alvo.innerHTML = `<div class="aviso mal">${esc(e.message || String(e))}</div>`;
+    alvo.innerHTML = phxHTML(`<div class="aviso mal">${esc(e.message || String(e))}</div>`);
   }
 }
 
@@ -7920,7 +7920,7 @@ function ligarBackups(backups) {
 /** O que a cópia tem dentro, e as duas formas de trazer de volta. */
 async function verDentroDoBackup(origem, de) {
   const alvo = $("#rstDetalhe");
-  alvo.innerHTML = `<div class="vazio">${esc(txt("tela.st_lendo_manifesto", "lendo o manifesto…"))}</div>`;
+  alvo.innerHTML = phxHTML(`<div class="vazio">${esc(txt("tela.st_lendo_manifesto", "lendo o manifesto…"))}</div>`);
   try {
     const [d, srv, bancos] = await Promise.all([
       api("restaurar_backup", { origem, de, simular: true }),
@@ -7937,7 +7937,7 @@ async function verDentroDoBackup(origem, de) {
     // pedaço de `.secao` sem caixa-alta. Fora dele, `Comercial` apareceria
     // como `COMERCIAL` — uma mentira sobre o dado, porque quem olha não sabe
     // se o database se chama assim. É a lição de «Blumenau», de novo.
-    alvo.innerHTML = `
+    alvo.innerHTML = phxHTML(`
       <h3 class="secao">o que tem dentro <em>${esc(de)} · ${esc(arquivo)}</em></h3>
       <div class="fichas">
         ${ficha(d.quando || "—", txt("tela.fc_gravado_em","gravado em"))}
@@ -7987,7 +7987,7 @@ async function verDentroDoBackup(origem, de) {
           </span>
         </div>
       </div>
-      <div id="rstErro"></div>`;
+      <div id="rstErro"></div>`);
 
     $("#btRstNovo").onclick = () =>
       restaurarAgora(origem, de, $("#rstNome").value.trim(), false);
@@ -8001,7 +8001,7 @@ async function verDentroDoBackup(origem, de) {
       bt.onclick = () => restaurarAgora(origem, de, de, true);
     }
   } catch (e) {
-    alvo.innerHTML = `<div class="aviso mal">${esc(e.message || String(e))}</div>`;
+    alvo.innerHTML = phxHTML(`<div class="aviso mal">${esc(e.message || String(e))}</div>`);
   }
 }
 
@@ -8048,8 +8048,8 @@ async function restaurarAgora(origem, de, destino, porCima) {
     // que fazer -- «pare a porta de dados antes». Aviso que corta a instrução
     // no meio é o mesmo que não avisar.
     const caixa = $("#rstErro");
-    if (caixa) caixa.innerHTML = `<div class="nota mal"><p><strong>Não
-      restaurei.</strong> ${esc(texto)}</p></div>`;
+    if (caixa) caixa.innerHTML = phxHTML(`<div class="nota mal"><p><strong>Não
+      restaurei.</strong> ${esc(texto)}</p></div>`);
   }
 }
 
@@ -8568,20 +8568,20 @@ function ligarCoresDaTelemetria() {
     const escondido = bloco.querySelector("input[type=hidden]");
     const seletor = bloco.querySelector(".cf-cor-p");
     const a = PhxTelemetria.amostra(nivel, escondido.value);
-    bloco.querySelector(".cf-cor-am").innerHTML = a.svg;
+    bloco.querySelector(".cf-cor-am").innerHTML = phxHTML(a.svg);
     // O seletor abre na cor que está valendo — inclusive quando ela é a de
     // fábrica, que é uma variável do tema e não um hexadecimal.
     seletor.value = hexDaCor(a.cor);
     const diz = bloco.querySelector(".cf-cor-diz");
     const razao = a.razao.toFixed(2).replace(".", ",");
     diz.className = "cf-cor-diz leg" + (a.passa ? "" : " mal");
-    diz.innerHTML = escondido.value
+    diz.innerHTML = phxHTML(escondido.value
       ? (a.passa
         ? `contraste do rótulo <b>${razao}:1</b> — passa em 4,5:1`
         : `<b>atenção:</b> o rótulo dentro da bolha dá <b>${razao}:1</b> com a
            melhor das duas tintas — abaixo de 4,5:1, fica difícil de ler.
            Você pode salvar assim mesmo.`)
-      : `de fábrica · segue o tema · contraste <b>${razao}:1</b> neste tema`;
+      : `de fábrica · segue o tema · contraste <b>${razao}:1</b> neste tema`);
   };
 
   $$("#painel .cmp-cor").forEach(bloco => {
@@ -9571,19 +9571,19 @@ async function telaExportar(db, tab) {
   $("#btVoltaExp").onclick = () => gerirTabelasAtual();
   $$("#fmts .fmt").forEach(b => b.onclick = async () => {
     const f = b.dataset.f;
-    $("#expSaida").innerHTML = `<div class="centro">gerando ${esc(f)}…</div>`;
+    $("#expSaida").innerHTML = phxHTML(`<div class="centro">gerando ${esc(f)}…</div>`);
     let r;
     try {
       r = await api("exportar", {
         database: db, tabela: tab, formato: f,
         max: Number($("#expMax").value) || 100000,
       });
-    } catch (e) { return $("#expSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+    } catch (e) { return $("#expSaida").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
     baixar(r.arquivo, r.mime, r.binario ? r.base64 : r.conteudo, r.binario);
     $("#expSaida").innerHTML =
-      `<div class="aviso"><b>${esc(r.arquivo)}</b> — ${fmt(r.linhas)} linha(s),
+      phxHTML(`<div class="aviso"><b>${esc(r.arquivo)}</b> — ${fmt(r.linhas)} linha(s),
         ${fmtBytes(r.bytes)}, ${r.ms} ms.${
-        r.truncado ? ` <b>Cortado no teto</b>: há mais linhas do que o máximo pedido.` : ""}</div>`;
+        r.truncado ? ` <b>Cortado no teto</b>: há mais linhas do que o máximo pedido.` : ""}</div>`);
   });
 }
 
@@ -9654,7 +9654,7 @@ async function telaImportar(db, tab) {
     // A prévia é lida NO NAVEGADOR pelo mesmo caminho do servidor? Não —
     // seria uma segunda implementação, e as duas divergiriam. Manda para o
     // servidor com `conferir`, que lê e devolve sem gravar nada.
-    $("#impSaida").innerHTML = `<div class="centro">${esc(txt("tela.st_lendo", "lendo…"))}</div>`;
+    $("#impSaida").innerHTML = phxHTML(`<div class="centro">${esc(txt("tela.st_lendo", "lendo…"))}</div>`);
     try {
       const r = await api("importar_conferir", {
         database: db, tabela: tab, texto,
@@ -9662,7 +9662,7 @@ async function telaImportar(db, tab) {
       });
       const cols = r.colunas || [];
       $("#impSaida").innerHTML =
-        `<div class="aviso">Entendi como <b>${esc(r.formato)}</b>:
+        phxHTML(`<div class="aviso">Entendi como <b>${esc(r.formato)}</b>:
            ${fmt(r.linhas_lidas)} linha(s), ${cols.length} coluna(s).
            ${r.desconhecidas && r.desconhecidas.length
              ? `<b class="marca-excluida">Colunas que a tabela não tem:
@@ -9675,7 +9675,7 @@ async function telaImportar(db, tab) {
            ? `<div id="gradeAmostraImp"></div>`
            : `<div class="vazio">nenhuma linha</div>`}
          <p class="leg">Amostra das primeiras ${r.amostra ? r.amostra.length : 0} linhas,
-           como o leitor entendeu — <b>antes</b> de converter para o tipo de cada coluna.</p>`;
+           como o leitor entendeu — <b>antes</b> de converter para o tipo de cada coluna.</p>`);
       $("#btImportar").disabled = !!(r.desconhecidas && r.desconhecidas.length) || !r.linhas_lidas;
 
       // PADRONIZACAO: PhxGrid. Os titulos aqui sao os NOMES DAS COLUNAS DA
@@ -9696,7 +9696,7 @@ async function telaImportar(db, tab) {
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
     } catch (e) {
-      $("#impSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+      $("#impSaida").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`);
       $("#btImportar").disabled = true;
     }
   };
@@ -9704,7 +9704,7 @@ async function telaImportar(db, tab) {
   $("#btImportar").onclick = async () => {
     const texto = previa();
     if (texto === null) return;
-    $("#impSaida").innerHTML = `<div class="centro">${esc(txt("tela.st_gravando", "gravando…"))}</div>`;
+    $("#impSaida").innerHTML = phxHTML(`<div class="centro">${esc(txt("tela.st_gravando", "gravando…"))}</div>`);
     try {
       const r = await api("inserir_lote", {
         database: db, tabela: tab, texto,
@@ -9712,12 +9712,12 @@ async function telaImportar(db, tab) {
         parar_no_erro: $("#impErro").value === "parar",
       });
       $("#impSaida").innerHTML =
-        `<div class="aviso ${r.recusadas ? "mal" : ""}">
+        phxHTML(`<div class="aviso ${r.recusadas ? "mal" : ""}">
            <b>${fmt(r.gravadas)}</b> de ${fmt(r.recebidas)} linha(s) gravadas em
            ${r.ms} ms${r.por_segundo ? ` — ${fmt(r.por_segundo)} linhas/s` : ""}.
            ${r.gravadas ? `rowid ${r.primeiro_rowid} a ${r.ultimo_rowid}.` : ""}
            ${r.aviso ? `<br><b>${esc(r.aviso)}</b>` : ""}</div>
-         ${(r.erros || []).length ? `<div id="gradeErrosImp"></div>` : ""}`;
+         ${(r.erros || []).length ? `<div id="gradeErrosImp"></div>` : ""}`);
       if (r.gravadas) avisar(preencher(txt("tela.g_linhas_gravadas_em","{n} linha(s) gravadas em {tab}"), {n: fmt(r.gravadas), tab}));
       $("#btImportar").disabled = true;
 
@@ -9732,7 +9732,7 @@ async function telaImportar(db, tab) {
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
     } catch (e) {
-      $("#impSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+      $("#impSaida").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`);
     }
   };
 }
@@ -9763,7 +9763,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
 
   const fundo = document.createElement("div");
   fundo.className = "sobre";
-  fundo.innerHTML = `
+  fundo.innerHTML = phxHTML(`
     <div class="caixa" role="dialog" aria-modal="true" aria-label="${esc(txt("tela.exc_titulo_al", "Excluir registro"))}">
       <h3>${esc(preencher(txt("tela.exc_titulo", "Excluir o registro {rowid}"), { rowid }))}</h3>
       <div class="sub">${esc(db)} · ${esc(tab)}</div>
@@ -9789,7 +9789,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
         <button class="botao secundario" id="btExcNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
         <button class="botao marcar" id="btExcSim">${esc(txt("tela.exc_marcar", "Marcar como excluído"))}</button>
       </div>
-    </div>`;
+    </div>`);
   document.body.appendChild(fundo);
 
   const fechar = () => fundo.remove();
@@ -9822,7 +9822,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
     const motivo = fundo.querySelector("#excMotivo").value.trim();
     if (exige && !motivo) {
       fundo.querySelector("#excRecado").innerHTML =
-        `<div class="aviso mal">esta tabela exige o motivo escrito</div>`;
+        phxHTML(`<div class="aviso mal">esta tabela exige o motivo escrito</div>`);
       return;
     }
     // A que não tem volta pede uma confirmação a mais. A reversível não pede:
@@ -9842,7 +9842,7 @@ async function dialogoExcluir(db, tab, rowid, aoTerminar, versao) {
       if (aoTerminar) aoTerminar();
     } catch (err) {
       fundo.querySelector("#excRecado").innerHTML =
-        `<div class="aviso mal">${esc(String(err))}</div>`;
+        phxHTML(`<div class="aviso mal">${esc(String(err))}</div>`);
     }
   };
 }
@@ -9899,7 +9899,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
   // Excluída de vez não tem o que reconciliar: não há linha para gravar por
   // cima. O que dá para dizer é onde ela foi parar.
   if (!atual) {
-    fundo.innerHTML = `
+    fundo.innerHTML = phxHTML(`
       <div class="caixa" role="dialog" aria-modal="true" aria-label="Conflito de escrita">
         <h3>O registro ${rowid} foi excluído</h3>
         <div class="sub">${esc(db)} · ${esc(tab)}</div>
@@ -9912,7 +9912,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
         <div class="acoes">
           <button class="botao secundario" id="btCfFecha">Voltar à lista</button>
         </div>
-      </div>`;
+      </div>`);
     document.body.appendChild(fundo);
     fundo.querySelector("#btCfFecha").onclick = ev => {
       ev.preventDefault(); fechar(); if (aoTerminar) aoTerminar();
@@ -9938,7 +9938,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
   const briga = linhas.filter(l => !igual(l.outro, l.meu));
   const iguais = linhas.length - briga.length;
 
-  fundo.innerHTML = `
+  fundo.innerHTML = phxHTML(`
     <div class="caixa larga" role="dialog" aria-modal="true"
          aria-label="Conflito de escrita">
       <h3>Conflito de escrita no registro ${rowid}</h3>
@@ -9986,7 +9986,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
         <button class="botao secundario" id="btCfNao">Descartar o meu</button>
         <button class="botao alterar" id="btCfSim">Gravar o escolhido</button>
       </div>
-    </div>`;
+    </div>`);
   document.body.appendChild(fundo);
 
   fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
@@ -10022,7 +10022,7 @@ async function dialogoConflito(db, tab, rowid, ctx) {
           versaoLida: atual.versao, meus: escolhido, aoTerminar });
       }
       fundo.querySelector("#cfRecado").innerHTML =
-        `<div class="aviso mal">${esc(String(err))}</div>`;
+        phxHTML(`<div class="aviso mal">${esc(String(err))}</div>`);
     }
   };
 }
@@ -10053,7 +10053,7 @@ function perguntarTexto({ titulo, sub = "", rotulo, legenda = "", valorInicial =
   return new Promise(resolve => {
     const fundo = document.createElement("div");
     fundo.className = "sobre";
-    fundo.innerHTML = `
+    fundo.innerHTML = phxHTML(`
       <div class="caixa" role="dialog" aria-modal="true" aria-label="${esc(titulo)}">
         <h3>${esc(titulo)}</h3>
         ${sub ? `<div class="sub">${esc(sub)}</div>` : ""}
@@ -10065,7 +10065,7 @@ function perguntarTexto({ titulo, sub = "", rotulo, legenda = "", valorInicial =
           <button class="botao secundario" id="ptNao">${esc(textoCancelar || txt("tela.cancelar","Cancelar"))}</button>
           <button class="botao alterar" id="ptSim">${esc(textoOk)}</button>
         </div>
-      </div>`;
+      </div>`);
     document.body.appendChild(fundo);
 
     const campo = fundo.querySelector("#ptTexto");
@@ -10112,7 +10112,7 @@ function dialogoSenhaDeExecucao(motivo) {
     const fundo = document.createElement("div");
     fundo.className = "sobre";
     const titulo = esc(txt("tela.tt_senha_execucao", "Senha de execução"));
-    fundo.innerHTML = `
+    fundo.innerHTML = phxHTML(`
       <div class="caixa" role="dialog" aria-modal="true" aria-label="${titulo}" id="dlgSenhaExecucao">
         <h3>${titulo}</h3>
         <div class="sub">${esc(txt("tela.sub_senha_execucao",
@@ -10136,7 +10136,7 @@ function dialogoSenhaDeExecucao(motivo) {
           <button class="botao secundario" id="seNao">${esc(txt("tela.cancelar", "Cancelar"))}</button>
           <button class="botao alterar" id="seSim">${esc(txt("tela.bt_liberar_execucao", "Liberar"))}</button>
         </div>
-      </div>`;
+      </div>`);
     document.body.appendChild(fundo);
     const $d = s => fundo.querySelector(s);
     let cadastrando = false;
@@ -10149,7 +10149,7 @@ function dialogoSenhaDeExecucao(motivo) {
     document.addEventListener("keydown", fuga);
     fundo.onclick = ev => { if (ev.target === fundo) fechar(false); };
     const recado = texto => {
-      $d("#seRecado").innerHTML = `<div class="aviso mal">${esc(String(texto))}</div>`;
+      $d("#seRecado").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(texto))}</div>`);
     };
     $d("#seNao").onclick = ev => { ev.preventDefault(); fechar(false); };
     $d("#seCadastrar").onclick = ev => {
@@ -10247,7 +10247,7 @@ async function telaLixeira(db, tab) {
     { db, n: fmt(d.total), bytes: fmtBytes(d.bytes) });
 
   $("#painel").innerHTML =
-    `<p class="leg">Cada linha aqui saiu do <code>.reg</code>. Ela foi gravada
+    phxHTML(`<p class="leg">Cada linha aqui saiu do <code>.reg</code>. Ela foi gravada
        neste arquivo <b>e o disco confirmou</b> antes de o slot ser liberado:
        entre perder e duplicar, o motor duplica.</p>
      ${itens.length === 0
@@ -10258,7 +10258,7 @@ async function telaLixeira(db, tab) {
        <button class="botao secundario" id="btVoltaLix">← Gerir tabelas</button>
        <button class="botao secundario" id="btVerMotivos">Ver os motivos</button>
        ${itens.length ? `<button class="botao perigo" id="btEsvaziar">Esvaziar a lixeira</button>` : ""}
-     </div>`;
+     </div>`);
 
   $("#btVoltaLix").onclick = () => gerirTabelasAtual();
   $("#btVerMotivos").onclick = () => telaMotivos(db, tab);
@@ -10405,7 +10405,7 @@ async function telaMotivos(db, tab) {
   const regs = d.motivos || [];
   $("#subtitulo").textContent = preencher(txt("tela.st_db_n_registros", "{db} · {n} registro(s)"), { db, n: fmt(d.total) });
   $("#painel").innerHTML =
-    `<p class="leg">O <code>.log</code> diz que houve uma exclusão no rowid tal,
+    phxHTML(`<p class="leg">O <code>.log</code> diz que houve uma exclusão no rowid tal,
        no instante tal. O que ele não tem onde dizer — o evento dele tem 36
        bytes fixos — é <b>por quê</b>. É este arquivo.
        ${d.motivo_obrigatorio
@@ -10417,7 +10417,7 @@ async function telaMotivos(db, tab) {
      <div class="acoes">
        <button class="botao secundario" id="btVoltaMot">← Gerir tabelas</button>
        <button class="botao secundario" id="btVerLixo">Ver a lixeira</button>
-     </div>`;
+     </div>`);
   $("#btVoltaMot").onclick = () => gerirTabelasAtual();
   $("#btVerLixo").onclick = () => telaLixeira(db, tab);
   if (regs.length) ligarMotivos(regs);
@@ -10837,8 +10837,8 @@ async function telaJuncao(db) {
     const nomes = (e.colunas || []).map(c => c.nome);
     const atual = alvo === "jKA" ? JN.chaveA : JN.chaveB;
     $("#" + alvo).innerHTML =
-      `<option value="">— chave primária${pk ? ` (${esc(pk.colunas.map(c=>c.coluna).join(" + "))})` : ": não tem"} —</option>`
-      + opc(nomes, atual);
+      phxHTML(`<option value="">— chave primária${pk ? ` (${esc(pk.colunas.map(c=>c.coluna).join(" + "))})` : ": não tem"} —</option>`
+      + opc(nomes, atual));
   };
   await Promise.all([encher(JN.a, "jKA"), encher(JN.b, "jKB")]);
 
@@ -10858,7 +10858,7 @@ async function telaJuncao(db) {
 async function rodarJuncao() {
   const alvo = $("#jSaida");
   if (!alvo) return;
-  alvo.innerHTML = `<div class="centro">juntando…</div>`;
+  alvo.innerHTML = phxHTML(`<div class="centro">juntando…</div>`);
   const pedido = {
     op: "juntar", database: JN.db, tipo: JN.tipo,
     a: { tabela: JN.a, prefixo: "a" },
@@ -10868,7 +10868,7 @@ async function rodarJuncao() {
   if (JN.chaveB) pedido.b.chave = JN.chaveB;
   let r;
   try { r = await api("juntar", pedido); }
-  catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+  catch (e) { return alvo.innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
 
   // As linhas sem par contam: um INNER que trouxe menos do que se esperava
   // costuma ter aqui a explicação, e escondê-la faz o número virar mistério.
@@ -10879,13 +10879,13 @@ async function rodarJuncao() {
          linha se comporta como linha sem par.</div>`
     : "";
 
-  alvo.innerHTML = `
+  alvo.innerHTML = phxHTML(`
     <div class="dbl-titulo">
       <b>${fmt(r.quantas)} linha(s)</b>
       <span class="leg"><code>${esc(r.sql)}</code> · A leu ${fmt(r.lidas_a)},
         B leu ${fmt(r.lidas_b)} · ${r.ms} ms${r.truncado ? " · cortado no teto" : ""}</span>
     </div>${nulas}
-    <div id="jGrade"></div>`;
+    <div id="jGrade"></div>`);
 
   desenharGradeDeLinhas("#jGrade", r, g => JN.grade = g);
 }
@@ -10970,11 +10970,11 @@ async function telaUniao(db) {
   });
   $("#unRodar").onclick = async () => {
     if (UN.escolhidas.length < 2) return avisar(txt("tela.g_marque_duas_tabelas","marque ao menos duas tabelas"), true);
-    $("#unSaida").innerHTML = `<div class="centro">unindo…</div>`;
+    $("#unSaida").innerHTML = phxHTML(`<div class="centro">unindo…</div>`);
     let r;
     try { r = await api("unir", { database: UN.db, modo: UN.modo, tabelas: UN.escolhidas }); }
-    catch (e) { return $("#unSaida").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
-    $("#unSaida").innerHTML = `
+    catch (e) { return $("#unSaida").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
+    $("#unSaida").innerHTML = phxHTML(`
       <div class="dbl-titulo">
         <b>${fmt(r.quantas)} linha(s)</b>
         <span class="leg"><code>${esc(r.sql)}</code> · ${
@@ -10982,7 +10982,7 @@ async function telaUniao(db) {
         }${r.repetidas ? ` · ${fmt(r.repetidas)} repetida(s) descartada(s)` : ""} · ${r.ms} ms${
           r.truncado ? " · cortado no teto" : ""}</span>
       </div>
-      <div id="unGrade"></div>`;
+      <div id="unGrade"></div>`);
     desenharGradeDeLinhas("#unGrade", r);
   };
 }
@@ -11132,12 +11132,12 @@ async function telaDbLink(nome) {
     const bases = (b.bancos || []).slice().sort((x, y) =>
       (servico.includes(x) - servico.includes(y)) || x.localeCompare(y));
     DBL.database = DBL.database || (atual && atual.database) || bases[0] || "";
-    $("#selBase").innerHTML = bases.map(x =>
-      `<option ${x === DBL.database ? "selected" : ""}>${esc(x)}</option>`).join("");
+    $("#selBase").innerHTML = phxHTML(bases.map(x =>
+      `<option ${x === DBL.database ? "selected" : ""}>${esc(x)}</option>`).join(""));
   } catch (e) {
-    $("#selBase").innerHTML = `<option>—</option>`;
-    $("#avisoDbl").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
-    $("#listaTab").innerHTML = "";
+    $("#selBase").innerHTML = phxHTML(`<option>—</option>`);
+    $("#avisoDbl").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`);
+    $("#listaTab").innerHTML = phxHTML("");
     return;
   }
   carregarTabelasDbl();
@@ -11146,19 +11146,19 @@ async function telaDbLink(nome) {
 async function carregarTabelasDbl() {
   const alvo = $("#listaTab");
   if (!alvo) return;
-  alvo.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
+  alvo.innerHTML = phxHTML(`<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   let t;
   try { t = await api("dblink_tabelas", { dblink: DBL.ligacao, database: DBL.database }); }
-  catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+  catch (e) { return alvo.innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const tabs = t.tabelas || [];
-  if (!tabs.length) return alvo.innerHTML = `<div class="vazioc">a base ${esc(DBL.database)} não tem tabela</div>`;
-  alvo.innerHTML = `<div class="dbl-cab">${tabs.length} tabela(s) em <b>${esc(DBL.database)}</b></div>` +
+  if (!tabs.length) return alvo.innerHTML = phxHTML(`<div class="vazioc">a base ${esc(DBL.database)} não tem tabela</div>`);
+  alvo.innerHTML = phxHTML(`<div class="dbl-cab">${tabs.length} tabela(s) em <b>${esc(DBL.database)}</b></div>` +
     tabs.map(x => `<button class="dbl-tab ${x.nome === DBL.tabela ? "viva" : ""}" data-t="${esc(x.nome)}">
         <span class="n">${esc(x.nome)}</span>
         <span class="m">${fmt(x.registros_estimados)} reg · ${fmtBytes(x.bytes)}${
           x.tipo === "VIEW" ? " · view" : ""}</span>
-      </button>`).join("");
+      </button>`).join(""));
   $$("#listaTab .dbl-tab").forEach(b => b.onclick = () => abrirTabelaDbl(b.dataset.t));
   if (DBL.tabela) abrirTabelaDbl(DBL.tabela);
 }
@@ -11167,14 +11167,14 @@ async function abrirTabelaDbl(tabela, salto = 0) {
   DBL.tabela = tabela;
   $$("#listaTab .dbl-tab").forEach(b => b.classList.toggle("viva", b.dataset.t === tabela));
   const alvo = $("#dadoTab");
-  alvo.innerHTML = `<div class="centro">${esc(preencher(txt("tela.st_lendo_tabela", "lendo {tabela}…"), { tabela }))}</div>`;
+  alvo.innerHTML = phxHTML(`<div class="centro">${esc(preencher(txt("tela.st_lendo_tabela", "lendo {tabela}…"), { tabela }))}</div>`);
   let r;
   try {
     r = await api("dblink_ler", { dblink: DBL.ligacao, database: DBL.database, tabela, salto });
-  } catch (e) { return alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+  } catch (e) { return alvo.innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
 
   const { nomes, dados } = linhasParaObjetos(r);
-  alvo.innerHTML = `
+  alvo.innerHTML = phxHTML(`
     <div class="dbl-titulo">
       <b>${esc(DBL.database)}.${esc(tabela)}</b>
       <span class="leg">${fmt(r.quantas)} linha(s)${salto ? ` a partir da ${fmt(salto + 1)}` : ""}${
@@ -11184,7 +11184,7 @@ async function abrirTabelaDbl(tabela, salto = 0) {
       ${r.tem_mais ? `<button class="botao secundario" id="btProx">próximas →</button>` : ""}
       <button class="botao secundario" id="btEstr">Estrutura</button>
     </div>
-    <div id="gradeDbl"></div>`;
+    <div id="gradeDbl"></div>`);
 
   if (DBL.grade && DBL.grade.destruir) { try { DBL.grade.destruir(); } catch {} }
   DBL.grade = window.__phxgradedbl = PhxGrid.criar("#gradeDbl", {
@@ -11335,24 +11335,24 @@ async function assistenteDbLink() {
 
   const fundo = document.createElement("div");
   fundo.className = "sobre";
-  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true"
-    aria-label="Assistente de conexão DbLink"><div id="azCorpo"></div></div>`;
+  fundo.innerHTML = phxHTML(`<div class="caixa larga" role="dialog" aria-modal="true"
+    aria-label="Assistente de conexão DbLink"><div id="azCorpo"></div></div>`);
   document.body.appendChild(fundo);
   const corpo = fundo.querySelector("#azCorpo");
   const fechar = () => fundo.remove();
   fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
 
   const molde = (titulo, passo, html, acoes) => {
-    corpo.innerHTML = `
+    corpo.innerHTML = phxHTML(`
       <h3>${esc(titulo)}</h3>
       <div class="sub">assistente de conexão · passo ${passo} de 5</div>
       ${html}
       <div id="azRecado"></div>
-      <div class="acoes">${acoes}</div>`;
+      <div class="acoes">${acoes}</div>`);
   };
   const recado = (texto, mal) => {
     $("#azRecado").innerHTML =
-      `<div class="aviso ${mal ? "mal" : ""}">${esc(texto)}</div>`;
+      phxHTML(`<div class="aviso ${mal ? "mal" : ""}">${esc(texto)}</div>`);
   };
 
   // ---------------------------------------------------- passo 1: a conexao
@@ -11593,19 +11593,19 @@ async function telaDbLinkSql(nome) {
   $("#btRodar").onclick = async () => {
     const sql = $("#sqlDbl").value.trim();
     if (!sql) return avisar(txt("tela.g_escreva_instrucao","escreva a instrução"), true);
-    $("#saidaSql").innerHTML = `<div class="centro">executando…</div>`;
+    $("#saidaSql").innerHTML = phxHTML(`<div class="centro">executando…</div>`);
     let r;
     try { r = await api("dblink_consultar", { dblink: nome, sql }); }
-    catch (e) { return $("#saidaSql").innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+    catch (e) { return $("#saidaSql").innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
     if (!r.colunas.length) {
       return $("#saidaSql").innerHTML =
-        `<div class="aviso">${fmt(r.afetadas)} linha(s) afetada(s) · ${r.ms} ms</div>`;
+        phxHTML(`<div class="aviso">${fmt(r.afetadas)} linha(s) afetada(s) · ${r.ms} ms</div>`);
     }
     const { nomes, dados } = linhasParaObjetos(r);
     $("#saidaSql").innerHTML =
-      `<div class="dbl-titulo"><b>${fmt(r.quantas)} linha(s)</b>
+      phxHTML(`<div class="dbl-titulo"><b>${fmt(r.quantas)} linha(s)</b>
          <span class="leg">${r.ms} ms${r.truncado ? " · cortado no teto da ligação" : ""}</span></div>
-       <div id="gradeSql"></div>`;
+       <div id="gradeSql"></div>`);
     PhxGrid.criar("#gradeSql", {
       agrupavel: true, buscaGlobal: true, filterRow: true,
       // Sem `lembrar`: cada consulta traz outras colunas, e layout guardado
@@ -12077,7 +12077,7 @@ const FERRAMENTAS = [
 ];
 
 function montarFerramentas() {
-  $("#ferramentas").innerHTML = FERRAMENTAS.map((f, i) => {
+  $("#ferramentas").innerHTML = phxHTML(FERRAMENTAS.map((f, i) => {
     if (f === "risco") return `<div class="risco" role="separator"></div>`;
     const pendente = !!f.falta && !f.faz;
     // `rot()` deixa o editor de menu trocar o nome exibido sem mexer no que a
@@ -12088,7 +12088,7 @@ function montarFerramentas() {
       title="${esc(rotulo)}${f.dica ? " — " + esc(txt(f.dicaTxt, f.dica)) : ""}${
         pendente ? " · " + esc(txt("tela.ainda_nao_existe", "ainda não existe")) : ""}">
       ${svg(f.ico)}<span class="rot">${esc(rotulo)}</span></button>`;
-  }).join("");
+  }).join(""));
 
   // `auxclick` e nao `click`: o botao do meio nao dispara `click` em navegador
   // nenhum, e e ele que toda gente ja usa para "abre isto noutra aba".
@@ -12729,11 +12729,11 @@ function montarEditorER() {
 function cartaoER(html) {
   const fundo = document.createElement("div");
   fundo.className = "sobre";
-  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true">
-    <div class="er-cartao-corpo"></div></div>`;
+  fundo.innerHTML = phxHTML(`<div class="caixa larga" role="dialog" aria-modal="true">
+    <div class="er-cartao-corpo"></div></div>`);
   document.body.appendChild(fundo);
   const corpo = fundo.querySelector(".er-cartao-corpo");
-  corpo.innerHTML = html;
+  corpo.innerHTML = phxHTML(html);
   const fechar = () => fundo.remove();
   fundo.onclick = ev => { if (ev.target === fundo) fechar(); };
   return { corpo, fechar };
@@ -12814,7 +12814,7 @@ function cartaoDeclararFk(db, de, para) {
   c.corpo.querySelector("#fkOk").onclick = async () => {
     const nomeFk = c.corpo.querySelector("#fkNome").value.trim();
     if (!nomeFk) return c.corpo.querySelector("#fkRecado").innerHTML =
-      `<div class="aviso mal">${esc(txt("tela.fk_de_um_nome", "dê um nome à chave"))}</div>`;
+      phxHTML(`<div class="aviso mal">${esc(txt("tela.fk_de_um_nome", "dê um nome à chave"))}</div>`);
     const vez = vezDoPainel();
     try {
       await api("declarar_fk", {
@@ -12830,7 +12830,7 @@ function cartaoDeclararFk(db, de, para) {
       telaDiagramaER(db, vez);
     } catch (e) {
       c.corpo.querySelector("#fkRecado").innerHTML =
-        `<div class="aviso mal">${esc(String(e))}</div>`;
+        phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`);
     }
   };
 }
@@ -12900,7 +12900,7 @@ function cartaoTabelaER(db, nome) {
       telaDiagramaER(db, vez);
     } catch (er) {
       c.corpo.querySelector("#tabRecado").innerHTML =
-        `<div class="aviso mal">${esc(String(er))}</div>`;
+        phxHTML(`<div class="aviso mal">${esc(String(er))}</div>`);
     }
   });
 }
@@ -12924,7 +12924,7 @@ async function cartaoAcrescentarColuna(db, tabela) {
   const c = cartaoER("");
   const desenhar = (recado = "") => {
     const linhas = e.registros || 0;
-    c.corpo.innerHTML = `
+    c.corpo.innerHTML = phxHTML(`
       <h3>${esc(txt("tela.acrescentar_coluna_em", "Acrescentar coluna em"))} ${esc(tabela)}</h3>
       <div class="sub">${esc(db)} · ${linhas} ${esc(txt("tela.registros", "registro(s)"))}</div>
       <div class="form-dbl u-mb-10">
@@ -12949,7 +12949,7 @@ async function cartaoAcrescentarColuna(db, tabela) {
       <div class="acoes">
         <button class="botao incluir" id="acFazer">${esc(txt("tela.acrescentar", "Acrescentar"))}</button>
         <button class="botao secundario" id="acFechar">${esc(txt("tela.cancelar", "Cancelar"))}</button>
-      </div>`;
+      </div>`);
 
     c.corpo.querySelector("#acFechar").onclick = c.fechar;
     c.corpo.querySelector("#acFazer").onclick = async () => {
@@ -12976,7 +12976,7 @@ async function cartaoAcrescentarColuna(db, tabela) {
       } catch (er) {
         botao.disabled = false;
         c.corpo.querySelector("#acRecado").innerHTML =
-          `<div class="aviso mal">${esc(String(er))}</div>`;
+          phxHTML(`<div class="aviso mal">${esc(String(er))}</div>`);
       }
     };
   };
@@ -12997,7 +12997,7 @@ function cartaoNovaTabelaER(db) {
 
   const c = cartaoER("");
   const desenhar = () => {
-    c.corpo.innerHTML = `
+    c.corpo.innerHTML = phxHTML(`
       <h3>${esc(preencher(txt("tela.ner_nova_tabela_em","Nova tabela em {db}"), {db}))}</h3>
       <div class="sub">${esc(txt("tela.ner_sub","os arquivos da tabela nascem juntos · o cadastro completo (partição, índices, máscaras) fica na tela «Nova tabela»"))}</div>
       <div class="form-dbl u-mb-10">
@@ -13031,7 +13031,7 @@ function cartaoNovaTabelaER(db) {
         <button class="botao incluir" id="ntCriar">${esc(txt("tela.nt_criar_tabela","Criar tabela"))}</button>
         <button class="botao secundario" id="ntCompleto">Cadastro completo…</button>
         <button class="botao secundario" id="ntFechar">${esc(txt("tela.cancelar", "Cancelar"))}</button>
-      </div>`;
+      </div>`);
 
     const ler = () => {
       c.corpo.querySelectorAll(".nt-nome").forEach(el =>
@@ -13082,10 +13082,10 @@ function cartaoNovaTabelaER(db) {
       const nome = ler();
       const recado = c.corpo.querySelector("#ntRecado");
       if (!nome) return recado.innerHTML =
-        `<div class="aviso mal">dê um nome à tabela</div>`;
+        phxHTML(`<div class="aviso mal">dê um nome à tabela</div>`);
       const cols = linhas.filter(l => l.nome);
       if (!cols.length) return recado.innerHTML =
-        `<div class="aviso mal">a tabela precisa de ao menos um campo</div>`;
+        phxHTML(`<div class="aviso mal">a tabela precisa de ao menos um campo</div>`);
       const pk = cols.find(l => l.pk);
       // A posse de ANTES de ir ao servidor (pedido 636): o repintar do fim so
       // vale se a pessoa ainda estiver nesta tela.
@@ -13104,7 +13104,7 @@ function cartaoNovaTabelaER(db) {
         await montarArvore(false);
         telaDiagramaER(db, vez);
       } catch (e) {
-        recado.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+        recado.innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`);
       }
     };
   };
@@ -14016,8 +14016,8 @@ async function assistenteReplicacao() {
 
   const fundo = document.createElement("div");
   fundo.className = "sobre";
-  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true"
-    aria-label="Assistente de replicação"><div id="rzCorpo"></div></div>`;
+  fundo.innerHTML = phxHTML(`<div class="caixa larga" role="dialog" aria-modal="true"
+    aria-label="Assistente de replicação"><div id="rzCorpo"></div></div>`);
   document.body.appendChild(fundo);
   const corpo = fundo.querySelector("#rzCorpo");
   let prova = null;
@@ -14026,16 +14026,16 @@ async function assistenteReplicacao() {
 
   const molde = (titulo, passo, html, acoes) => {
     if (prova) { prova.parar(); prova = null; }
-    corpo.innerHTML = `
+    corpo.innerHTML = phxHTML(`
       <h3>${esc(titulo)}</h3>
       <div class="sub">${esc(preencher(txt("tela.rz_sub", "assistente de replicação · {modo} · passo {passo} de {total}"), { modo: rz.modo.rot, passo, total: 6 }))}</div>
       ${html}
       <div id="rzRecado"></div>
-      <div class="acoes">${acoes}</div>`;
+      <div class="acoes">${acoes}</div>`);
   };
   const recado = (texto, mal) => {
     $("#rzRecado").innerHTML =
-      `<div class="aviso ${mal ? "mal" : ""}">${esc(texto)}</div>`;
+      phxHTML(`<div class="aviso ${mal ? "mal" : ""}">${esc(texto)}</div>`);
   };
 
   // ------------------------------------------------------ passo 1: o modo
@@ -14144,9 +14144,9 @@ async function assistenteReplicacao() {
       // tela punha dois vereditos contraditórios lado a lado — o vermelho
       // «pino torto» debaixo do verde «túnel cifrado, com pino». Apareceu na
       // captura, e não lendo o código.
-      $("#rzRecado").innerHTML = "";
+      $("#rzRecado").innerHTML = phxHTML("");
       $("#rzFioDiz").className = "aviso" + ((ligada && pino) || pinoTls ? " bom" : "");
-      $("#rzFioDiz").innerHTML = `<p>${
+      $("#rzFioDiz").innerHTML = phxHTML(`<p>${
         pinoTls ? marcado(txt("tela.rz_res_tls_pino", "fio: **TLS 1.3, conferido pelo pino**"))
         : !ligada ? marcado(txt("tela.rz_claro",
             "**Sem cifra, a conversa da replicação vai em claro** — token, credencial e as "
@@ -14154,7 +14154,7 @@ async function assistenteReplicacao() {
         : pino ? marcado(txt("tela.rz_res_cifra_pino", "fio: túnel cifrado, com pino"))
         : marcado(txt("tela.rz_sem_pino",
             "**Sem pino, o túnel protege da escuta passiva e não de quem está no meio**: o "
-            + "atacante apresenta a chave dele e não há com o que comparar. O arranque avisa exatamente isso."))}</p>`;
+            + "atacante apresenta a chave dele e não há com o que comparar. O arranque avisa exatamente isso."))}</p>`);
     };
     $("#rzCifra").onchange = dizerDoFio;
     $("#rzPino").oninput = dizerDoFio;
@@ -14582,10 +14582,10 @@ function painelDaProva(alvo, origens) {
   // a grade a cada volta perderia ordenacao, filtro e agrupamento no meio da
   // leitura; e o mesmo padrao de `desenharThreads`, em telemetria.js: `dados:`
   // mudado NO LUGAR, e `redesenhar()` a cada volta.
-  alvo.innerHTML = origens.map((org, i) => `
+  alvo.innerHTML = phxHTML(origens.map((org, i) => `
     <div id="pdpFichas${i}"></div>
     <div id="pdpErro${i}"></div>
-    <div id="pdpGrade${i}"></div>`).join("");
+    <div id="pdpGrade${i}"></div>`).join(""));
   const porOrigem = origens.map(() => ({ linhas: [], grade: null }));
 
   // O laço que PAROU por credencial recusada (pedido 203) diz isso em vez de
@@ -14607,7 +14607,7 @@ function painelDaProva(alvo, origens) {
     if (religar) religar.onclick = async () => {
       religar.disabled = true;
       try { await api("replicacao_ligar", { origem: religar.dataset.religar }); }
-      catch (e) { campoErro.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`; }
+      catch (e) { campoErro.innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`); }
     };
   };
 
@@ -14635,8 +14635,8 @@ function painelDaProva(alvo, origens) {
       // bloqueou o 127.0.0.1 pela sonda, não pelo laço. O que se mostra é o
       // estado local, que é o que importa.
       if (eo && eo.parada) {
-        fichas.innerHTML = avisoDoLaco(eo, org.nome);
-        campoErro.innerHTML = "";
+        fichas.innerHTML = phxHTML(avisoDoLaco(eo, org.nome));
+        campoErro.innerHTML = phxHTML("");
         ligarReligar(fichas, campoErro);
         continue;
       }
@@ -14648,12 +14648,12 @@ function painelDaProva(alvo, origens) {
       } catch (e) {
         // A sonda falhou, mas o estado do laço local continua valendo — e
         // é ele que diz se alguém vai tentar de novo.
-        fichas.innerHTML = avisoDoLaco(eo, org.nome);
-        campoErro.innerHTML = `<div class="aviso mal">${esc(org.nome)}: ${esc(String(e))}</div>`;
+        fichas.innerHTML = phxHTML(avisoDoLaco(eo, org.nome));
+        campoErro.innerHTML = phxHTML(`<div class="aviso mal">${esc(org.nome)}: ${esc(String(e))}</div>`);
         ligarReligar(fichas, campoErro);
         continue;
       }
-      campoErro.innerHTML = "";
+      campoErro.innerHTML = phxHTML("");
       const linhas = [];
       let totalLa = 0, totalAqui = 0;
       const locais = {};
@@ -14675,7 +14675,7 @@ function painelDaProva(alvo, origens) {
                       atraso: la - (aqui || 0), recusa });
       }
       const atrasoTotal = totalLa - totalAqui;
-      fichas.innerHTML = `<div class="fichas">
+      fichas.innerHTML = phxHTML(`<div class="fichas">
           <div class="ficha"><div class="v">${esc(org.nome)}</div>
             <div class="r">${esc(org.host)}:${org.porta}</div></div>
           <div class="ficha"><div class="v">${esc(eo ? eo.modo : "—")}</div>
@@ -14684,7 +14684,7 @@ function painelDaProva(alvo, origens) {
           <div class="ficha"><div class="v">${fmt(totalAqui)}</div><div class="r">eventos aqui</div></div>
           <div class="ficha"><div class="v">${atrasoTotal > 0 ? fmt(atrasoTotal) : "em dia"}</div>
             <div class="r">atraso</div></div>
-        </div>` + avisoDoLaco(eo, org.nome);
+        </div>` + avisoDoLaco(eo, org.nome));
       ligarReligar(fichas, campoErro);
 
       // `dados:` mudado NO LUGAR -- trocar a referencia faria a grade
@@ -14726,7 +14726,7 @@ function painelDaProva(alvo, origens) {
     try { await medir(); }
     catch (e) {
       // O diálogo pode ter sido fechado enquanto a sonda falava.
-      if (vivo && document.body.contains(alvo)) alvo.innerHTML = `<div class="aviso mal">${esc(String(e))}</div>`;
+      if (vivo && document.body.contains(alvo)) alvo.innerHTML = phxHTML(`<div class="aviso mal">${esc(String(e))}</div>`);
     }
   };
   rodar();
@@ -14739,14 +14739,14 @@ function painelDaProva(alvo, origens) {
 function abrirProvaReplicacao(origens) {
   const fundo = document.createElement("div");
   fundo.className = "sobre";
-  fundo.innerHTML = `<div class="caixa larga" role="dialog" aria-modal="true"
+  fundo.innerHTML = phxHTML(`<div class="caixa larga" role="dialog" aria-modal="true"
     aria-label="Acompanhar a replicação">
     <h3>Acompanhando a replicação</h3>
     <div class="sub">posição dos dois lados, medida a cada 3 s — o atraso é a
       diferença de eventos</div>
     <div id="acProva"><div class="centro">primeira sonda…</div></div>
     <div class="acoes"><button class="botao" id="acFim">${esc(txt("tela.fechar", "Fechar"))}</button></div>
-  </div>`;
+  </div>`);
   document.body.appendChild(fundo);
   const prova = painelDaProva(fundo.querySelector("#acProva"), origens);
   const fechar = () => { prova.parar(); fundo.remove(); };
@@ -14955,7 +14955,7 @@ async function verProfiler() {
     const girosMal = d.falhas_de_rodizio || 0;
     // `bom`, não `bem`: a classe verde do resto da interface chama-se `bom`,
     // e esta caixa passou a vida inteira cinza por uma letra.
-    est.innerHTML = d.ligado
+    est.innerHTML = phxHTML(d.ligado
       ? `<div class="aviso ${falhas || girosMal ? "mal" : "bom"}">observando desde <b>${esc(d.desde)}</b> ·
            ${fmt(d.observados)} evento(s)${d.esquecidos ? ` · ${fmt(d.esquecidos)} saíram do anel` : ""}
            ${d.arquivo
@@ -14978,7 +14978,7 @@ async function verProfiler() {
            ${falhas ? `<br><b>${fmt(falhas)} linha(s) NÃO gravada(s)</b> — disco cheio,
                        cota, ou o caminho deixou de aceitar escrita. O anel continua;
                        o arquivo, não.` : ""}</div>`
-      : `<div class="aviso">parado. Escolha os filtros e clique em <b>Ligar</b>.</div>`;
+      : `<div class="aviso">parado. Escolha os filtros e clique em <b>Ligar</b>.</div>`);
     return d.ligado;
   };
 
@@ -15102,7 +15102,7 @@ async function abrirConsulta() {
 
   $("#btConsultar").onclick = async () => {
     const saida = $("#saidaConsulta");
-    saida.innerHTML = `<div class="centro">consultando…</div>`;
+    saida.innerHTML = phxHTML(`<div class="centro">consultando…</div>`);
     try {
       const onde = $("#cCol").value.trim()
         ? [{ coluna: $("#cCol").value.trim(), op: $("#cOp").value, valor: $("#cVal").value }]
@@ -15116,10 +15116,10 @@ async function abrirConsulta() {
       const linhas = r.linhas || [];
       const cols = linhas.length ? Object.keys(linhas[0]) : [];
       saida.innerHTML =
-        `<p class="leg">${r.achadas ?? linhas.length} achadas de
+        phxHTML(`<p class="leg">${r.achadas ?? linhas.length} achadas de
          ${r.examinadas ?? "?"} examinadas${r.por_mapa
            ? ` · atalho pelo mapa de <code>${esc(r.por_mapa)}</code>` : ""}</p>` +
-        (linhas.length ? `<div id="gradeConsulta"></div>` : `<div class="vazio">nada encontrado</div>`);
+        (linhas.length ? `<div id="gradeConsulta"></div>` : `<div class="vazio">nada encontrado</div>`));
       // PADRONIZACAO: PhxGrid. As colunas sao DINAMICAS -- saem do primeiro
       // resultado, porque o `SelectMemory` nao declara esquema nenhum -- e o
       // titulo NAO passa por `txt()`: e o nome do campo tal como esta na
@@ -15132,8 +15132,8 @@ async function abrirConsulta() {
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
     } catch (e) {
-      saida.innerHTML = `<div class="nota"><p>${esc(String(e))}</p>
-        <p class="leg">A tabela está na RAM? Menu <b>Memória → Carregar esta tabela</b>.</p></div>`;
+      saida.innerHTML = phxHTML(`<div class="nota"><p>${esc(String(e))}</p>
+        <p class="leg">A tabela está na RAM? Menu <b>Memória → Carregar esta tabela</b>.</p></div>`);
     }
   };
 }
@@ -15155,13 +15155,13 @@ async function abrirConsulta() {
 async function telaMensagens() {
   const vez = tomarPainel();
   est.atual = null;
-  $("#abas").innerHTML = "";
+  $("#abas").innerHTML = phxHTML("");
   pararMonitor();
   $("#titulo").textContent = txt("tela.tt_mensagens_servidor", "Mensagens do servidor");
   $("#subtitulo").textContent = txt("tela.st_mensagens_por_idioma",
     "phxsys.mensagens · um texto por idioma; célula vazia cai para o português");
   const p = $("#painel");
-  p.innerHTML = `<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`;
+  p.innerHTML = phxHTML(`<div class="centro">${esc(txt("tela.carregando", "carregando…"))}</div>`);
   try {
     const m = await api("mensagens");
     if (!aindaNoPainel(vez)) return;
@@ -15172,14 +15172,14 @@ async function telaMensagens() {
         ${esc(txt("tela.msg_codigo_nunca_muda", "O código estruturado do erro (ex.: 4002 EM_CARGA) nunca muda com o idioma."))}
       </div>`;
     if (!m.existe) {
-      p.innerHTML = cabec + `<div class="aviso">${esc(txt("tela.msg_tabela_nao_existe", "A tabela ainda não existe neste servidor."))}
+      p.innerHTML = phxHTML(cabec + `<div class="aviso">${esc(txt("tela.msg_tabela_nao_existe", "A tabela ainda não existe neste servidor."))}
           ${marcado(txt("tela.msg_semear_cria", "Semear cria o database `phxsys` e grava as {n} mensagens de fábrica — traduza depois, pela grade; o que ficar em branco continua saindo em português."), { n: fmt(m.de_fabrica) })}</div>
         <div class="acoes">
           <button class="botao incluir" id="btSemear">${esc(txt("tela.msg_semear", "Semear mensagens"))}</button>
-        </div>`;
+        </div>`);
     } else {
       const faltam = Math.max(0, (m.de_fabrica || 0) - (m.linhas || 0));
-      p.innerHTML = cabec + `<div class="acoes">
+      p.innerHTML = phxHTML(cabec + `<div class="acoes">
           <button class="botao consultar" id="btAbrirGrade">${esc(txt("tela.msg_abrir_grade", "Abrir a tabela na grade"))}</button>
           <button class="botao incluir" id="btSemear">${esc(txt("tela.msg_semear_completar", "Semear / completar"))}</button>
           <span class="leg">${esc([
@@ -15188,7 +15188,7 @@ async function telaMensagens() {
             ...(faltam ? [preencher(txt("tela.msg_n_por_semear", "{n} por semear"), { n: fmt(faltam) })] : []),
             txt("tela.msg_vale_sem_reiniciar", "texto editado vale em poucos segundos, sem reiniciar"),
           ].join(" · "))}</span>
-        </div>`;
+        </div>`);
       $("#btAbrirGrade").onclick = () => verConteudoEditavel(m.database, m.tabela);
     }
     $("#btSemear").onclick = async () => {
@@ -15200,7 +15200,7 @@ async function telaMensagens() {
     };
   } catch (e) {
     if (!aindaNoPainel(vez)) return;
-    p.innerHTML = `<div class="aviso mal">${esc(e.message)}</div>`;
+    p.innerHTML = phxHTML(`<div class="aviso mal">${esc(e.message)}</div>`);
   }
 }
 
@@ -15398,7 +15398,7 @@ const MENUS = [
 
 function montarMenu() {
   const bar = $("#menubar");
-  bar.innerHTML = MENUS.map(([nomeOriginal, letra, chave, itens], i) => {
+  bar.innerHTML = phxHTML(MENUS.map(([nomeOriginal, letra, chave, itens], i) => {
     // Tres camadas, nesta ordem: o que ESTA PESSOA renomeou vence o idioma, e
     // o idioma vence o portugues de fabrica. Quem renomeou um item quer o nome
     // dele, e nao a traducao do nome antigo.
@@ -15426,7 +15426,7 @@ function montarMenu() {
               aria-expanded="false" data-m="${i}">${rotulo}</button>
       <div class="lista" role="menu" aria-label="${esc(nome)}">${linhas}</div>
     </div>`;
-  }).join("");
+  }).join(""));
 }
 
 /** Acende e apaga os itens conforme o estado de agora.
@@ -15620,14 +15620,14 @@ function aplicarLateral() {
   document.documentElement.style.setProperty("--arvore", L.largura + "px");
 
   const bt = $("#btLateral");
-  bt.innerHTML = svgLateral(L.aberta ? "fechar" : "abrir");
+  bt.innerHTML = phxHTML(svgLateral(L.aberta ? "fechar" : "abrir"));
   bt.setAttribute("aria-expanded", L.aberta ? "true" : "false");
   const diz = (L.aberta ? "Recolher" : "Abrir") + " o painel lateral (Ctrl+\\)";
   bt.title = diz;
   bt.setAttribute("aria-label", diz);
 
   const pin = $("#btPinar");
-  pin.innerHTML = svgLateral("pino");
+  pin.innerHTML = phxHTML(svgLateral("pino"));
   pin.setAttribute("aria-pressed", L.pinada && !estreita ? "true" : "false");
   pin.disabled = estreita;
   const dizPin = estreita
@@ -15843,7 +15843,7 @@ function folha(titulo, subtitulo, corpoHtml) {
   // espalhar a conferencia por cinquenta funcoes deixaria a esquecida virar a
   // porta dos fundos.
   const vez = tomarPainel();
-  $("#abas").innerHTML = "";
+  $("#abas").innerHTML = phxHTML("");
   // Toda folha comeca sem saber se repintar. Quem sabe (a tela de
   // Configurações) guarda DEPOIS de chamar esta funcao; quem nao sabe fica
   // como esta ate a pessoa navegar -- que e melhor que ser levada embora.
@@ -15864,7 +15864,7 @@ function folha(titulo, subtitulo, corpoHtml) {
   else { pararMonitor(); if (window.PhxTelemetria) PhxTelemetria.parar(); }
   $("#titulo").textContent = titulo;
   $("#subtitulo").textContent = subtitulo || "";
-  $("#painel").innerHTML = corpoHtml;
+  $("#painel").innerHTML = phxHTML(corpoHtml);
   // O rotulo da aba acompanha o titulo que a tela acabou de escrever, e a aba
   // deixa de dizer que e a tela que estava aqui antes: `marcar(null)` quer
   // dizer «folha avulsa». Dentro de `PhxTelas.abrir(...)` isto e ignorado --
@@ -16312,7 +16312,7 @@ aplicarTema(lembrado("phxsql-tema") || (sistemaClaro() ? "claro" : "escuro"));
 function fecharPopup() {
   const p = $("#popup");
   p.hidden = true;
-  p.innerHTML = "";
+  p.innerHTML = phxHTML("");
 }
 
 /** Os itens para um no da arvore: `[icone, rotulo, chave, faz, falta]`. */
@@ -16345,7 +16345,7 @@ function abrirPopup(ev, db, tab) {
   const p = $("#popup");
   // O ALVO no topo: sem ele o menu nao diz sobre o que age, e um menu que nao
   // diz o alvo e um menu em que a pessoa clica torcendo.
-  p.innerHTML = `<div class="alvo">${esc(tab ? `${db}.${tab}` : db)}</div>`
+  p.innerHTML = phxHTML(`<div class="alvo">${esc(tab ? `${db}.${tab}` : db)}</div>`
     // `txt()` na hora de desenhar, e NAO `data-txt`: o varredor de `data-txt`
     // passa uma vez sobre o DOM estatico, entao HTML criado depois dele nunca
     // seria traduzido -- e, pior, o conferidor contaria o atributo como texto
@@ -16355,7 +16355,7 @@ function abrirPopup(ev, db, tab) {
         ${faz ? "" : "disabled"}
         ${falta ? `title="${esc(falta)}"` : ""}>
         <span class="ic">${ico}</span><span>${esc(txt(chave, rot))}</span>
-      </button>`).join("");
+      </button>`).join(""));
   p.hidden = false;
   // Posiciona DEPOIS de medir: o menu perto da borda precisa saber a propria
   // altura para subir em vez de sair da tela.
@@ -16545,12 +16545,12 @@ function desenharIdiomas(seletor = "#idiomas") {
   if (!alvos.length) return;
   const atual = idiomaEscolhido();
   for (const alvo of alvos) {
-    alvo.innerHTML = IDIOMAS.map(i => `
+    alvo.innerHTML = phxHTML(IDIOMAS.map(i => `
       <button type="button" class="idi" role="radio" data-idi="${i.col}"
               aria-checked="${i.col === atual}" tabindex="${i.col === atual ? 0 : -1}"
               aria-label="${esc(i.nome)}" title="${esc(i.nome)}">
         ${BANDEIRAS[i.bandeira]}<span class="nome">${esc(i.nome)}</span>
-      </button>`).join("");
+      </button>`).join(""));
     const botoes = [...alvo.querySelectorAll(".idi")];
     botoes.forEach((b, i) => {
       b.onclick = () => escolherIdioma(b.dataset.idi);
@@ -16703,14 +16703,14 @@ function desenharConexoes() {
   $("#conexConta").textContent = lista.length ? String(lista.length) : "";
   const alvo = $("#conexLista");
   if (!lista.length) {
-    alvo.innerHTML = `<p class="conex-vazio" data-txt="tela.conexoes_vazio">${
+    alvo.innerHTML = phxHTML(`<p class="conex-vazio" data-txt="tela.conexoes_vazio">${
       esc(txt("tela.conexoes_vazio",
         "Nenhuma conexão guardada ainda. Preencha os campos acima e clique em guardar."))
-    }</p>`;
+    }</p>`);
     return;
   }
   const ren = txt("tela.renomear", "Renomear"), rem = txt("tela.remover", "Remover");
-  alvo.innerHTML = lista.map((c, i) => `
+  alvo.innerHTML = phxHTML(lista.map((c, i) => `
     <div class="conex">
       <button type="button" class="abrir" data-i="${i}">
         <span class="apelido">${esc(c.apelido)}</span>
@@ -16723,7 +16723,7 @@ function desenharConexoes() {
         <button type="button" class="rem" data-i="${i}" title="${esc(rem)}"
                 aria-label="${esc(rem)}: ${esc(c.apelido)}">&#10005;</button>
       </span>
-    </div>`).join("");
+    </div>`).join(""));
   alvo.querySelectorAll(".abrir").forEach(b =>
     b.onclick = () => usarConexao(lista[+b.dataset.i]));
   alvo.querySelectorAll(".ren").forEach(b =>

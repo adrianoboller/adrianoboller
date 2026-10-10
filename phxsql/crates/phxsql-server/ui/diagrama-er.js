@@ -539,7 +539,7 @@ window.PhxER = (function () {
     const raiz = typeof alvo === "string" ? document.querySelector(alvo) : alvo;
     const m = modelo(esquemas);
     if (!m.tabelas.length && !(op.dblink || []).length) {
-      raiz.innerHTML = "";
+      raiz.innerHTML = phxHTML("");
       return { modelo: m };
     }
     posicionar(m, op.posicoes);
@@ -551,7 +551,7 @@ window.PhxER = (function () {
       }
     }
     const tam = tamanhoDe(m);
-    raiz.innerHTML = pintarTudo(m, tam, true);
+    raiz.innerHTML = phxHTML(pintarTudo(m, tam, true));
     const svg = raiz.querySelector("svg.er");
 
     const posAtuais = () => {
@@ -563,13 +563,13 @@ window.PhxER = (function () {
 
     const redesenharLigs = () => {
       const gastas = {};
-      svg.querySelector(".er-ligs").innerHTML = m.ligacoes.map(l => {
+      svg.querySelector(".er-ligs").innerHTML = phxHTML(m.ligacoes.map(l => {
         if (l.existe) return ligacao(l, m, 0);
         const k = chave(l.de);
         const i = gastas[k] || 0;
         gastas[k] = i + 1;
         return ligacao(l, m, i);
-      }).join("") + m.remotas.map(ligacaoRemota).join("");
+      }).join("") + m.remotas.map(ligacaoRemota).join(""));
     };
 
     const esticar = () => {
@@ -629,8 +629,8 @@ window.PhxER = (function () {
         const t = m.porNome[chave(arrasto.de.tabela)];
         const aDireita = p.x >= t.x + t.w / 2;
         const a = ancora(t, arrasto.de.coluna, aDireita);
-        svg.querySelector(".er-tmp").innerHTML = `<path class="er-seta-tmp"
-          d="${curva({ ...a, direita: aDireita }, { x: p.x, y: p.y, direita: p.x < a.x })}"/>`;
+        svg.querySelector(".er-tmp").innerHTML = phxHTML(`<path class="er-seta-tmp"
+          d="${curva({ ...a, direita: aDireita }, { x: p.x, y: p.y, direita: p.x < a.x })}"/>`);
         // O alvo debaixo do ponteiro acende. `elementFromPoint` e não o alvo
         // do evento: com o ponteiro capturado, todo evento "pertence" à
         // origem, e o hover nativo não acontece.
@@ -655,7 +655,7 @@ window.PhxER = (function () {
       if (!arrasto) return;
       const a = arrasto;
       arrasto = null;
-      svg.querySelector(".er-tmp").innerHTML = "";
+      svg.querySelector(".er-tmp").innerHTML = phxHTML("");
       svg.querySelectorAll(".er-porta.alvo").forEach(e => e.classList.remove("alvo"));
 
       if (a.tipo === "ligar") {
@@ -685,7 +685,7 @@ window.PhxER = (function () {
     svg.addEventListener("pointerup", soltar);
     svg.addEventListener("pointercancel", () => {
       arrasto = null;
-      svg.querySelector(".er-tmp").innerHTML = "";
+      svg.querySelector(".er-tmp").innerHTML = phxHTML("");
       svg.querySelectorAll(".er-porta.alvo").forEach(e => e.classList.remove("alvo"));
     });
 

@@ -275,8 +275,8 @@ window.PhxTelas = (function () {
   function molde() {
     const d = document.createElement("div");
     d.className = "tela";
-    d.innerHTML = `<div class="cabecalho"><h2>—</h2><div class="sub"></div></div>
-      <div class="abas"></div><div class="painel"></div>`;
+    d.innerHTML = phxHTML(`<div class="cabecalho"><h2>—</h2><div class="sub"></div></div>
+      <div class="abas"></div><div class="painel"></div>`);
     return d;
   }
 
@@ -460,7 +460,7 @@ window.PhxTelas = (function () {
                   { px: MIN_REGIAO })) : "")
               }">${"▮".repeat(k)}</button>`).join("") : "");
 
-    r.tira.innerHTML = abas + `<span class="tira-espaco"></span>` + controles;
+    r.tira.innerHTML = phxHTML(abas + `<span class="tira-espaco"></span>` + controles);
   }
 
   /** Quantas regioes cabem AGORA, pela largura util.
@@ -802,7 +802,7 @@ window.PhxTelas = (function () {
       try { t.estado.grade.destruir(); } catch (e) { /* grade sem destruir */ }
     }
     esconder(t);
-    t.el.innerHTML = "";
+    t.el.innerHTML = phxHTML("");
     r.abas.splice(i, 1);
     const proxima = r.abas[Math.min(i, r.abas.length - 1)];
     if (W.foco === t) { W.foco = null; focar(proxima); }
@@ -1316,7 +1316,7 @@ window.PhxTelas = (function () {
 
     const j = document.createElement("div");
     j.className = "janela";
-    j.innerHTML = `<div class="jan-topo">
+    j.innerHTML = phxHTML(`<div class="jan-topo">
         <span class="jan-tit">${E(t.rot)}</span>
         <button class="tira-pino" data-jan="pino" aria-pressed="false"
           title="${E(txt("tela.mt_pinar_solta_dica", "Pinar — guarda x, y, largura e altura desta janela neste navegador"))}"
@@ -1326,7 +1326,7 @@ window.PhxTelas = (function () {
         <button class="tira-x" data-jan="fechar" title="${E(txt("tela.mt_fechar_tela", "Fechar esta tela"))}">×</button>
       </div>
       <div class="jan-corpo"></div>
-      <button class="jan-canto" data-jan="canto" aria-label="${E(txt("tela.mt_redimensionar", "Redimensionar"))}"></button>`;
+      <button class="jan-canto" data-jan="canto" aria-label="${E(txt("tela.mt_redimensionar", "Redimensionar"))}"></button>`);
 
     const g = geometriaDe(t);
     Object.assign(j.style, { left: g.x + "px", top: g.y + "px",

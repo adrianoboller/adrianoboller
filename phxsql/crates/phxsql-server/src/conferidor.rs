@@ -69,6 +69,7 @@
 /// do `http.rs` e reprova o arquivo servido que ninguem mede.
 pub const FONTES: &[(&str, &str)] = &[
     ("ui/index.html", include_str!("../ui/index.html")),
+    ("ui/funil.js", include_str!("../ui/funil.js")),
     ("ui/claude.js", include_str!("../ui/claude.js")),
     ("ui/telemetria.js", include_str!("../ui/telemetria.js")),
     ("ui/aquario.js", include_str!("../ui/aquario.js")),

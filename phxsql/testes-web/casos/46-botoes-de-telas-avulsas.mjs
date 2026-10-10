@@ -148,7 +148,7 @@ async function corpo(ctx, desfazer) {
   const esperado = { interna: 3, esquerda: 4, direita: 4, completa: 5, so_esquerda: 1, so_direita: 1, so_dos_lados: 2 };
   const sqls = await page.evaluate(() => JUNCOES.map(j => [j.id, j.sql]));
   for (const [tipo, quantas] of Object.entries(esperado)) {
-    await page.evaluate(() => { document.querySelector('#jSaida').innerHTML = ''; });
+    await page.evaluate(() => { document.querySelector('#jSaida').innerHTML = phxHTML(''); });
     await clicarOuExplicar(page, `#vennes .venn[data-t="${tipo}"]`);
     await page.waitForFunction(() => /linha\(s\)/.test(document.querySelector('#jSaida .dbl-titulo')?.textContent || ''),
       undefined, { timeout: ESPERA });
@@ -160,7 +160,7 @@ async function corpo(ctx, desfazer) {
   }
   await capturar(ctx, ctx.nomeCaptura('juncao'));
   // «Juntar» roda de novo o formato aceso.
-  await page.evaluate(() => { document.querySelector('#jSaida').innerHTML = ''; });
+  await page.evaluate(() => { document.querySelector('#jSaida').innerHTML = phxHTML(''); });
   await clicarOuExplicar(page, '#jRodar');
   await page.waitForFunction(() => /2\s+linha/.test(document.querySelector('#jSaida .dbl-titulo')?.textContent || ''),
     undefined, { timeout: ESPERA });
@@ -177,7 +177,7 @@ async function corpo(ctx, desfazer) {
     undefined, { timeout: ESPERA });
   igual(Number((await page.textContent('#unSaida .dbl-titulo b')).replace(/\D/g, '')), 5, 'UNION tira as repetidas: 4 + 4 − 3');
   await page.selectOption('#unModo', 'tudo');
-  await page.evaluate(() => { document.querySelector('#unSaida').innerHTML = ''; });
+  await page.evaluate(() => { document.querySelector('#unSaida').innerHTML = phxHTML(''); });
   await clicarOuExplicar(page, '#unRodar');
   await page.waitForFunction(() => /linha\(s\)/.test(document.querySelector('#unSaida .dbl-titulo')?.textContent || ''),
     undefined, { timeout: ESPERA });

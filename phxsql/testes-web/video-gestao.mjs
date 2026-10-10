@@ -47,9 +47,9 @@ async function cartaz(page, n, titulo, sub = '') {
         + 'text-align:center;padding:40px;transition:opacity .25s';
       document.body.appendChild(d);
     }
-    d.innerHTML = `<div style="font-size:15px;letter-spacing:.22em;opacity:.55">PASSO ${a}</div>`
+    d.innerHTML = phxHTML(`<div style="font-size:15px;letter-spacing:.22em;opacity:.55">PASSO ${a}</div>`
       + `<div>${b}</div>`
-      + (c ? `<div style="font-size:17px;font-weight:400;opacity:.7;max-width:900px">${c}</div>` : '');
+      + (c ? `<div style="font-size:17px;font-weight:400;opacity:.7;max-width:900px">${c}</div>` : ''));
     d.style.opacity = '1';
   }, [n, titulo, sub]);
   await respirar(page, sub ? 2100 : 1600);
@@ -398,7 +398,7 @@ async function principal() {
     const dps = await page.evaluate(([db, tab]) =>
       api('varrer', { database: db, tabela: tab, max: 1 }), [BANCO, TABELA]);
     await page.evaluate(([a, d, m]) => {
-      document.body.insertAdjacentHTML('beforeend', `
+      document.body.insertAdjacentHTML('beforeend', phxHTML(`
         <div id="__painel" style="position:fixed;inset:0;z-index:99997;background:#010418;
              color:#e8eaf2;font:16px/2 ui-monospace,monospace;padding:60px 74px">
           <div style="font-size:12px;letter-spacing:.2em;opacity:.55">EXCLUIR REVERSÍVEL — MEDIDO AGORA</div>
@@ -409,7 +409,7 @@ async function principal() {
           <div style="margin-top:28px;opacity:.55;font-size:13px">
             o excluir de vez é outro: ele destrói a linha, e por isso copia o conteúdo
             inteiro — inclusive .bin e .memo — para a lixeira ANTES</div>
-        </div>`);
+        </div>`));
     }, [antes, dps, oMotivo ? (oMotivo.total ?? JSON.stringify(oMotivo).slice(0, 60)) : 'no .reason']);
     await respirar(page, 5200);
     await page.evaluate(() => { const p = document.getElementById('__painel'); if (p) p.remove(); });
@@ -429,7 +429,7 @@ async function principal() {
     const lida = await page.evaluate(() =>
       api('varrer', { database: 'loja_restaurada', tabela: 'clientes', max: 3 }));
     await page.evaluate(([a, n, amostra]) => {
-      document.body.insertAdjacentHTML('beforeend', `
+      document.body.insertAdjacentHTML('beforeend', phxHTML(`
         <div id="__painel" style="position:fixed;inset:0;z-index:99997;background:#010418;
              color:#e8eaf2;font:14px/1.7 ui-monospace,monospace;padding:56px 70px">
           <div style="font-size:12px;letter-spacing:.2em;opacity:.55">BACKUP PROVADO POR LEITURA</div>
@@ -439,7 +439,7 @@ async function principal() {
           <pre style="margin-top:18px;color:#9fb4d0;font-size:13px">${amostra}</pre>
           <div style="margin-top:26px;opacity:.55;font-size:13px">
             o «ok» do backup não prova nada — o que prova é a linha voltar de dentro da cópia</div>
-        </div>`);
+        </div>`));
     }, [arq, lida && lida.registros, JSON.stringify((lida && lida.linhas || []).slice(0, 3), null, 1)]);
     await respirar(page, 5200);
     await page.evaluate(() => { const p = document.getElementById('__painel'); if (p) p.remove(); });
@@ -459,7 +459,7 @@ async function principal() {
     await cartaz(page, 9, 'REPLICAÇÃO — medida, com quatro servidores',
                  'a bancada sobe master e três réplicas de verdade e compara linha a linha');
     await page.evaluate(([r]) => {
-      document.body.insertAdjacentHTML('beforeend', `
+      document.body.insertAdjacentHTML('beforeend', phxHTML(`
         <div id="__painel" style="position:fixed;inset:0;z-index:99997;background:#010418;
              color:#e8eaf2;font:16px/2 ui-monospace,monospace;padding:56px 72px">
           <div style="font-size:12px;letter-spacing:.2em;opacity:.55">BANCADA DE REPLICAÇÃO — ${r.quando}</div>
@@ -474,7 +474,7 @@ async function principal() {
           <div style="margin-top:24px;opacity:.55;font-size:13px">
             a réplica recusa escrita da aplicação de propósito: escrita local quebraria
             a numeração dos rowids e pararia a replicação na inclusão seguinte</div>
-        </div>`);
+        </div>`));
     }, [rp]);
     await respirar(page, 6200);
     await page.evaluate(() => { const p = document.getElementById('__painel'); if (p) p.remove(); });
@@ -484,7 +484,7 @@ async function principal() {
     await cartaz(page, 10, 'CLUSTER — medido, e não filmado',
                  'derrubar um master e esperar a eleição dobraria o vídeo para repetir o que a bancada já mede');
     await page.evaluate(([c]) => {
-      document.body.insertAdjacentHTML('beforeend', `
+      document.body.insertAdjacentHTML('beforeend', phxHTML(`
         <div id="__painel" style="position:fixed;inset:0;z-index:99997;background:#010418;
              color:#e8eaf2;font:15px/1.9 ui-monospace,monospace;padding:52px 70px">
           <div style="font-size:12px;letter-spacing:.2em;opacity:.55">O QUE AS BANCADAS MEDIRAM — 07/09/2026</div>
@@ -498,7 +498,7 @@ async function principal() {
           <div style="margin-top:26px;opacity:.55;font-size:13px">
             números lidos dos resultados.json das bancadas, com a data da medição —
             não digitados neste roteiro</div>
-        </div>`);
+        </div>`));
     }, [cl]);
     await respirar(page, 7000);
     return 0;

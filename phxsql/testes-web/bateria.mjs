@@ -204,6 +204,17 @@ const VIGIA_DA_CSP = () => {
       sonda: !!window.__phx771Sonda,
     });
   }, true);
+  // O funil do HTML (Trusted Types, pedido 771) recusa jogando erro, e um
+  // `try` da tela o engoliria calado: a recusa vem para ca tambem, e reprova
+  // o caso como uma violacao -- um modelo da casa que o funil achou perigoso
+  // e um defeito, seja do modelo, seja do funil.
+  document.addEventListener('phxhtmlrecusado', e => {
+    if (!window.__phxViolacao) return;
+    window.__phxViolacao({
+      diretiva: 'phxHTML', bloqueado: String(e.detail), fonte: '', linha: 0,
+      amostra: String(e.detail), sonda: !!window.__phx771Sonda,
+    });
+  }, true);
 };
 
 /* Evidencia PARCIAL e pior que evidencia faltando: uma corrida com `--caso`

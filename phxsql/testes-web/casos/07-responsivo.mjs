@@ -139,7 +139,7 @@ const PLANTAR_CAMINHO_LONGO = () => {
   m.discos[0].caminho = '/' + 'um-diretorio-de-nome-comprido/'.repeat(4) + 'dados';
   const alvo = document.getElementById('maquina');
   if (!alvo) return false;
-  alvo.innerHTML = maquinaHtml(m);
+  alvo.innerHTML = phxHTML(maquinaHtml(m));
   return true;
 };
 

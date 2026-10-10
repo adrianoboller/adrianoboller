@@ -1143,7 +1143,7 @@ window.PhxAquario = (function () {
                <p class="aqt-res" role="status" aria-live="polite"></p>
                <p class="aqt-assina"></p>
              </section>`;
-    host.innerHTML = c.compacto
+    host.innerHTML = phxHTML(c.compacto
       ? `${topo}
          <div class="aqt-tanque"><div class="aqt-agua"></div><aside class="aqt-fundo" hidden></aside></div>`
       : `${topo}
@@ -1176,7 +1176,7 @@ window.PhxAquario = (function () {
                <span class="aqt-sub"></span><svg role="img" aria-label="${esc(txt("tela.aq_g_mes", "Últimos 30 dias"))}"></svg><ul class="aqt-leg"></ul></div>
              <p class="aqt-nota">${esc(txt("tela.aq_g_nota", "Erros e avisos contam o desfecho da instrução, em escala própria; o vermelho e o amarelo das bolhas são a gravidade para o servidor."))}</p>
            </section>
-         </div>`;
+         </div>`);
 
     const $ = s => host.querySelector(s);
     const estado = $(".aqt-estado");
@@ -1808,7 +1808,7 @@ window.PhxAquario = (function () {
     }
 
     function montar() {
-      host.innerHTML = `
+      host.innerHTML = phxHTML(`
         <div class="aqe-previa">
           <div class="aqe-tanque"><span>${esc(txt("tela.aq_pf_previa_escuro", "pré-visualização · tema escuro"))}</span><div class="aqe-agua" data-tema="escuro"></div></div>
           <div class="aqe-tanque"><span>${esc(txt("tela.aq_pf_previa_claro", "pré-visualização · tema claro"))}</span><div class="aqe-agua" data-tema="claro"></div></div>
@@ -1833,7 +1833,7 @@ window.PhxAquario = (function () {
           <button type="button" class="botao secundario aqe-fabrica">${esc(txt("tela.aq_pf_tudo_de_fabrica", "Voltar tudo ao de fábrica"))}</button>
           <button type="button" class="botao secundario aqe-descartar">${esc(txt("tela.cfg_descartar", "Descartar as mudanças"))}</button>
         </div>
-        <p class="aqe-res" role="status" aria-live="polite"></p>`;
+        <p class="aqe-res" role="status" aria-live="polite"></p>`);
 
       for (const t of tanques) t.soltar();
       tanques = [];

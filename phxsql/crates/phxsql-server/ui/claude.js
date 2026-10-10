@@ -971,7 +971,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
        </div>`);
 
     const recado = (html, classe) => {
-      $("#iaRecado").innerHTML = `<div class="aviso ${classe}">${html}</div>`;
+      $("#iaRecado").innerHTML = phxHTML(`<div class="aviso ${classe}">${html}</div>`);
     };
 
     $("#iaSalvar").onclick = () => {
@@ -1021,10 +1021,10 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const d = document.createElement("div");
     d.className = "dbl-titulo";
     d.style.marginTop = "14px";
-    d.innerHTML = `<button class="botao consultar" id="btIA">${
+    d.innerHTML = phxHTML(`<button class="botao consultar" id="btIA">${
         E(txt("tela.ia_perguntar_bt", "✦ Perguntar à Claude"))}</button>
       <span class="leg">${marcado(txt("tela.ia_perguntar_leg",
-        "o SQL gerado **não executa sozinho** — ele cai no editor abaixo, e quem aperta Executar é você"))}</span>`;
+        "o SQL gerado **não executa sozinho** — ele cai no editor abaixo, e quem aperta Executar é você"))}</span>`);
     alvo.appendChild(d);
     const painel = document.createElement("div");
     painel.id = "iaPainel";
@@ -1054,7 +1054,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
   async function painelDaConsulta(onde) {
     const db = await bancoDoContexto();
     const c = cfg();
-    onde.innerHTML = `
+    onde.innerHTML = phxHTML(`
       <div class="dbl-titulo u-mt-14">
         ${Object.entries(RECEITAS).map(([k, r]) =>
           `<button class="botao mini consultar ia-rec${k === receitaAtual ? " u-aceso" : ""}" data-r="${k}"
@@ -1063,7 +1063,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         <span class="leg">${marcado(txt("tela.ia_modelo_em_uso", "modelo: `{m}`"),
           { m: c.modelo || MODELO_PADRAO })}</span>
       </div>
-      <div id="iaCorpo"></div>`;
+      <div id="iaCorpo"></div>`);
     for (const b of onde.querySelectorAll(".ia-rec"))
       b.onclick = () => { receitaAtual = b.dataset.r; painelDaConsulta(onde); };
     desenharReceita(onde.querySelector("#iaCorpo"), db);
@@ -1071,7 +1071,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
 
   function desenharReceita(onde, db) {
     const r = RECEITAS[receitaAtual];
-    onde.innerHTML = `
+    onde.innerHTML = phxHTML(`
       <div class="form-dbl">
         <label class="cmp u-linha-inteira"><span>${E(txt(r.pedeTxt, r.pede))}</span>
           <textarea id="iaPergunta" rows="3" placeholder="${E(txt(r.exemploTxt, r.exemplo))}"></textarea></label>
@@ -1114,18 +1114,18 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
           <button class="botao consultar" id="iaExecutar">${E(txt("tela.ia_executar", "Executar"))}</button>
           <span class="leg">${E(txt("tela.ia_sem_clique", "nada roda sem este clique"))}</span>
         </div>
-        <div id="iaResultado"></div>` : ""}`;
+        <div id="iaResultado"></div>` : ""}`);
 
     const chk = onde.querySelector("#iaLinhas");
     chk.onchange = () => {
       onde.querySelector("#iaLinhasQtd").hidden = !chk.checked;
-      onde.querySelector("#iaAlertaLinhas").innerHTML = chk.checked
+      onde.querySelector("#iaAlertaLinhas").innerHTML = phxHTML(chk.checked
         ? `<div class="aviso mal">${marcado(txt("tela.ia_dado_sai",
              "**O dado sai desta máquina.** Marcada, esta caixa manda linhas de verdade das tabelas para a Anthropic."))
            } ${marcado(txt("tela.ia_dado_sai2",
              "Coluna marcada como **dado pessoal** no esquema vai redigida (`{redigido}`), mas o resto vai como está. Marque só se você pode fazer isso com este banco."),
              { redigido: '"***"' })}</div>`
-        : "";
+        : "");
     };
 
     onde.querySelector("#iaVer").onclick = () => mostrarEnvio(onde);
@@ -1149,12 +1149,12 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
   async function mostrarEnvio(onde, jaMontado) {
     const e = jaMontado || escolhaDe(onde);
     const alvo = onde.querySelector("#iaEnvio");
-    alvo.innerHTML = `<div class="centro">${E(txt("tela.ia_montando", "montando o contexto…"))}</div>`;
+    alvo.innerHTML = phxHTML(`<div class="centro">${E(txt("tela.ia_montando", "montando o contexto…"))}</div>`);
     let ctx;
     try { ctx = jaMontado ? jaMontado.ctx : await montarContexto(e.db, e); }
     catch (err) {
-      alvo.innerHTML = `<div class="aviso mal">${E(preencher(
-        txt("tela.ia_sem_esquema", "Não deu para ler o esquema: {erro}"), { erro: String(err) }))}</div>`;
+      alvo.innerHTML = phxHTML(`<div class="aviso mal">${E(preencher(
+        txt("tela.ia_sem_esquema", "Não deu para ler o esquema: {erro}"), { erro: String(err) }))}</div>`);
       return null;
     }
     const c = cfg();
@@ -1165,7 +1165,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
               ctx.texto, c.modelo || MODELO_PADRAO);
     const cab = Object.assign({}, cabecalhos(c.chave));
     cab["x-api-key"] = fim(c.chave) || txt("tela.ia_sem_chave_curto", "(sem chave)");
-    alvo.innerHTML = (ctx.resumo.semBanco
+    alvo.innerHTML = phxHTML((ctx.resumo.semBanco
       ? `<div class="aviso mal">${marcado(txt("tela.ia_sem_banco",
            "Você pediu para mandar o esquema, mas nenhum database está escolhido — então **nenhum esquema vai subir** e a resposta vai chutar os nomes das colunas. Escreva o database no campo acima."))}</div>`
       : "") + `
@@ -1177,7 +1177,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         <p class="leg">POST <code>${E(c.endpoint || ENDPOINT_OFICIAL)}</code></p>
         <pre class="dado u-pre-quebra u-rolo-x">${E(JSON.stringify(cab, null, 1))}</pre>
         <pre class="dado u-pre-quebra u-rolo-x">${E(JSON.stringify(b, null, 1))}</pre>
-      </details>`;
+      </details>`);
     return ctx;
   }
 
@@ -1185,15 +1185,15 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const e = escolhaDe(onde);
     const saida = onde.querySelector("#iaSaida");
     if (!e.pergunta) {
-      saida.innerHTML = `<div class="aviso mal">${E(txt("tela.ia_escreva", "Escreva a pergunta primeiro."))}</div>`;
+      saida.innerHTML = phxHTML(`<div class="aviso mal">${E(txt("tela.ia_escreva", "Escreva a pergunta primeiro."))}</div>`);
       return;
     }
-    saida.innerHTML = `<div class="centro">${E(txt("tela.ia_montando", "montando o contexto…"))}</div>`;
+    saida.innerHTML = phxHTML(`<div class="centro">${E(txt("tela.ia_montando", "montando o contexto…"))}</div>`);
     let ctx;
     try { ctx = await montarContexto(e.db, e); }
     catch (err) {
-      saida.innerHTML = `<div class="aviso mal">${E(preencher(
-        txt("tela.ia_sem_esquema", "Não deu para ler o esquema: {erro}"), { erro: String(err) }))}</div>`;
+      saida.innerHTML = phxHTML(`<div class="aviso mal">${E(preencher(
+        txt("tela.ia_sem_esquema", "Não deu para ler o esquema: {erro}"), { erro: String(err) }))}</div>`);
       return;
     }
     // APROVACAO DO CONTEUDO (pedido 339(a)): o corpo e montado UMA vez,
@@ -1206,37 +1206,37 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const aprovado = JSON.stringify(corpo(receita, e.pergunta, ctx.texto,
                                           cfg().modelo || MODELO_PADRAO));
     await mostrarEnvio(onde, Object.assign({}, e, { ctx, aprovado }));
-    saida.innerHTML = `<div class="aviso" id="iaAprovacao">${marcado(txt("tela.ia_aprovar_pede",
+    saida.innerHTML = phxHTML(`<div class="aviso" id="iaAprovacao">${marcado(txt("tela.ia_aprovar_pede",
         "**Nada saiu ainda.** Confira acima o que vai para a Anthropic — a pergunta, o esquema e as linhas, se marcou. Só o clique em «Enviar isto» manda, e manda exatamente o que está mostrado."))}
       <div class="dbl-titulo u-mt-10">
         <button class="botao incluir" id="iaAprovar">${E(txt("tela.ia_aprovar", "Enviar isto à Anthropic"))}</button>
         <button class="botao secundario" id="iaNaoEnviar">${E(txt("tela.ia_nao_enviar", "Não enviar"))}</button>
-      </div></div>`;
+      </div></div>`);
     const aprovou = await new Promise(fim => {
       saida.querySelector("#iaAprovar").onclick = () => fim(true);
       saida.querySelector("#iaNaoEnviar").onclick = () => fim(false);
     });
     if (!aprovou) {
-      saida.innerHTML = `<div class="aviso" id="iaNaoEnviado">${E(txt("tela.ia_nao_enviado",
-        "Nada foi enviado. O que estava no painel continua só nesta tela."))}</div>`;
+      saida.innerHTML = phxHTML(`<div class="aviso" id="iaNaoEnviado">${E(txt("tela.ia_nao_enviado",
+        "Nada foi enviado. O que estava no painel continua só nesta tela."))}</div>`);
       return;
     }
 
-    saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3><pre class="dado u-pre-quebra" id="iaTexto">…</pre>`;
+    saida.innerHTML = phxHTML(`<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3><pre class="dado u-pre-quebra" id="iaTexto">…</pre>`);
     const alvo = onde.querySelector("#iaTexto");
     const tok = onde.querySelector("#iaTokens");
     try {
       const r = await perguntar(receita, e.pergunta, ctx.texto,
         (parcial, uso) => {
           alvo.textContent = parcial;
-          tok.innerHTML = E(preencher(txt("tela.ia_tokens",
+          tok.innerHTML = phxHTML(E(preencher(txt("tela.ia_tokens",
             "entrada {entrada} · saída {saida} token(s)"),
-            { entrada: uso.entrada, saida: uso.saida }));
+            { entrada: uso.entrada, saida: uso.saida })));
         });
       alvo.textContent = r.texto;
-      tok.innerHTML = marcado(txt("tela.ia_tokens_fim",
+      tok.innerHTML = phxHTML(marcado(txt("tela.ia_tokens_fim",
         "entrada **{entrada}** · saída **{saida}** token(s) — o custo é da sua conta"),
-        { entrada: r.uso.entrada, saida: r.uso.saida });
+        { entrada: r.uso.entrada, saida: r.uso.saida }));
       if (receita.editor) {
         const campo = onde.querySelector("#iaSql");
         if (campo) campo.value = limparSql(r.texto);
@@ -1246,7 +1246,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       if (receita.plano)
         await renderizarPlano(onde, r.texto, e.db);
     } catch (err) {
-      saida.innerHTML = `<div class="aviso mal">${E(err.message || String(err))}</div>`;
+      saida.innerHTML = phxHTML(`<div class="aviso mal">${E(err.message || String(err))}</div>`);
     }
   }
 
@@ -1267,8 +1267,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       const t = await api("tabelas", { database: db });
       conf = conferirPlano(plano, t.tabelas || []);
     } catch (e) {
-      alvo.innerHTML = `<div class="aviso mal">${E(e.message || String(e))}</div>`
-        + `<h3>${E(txt("tela.ia_respondeu", "O que a Claude respondeu"))}</h3><pre class="dado u-pre-quebra u-rolo-x">${E(texto)}</pre>`;
+      alvo.innerHTML = phxHTML(`<div class="aviso mal">${E(e.message || String(e))}</div>`
+        + `<h3>${E(txt("tela.ia_respondeu", "O que a Claude respondeu"))}</h3><pre class="dado u-pre-quebra u-rolo-x">${E(texto)}</pre>`);
       return;
     }
     desenharRevisao(onde, conf, plano, db);
@@ -1314,7 +1314,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         ${i.problemas.map(pr => `<div class="aviso mal">${E(pr)}</div>`).join("")}
       </div>`;
 
-    alvo.innerHTML = `
+    alvo.innerHTML = phxHTML(`
       <h3>${E(txt("tela.ia_revisao", "Revisão do plano — nada foi criado ainda"))}</h3>
       <div class="aviso">${marcado(txt("tela.ia_propos",
         "**A Claude propôs; quem cria é você.** Confira item por item e desmarque o que não quiser. Ao confirmar, o PhxSql vai criar"))}
@@ -1352,7 +1352,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         <button class="botao incluir" id="iaCriar">${E(txt("tela.ia_criar", "Criar o que está marcado"))}</button>
         <span class="leg">${E(txt("tela.ia_so_este_clique", "só este clique escreve no banco"))}</span>
       </div>
-      <div id="iaNascido"></div>`;
+      <div id="iaNascido"></div>`);
 
     const conta = () => {
       onde.querySelector("#iaConta").textContent = preencher(
@@ -1374,10 +1374,10 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     const marcadasFk = [...onde.querySelectorAll(".ia-mf")]
       .filter(x => x.checked).map(x => conf.fks[+x.dataset.i]);
     if (!marcadas.length && !marcadasFk.length) {
-      alvo.innerHTML = `<div class="aviso mal">${E(txt("tela.ia_nada_marcado", "Nada marcado."))}</div>`;
+      alvo.innerHTML = phxHTML(`<div class="aviso mal">${E(txt("tela.ia_nada_marcado", "Nada marcado."))}</div>`);
       return;
     }
-    alvo.innerHTML = `<div class="centro">${E(txt("tela.ia_criando", "criando…"))}</div>`;
+    alvo.innerHTML = phxHTML(`<div class="centro">${E(txt("tela.ia_criando", "criando…"))}</div>`);
     nascidos = { db, tabelas: [], fks: [] };
     const feitos = [];
 
@@ -1425,7 +1425,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     }
 
     const bons = feitos.filter(x => x[0]).length;
-    alvo.innerHTML = `
+    alvo.innerHTML = phxHTML(`
       <h3>${E(txt("tela.ia_nasceu", "O que nasceu"))}</h3>
       <div class="aviso ${bons === feitos.length ? "bom" : "mal"}">${E(preencher(
         txt("tela.ia_n_criados", "{bons} de {total} item(ns) criados."),
@@ -1439,7 +1439,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       </div>
       <div id="iaDesfeito"></div>
       <h3>${E(txt("tela.ia_modelo_agora", "O modelo agora"))}</h3>
-      <div class="er-rolo" id="iaEr"><div class="centro">${E(txt("tela.ia_desenhando", "desenhando…"))}</div></div>`;
+      <div class="er-rolo" id="iaEr"><div class="centro">${E(txt("tela.ia_desenhando", "desenhando…"))}</div></div>`);
 
     onde.querySelector("#iaVerDic").onclick = () => verSysColumns(db);
     onde.querySelector("#iaVerEr").onclick = () => telaDiagramaER(db);
@@ -1468,16 +1468,16 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         try { esquemas.push(await api("esquema", { database: db, tabela: nome })); }
         catch { /* sem permissão: fica de fora, como no diagrama */ }
       }
-      if (!esquemas.length) { alvo.innerHTML = `<div class="vazio">${E(txt("tela.sem_tabelas", "sem tabelas"))}</div>`; return; }
-      alvo.innerHTML = "";
+      if (!esquemas.length) { alvo.innerHTML = phxHTML(`<div class="vazio">${E(txt("tela.sem_tabelas", "sem tabelas"))}</div>`); return; }
+      alvo.innerHTML = phxHTML("");
       PhxER.montar(alvo, esquemas, { aoAbrir: () => {} });
       const r = PhxER.resumo(esquemas);
       alvo.insertAdjacentHTML("afterend",
-        `<p class="leg">${E(preencher(txt("tela.ia_resumo_er",
+        phxHTML(`<p class="leg">${E(preencher(txt("tela.ia_resumo_er",
           "{tabelas} tabela(s) · {ligacoes} relacionamento(s) · {sem} sem ligação"),
-          { tabelas: r.tabelas, ligacoes: r.ligacoes, sem: r.sem_ligacao }))}</p>`);
+          { tabelas: r.tabelas, ligacoes: r.ligacoes, sem: r.sem_ligacao }))}</p>`));
     } catch (e) {
-      alvo.innerHTML = `<div class="aviso mal">${E(String(e.message || e))}</div>`;
+      alvo.innerHTML = phxHTML(`<div class="aviso mal">${E(String(e.message || e))}</div>`);
     }
   }
 
@@ -1489,10 +1489,10 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
   async function desfazer(onde, db) {
     const alvo = onde.querySelector("#iaDesfeito");
     if (!nascidos.tabelas.length && !nascidos.fks.length) {
-      alvo.innerHTML = `<div class="aviso">${E(txt("tela.ia_nada_desfazer", "Nada desta rodada para desfazer."))}</div>`;
+      alvo.innerHTML = phxHTML(`<div class="aviso">${E(txt("tela.ia_nada_desfazer", "Nada desta rodada para desfazer."))}</div>`);
       return;
     }
-    alvo.innerHTML = `<div class="centro">${E(txt("tela.ia_conferindo", "conferindo…"))}</div>`;
+    alvo.innerHTML = phxHTML(`<div class="centro">${E(txt("tela.ia_conferindo", "conferindo…"))}</div>`);
     const comDado = [];
     for (const nome of nascidos.tabelas) {
       try {
@@ -1502,12 +1502,12 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
     }
     if (comDado.length && !alvo.dataset.confirmado) {
       alvo.dataset.confirmado = "1";
-      alvo.innerHTML = `<div class="aviso mal">
+      alvo.innerHTML = phxHTML(`<div class="aviso mal">
         ${marcado(txt("tela.ia_ja_ha_dado", "**Atenção: já há dado gravado.**"))}
         ${comDado.map(([n, q]) => marcado(txt("tela.ia_tem_linhas", "`{tabela}` tem {n} linha(s)"),
           { tabela: n, n: q })).join(", ")}.
         ${marcado(txt("tela.ia_desfazer_apaga",
-          "Desfazer apaga a tabela e o dado junto, e não há volta. Clique em **Desfazer esta rodada** outra vez para confirmar."))}</div>`;
+          "Desfazer apaga a tabela e o dado junto, e não há volta. Clique em **Desfazer esta rodada** outra vez para confirmar."))}</div>`);
       return;
     }
     const feitos = [];
@@ -1550,8 +1550,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
                  fks: fksQueFicam.filter(f => tabelasQueFicam.includes(f.tabela)
                                             || !nascidos.tabelas.includes(f.tabela)) };
     delete alvo.dataset.confirmado;
-    alvo.innerHTML = `<div class="aviso">${feitos.map(([o, t]) =>
-      `${o ? "·" : "×"} ${t}`).join("<br>")}</div>`;
+    alvo.innerHTML = phxHTML(`<div class="aviso">${feitos.map(([o, t]) =>
+      `${o ? "·" : "×"} ${t}`).join("<br>")}</div>`);
     await desenharModeloAgora(onde, db);
     try { await montarArvore(false); } catch { /* enfeite */ }
   }
@@ -1573,8 +1573,8 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
   async function executar(onde) {
     const texto = onde.querySelector("#iaSql").value.trim();
     const alvo = onde.querySelector("#iaResultado");
-    if (!texto) { alvo.innerHTML = `<div class="aviso mal">${E(txt("tela.ia_editor_vazio", "O editor está vazio."))}</div>`; return; }
-    alvo.innerHTML = `<div class="centro">${E(txt("tela.ia_executando", "executando…"))}</div>`;
+    if (!texto) { alvo.innerHTML = phxHTML(`<div class="aviso mal">${E(txt("tela.ia_editor_vazio", "O editor está vazio."))}</div>`); return; }
+    alvo.innerHTML = phxHTML(`<div class="centro">${E(txt("tela.ia_executando", "executando…"))}</div>`);
     try {
       const r = await api("sql", {
         database: onde.querySelector("#iaDb").value.trim(), texto });
@@ -1597,7 +1597,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
       if (r.truncado) avisos.unshift(marcado(txt("tela.ia_res_truncado",
         "**Resultado cortado:** o teto de linhas do servidor (`max_linhas`) parou este sub-pedido antes do fim — pode haver mais dados do que os que vieram")));
       alvo.innerHTML =
-        `<p class="leg">${marcado(txt("tela.ia_res_op", "operação `{op}` · {n} linha(s)"),
+        phxHTML(`<p class="leg">${marcado(txt("tela.ia_res_op", "operação `{op}` · {n} linha(s)"),
           { op: r.op || "?", n: r.devolvidas ?? r.afetadas ?? linhas.length })}${
           r.contagem !== undefined ? " · " + E(preencher(txt("tela.ia_res_contagem",
             "contagem {n}"), { n: r.contagem })) : ""}</p>`
@@ -1605,7 +1605,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
             ? `<div class="aviso">${avisos.join("<br>")}</div>` : "")
         + (linhas.length
             ? `<div id="iaGradeSql"></div>`
-            : `<div class="vazio">${E(txt("tela.ia_sem_linhas", "sem linhas"))}</div>`);
+            : `<div class="vazio">${E(txt("tela.ia_sem_linhas", "sem linhas"))}</div>`));
       // O resultado de uma consulta e o caso mais forte de grade que existe
       // nesta tela: quem roda um SELECT quer ordenar, filtrar e exportar o
       // que voltou. As colunas sao DINAMICAS e o titulo NAO passa por `txt()`
@@ -1619,7 +1619,7 @@ Regras que o PhxSql impõe e que a proposta tem de respeitar:
         pagina: { tamanho: 100, opcoes: [50, 100, 200] },
       });
     } catch (e) {
-      alvo.innerHTML = `<div class="aviso mal">${E(String(e.message || e))}</div>`;
+      alvo.innerHTML = phxHTML(`<div class="aviso mal">${E(String(e.message || e))}</div>`);
     }
   }
 
@@ -1676,8 +1676,8 @@ Termine SEMPRE com a linha:
    *  que sai, byte a byte, pelo `corpoAprovado` do `perguntar`. */
   async function explicarOcorrencia(onde, o) {
     if (!ligada()) {
-      onde.innerHTML = `<div class="aviso mal">${E(txt("tela.oc_sem_ia",
-        "Para pedir à Claude que explique uma ocorrência, ligue a integração em Configurações → Integração com a Claude. A chave fica só neste navegador."))}</div>`;
+      onde.innerHTML = phxHTML(`<div class="aviso mal">${E(txt("tela.oc_sem_ia",
+        "Para pedir à Claude que explique uma ocorrência, ligue a integração em Configurações → Integração com a Claude. A chave fica só neste navegador."))}</div>`);
       return;
     }
     const c = cfg();
@@ -1687,7 +1687,7 @@ Termine SEMPRE com a linha:
                                           c.modelo || MODELO_PADRAO));
     const cab = Object.assign({}, cabecalhos(c.chave));
     cab["x-api-key"] = fim(c.chave);
-    onde.innerHTML = `
+    onde.innerHTML = phxHTML(`
       <details class="nota" open>
         <summary>${marcado(txt("tela.oc_vai_subir",
           "**O que vai subir para a Anthropic** — a ocorrência, sem login, sem IP e sem linha de dado."))}</summary>
@@ -1701,7 +1701,7 @@ Termine SEMPRE com a linha:
           <button class="botao incluir" id="iaOcAprovar">${E(txt("tela.ia_aprovar", "Enviar isto à Anthropic"))}</button>
           <button class="botao secundario" id="iaOcNaoEnviar">${E(txt("tela.ia_nao_enviar", "Não enviar"))}</button>
         </div></div>
-      <div id="iaOcSaida"></div>`;
+      <div id="iaOcSaida"></div>`);
     const aprovou = await new Promise(fimDaEspera => {
       onde.querySelector("#iaOcAprovar").onclick = () => fimDaEspera(true);
       onde.querySelector("#iaOcNaoEnviar").onclick = () => fimDaEspera(false);
@@ -1709,29 +1709,29 @@ Termine SEMPRE com a linha:
     const saida = onde.querySelector("#iaOcSaida");
     onde.querySelector("#iaOcAprovacao").remove();
     if (!aprovou) {
-      saida.innerHTML = `<div class="aviso" id="iaOcNaoEnviado">${E(txt("tela.ia_nao_enviado",
-        "Nada foi enviado. O que estava no painel continua só nesta tela."))}</div>`;
+      saida.innerHTML = phxHTML(`<div class="aviso" id="iaOcNaoEnviado">${E(txt("tela.ia_nao_enviado",
+        "Nada foi enviado. O que estava no painel continua só nesta tela."))}</div>`);
       return;
     }
-    saida.innerHTML = `<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3>
+    saida.innerHTML = phxHTML(`<h3>${E(txt("tela.ia_resposta", "Resposta"))}</h3>
       <pre class="dado u-pre-quebra" id="iaOcTexto">…</pre>
-      <p class="leg" id="iaOcTokens"></p>`;
+      <p class="leg" id="iaOcTokens"></p>`);
     const alvo = saida.querySelector("#iaOcTexto");
     const tok = saida.querySelector("#iaOcTokens");
     try {
       const r = await perguntar(RECEITA_OCORRENCIA, pergunta, null,
         (parcial, uso) => {
           alvo.textContent = parcial;
-          tok.innerHTML = E(preencher(txt("tela.ia_tokens",
+          tok.innerHTML = phxHTML(E(preencher(txt("tela.ia_tokens",
             "entrada {entrada} · saída {saida} token(s)"),
-            { entrada: uso.entrada, saida: uso.saida }));
+            { entrada: uso.entrada, saida: uso.saida })));
         }, aprovado);
       alvo.textContent = r.texto;
-      tok.innerHTML = marcado(txt("tela.ia_tokens_fim",
+      tok.innerHTML = phxHTML(marcado(txt("tela.ia_tokens_fim",
         "entrada **{entrada}** · saída **{saida}** token(s) — o custo é da sua conta"),
-        { entrada: r.uso.entrada, saida: r.uso.saida });
+        { entrada: r.uso.entrada, saida: r.uso.saida }));
     } catch (err) {
-      saida.innerHTML = `<div class="aviso mal">${E(err.message || String(err))}</div>`;
+      saida.innerHTML = phxHTML(`<div class="aviso mal">${E(err.message || String(err))}</div>`);
     }
   }
 

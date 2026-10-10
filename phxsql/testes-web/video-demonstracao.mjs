@@ -57,8 +57,8 @@ async function cartaz(page, numero, texto) {
         + 'text-align:center;padding:40px;transition:opacity .25s';
       document.body.appendChild(d);
     }
-    d.innerHTML = '<div style="font-size:15px;letter-spacing:.22em;opacity:.6">PASSO ' + n + '</div>'
-      + '<div>' + t + '</div>';
+    d.innerHTML = phxHTML('<div style="font-size:15px;letter-spacing:.22em;opacity:.6">PASSO ' + n + '</div>'
+      + '<div>' + t + '</div>');
     d.style.opacity = '1';
   }, [numero, texto]);
   await respirar(page, 1600);
@@ -192,7 +192,7 @@ async function principal() {
     });
     console.log('pasta:', pasta, arquivos.length, 'arquivos');
     await page.evaluate(([p, lista]) => {
-      document.body.innerHTML = `
+      document.body.innerHTML = phxHTML(`
         <div style="font:14px/1.6 ui-monospace,monospace;background:#010418;color:#e8eaf2;
                     min-height:100vh;padding:48px 60px">
           <div style="font-size:12px;letter-spacing:.2em;opacity:.55;margin-bottom:6px">
@@ -210,7 +210,7 @@ async function principal() {
           <div style="margin-top:30px;opacity:.5;font-size:13px">
             ${lista.length} arquivos · este contêiner não tem ambiente gráfico,
             então a listagem é apresentada aqui em vez de num gerenciador de arquivos</div>
-        </div>`;
+        </div>`);
     }, [pasta, arquivos]);
     await respirar(page, 5000);
     return 0;

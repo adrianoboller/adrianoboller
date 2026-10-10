@@ -181,6 +181,15 @@ const MULTITELA_JS: &str = include_str!("../ui/multitela.js");
 /// nao participa da chamada: ele so entrega o arquivo.
 const CLAUDE_JS: &str = include_str!("../ui/claude.js");
 
+/// O funil do HTML (pedido 771, Trusted Types): a politica `phx`, a unica que
+/// a CSP autoriza, e o `phxHTML` que todo `innerHTML` da `ui/` chama.
+///
+/// Vai no PRIMEIRO `<script>` da pagina, antes da grade: com
+/// `require-trusted-types-for 'script'` qualquer `innerHTML` que rodasse
+/// antes dele morreria. E e publico porque o explorador da API serve o MESMO
+/// arquivo -- um funil so, e nao um por pagina.
+pub const FUNIL_JS: &str = include_str!("../ui/funil.js");
+
 /// A Exo 2, a tipografia da marca, embutida no binario (pedido 691).
 ///
 /// Ate aqui ela vinha do Google Fonts, e a tela de um servidor de banco quase
@@ -233,7 +242,8 @@ fn montar_pagina_agora() -> String {
     let fonte = folha_da_fonte();
     format!(
         "<!doctype html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"utf-8\">\n\
-         <style>\n{fonte}\n</style>\n<style>\n{GRID_CSS}\n</style>\n<script>\n{GRID_JS}\n</script>\n\
+         <style>\n{fonte}\n</style>\n<style>\n{GRID_CSS}\n</style>\n<script>\n{FUNIL_JS}\n</script>\n\
+         <script>\n{GRID_JS}\n</script>\n\
          <script>\n{DIAGRAMA_JS}\n</script>\n\
          <style>\n{TELEMETRIA_CSS}\n</style>\n\
          <script>\n{TELEMETRIA_JS}\n</script>\n\
@@ -610,9 +620,15 @@ fn montar_com_folga_e_extras(
     } else {
         String::new()
     };
+    // Trusted Types (pedido 771, terceira etapa): o navegador que conhece a
+    // diretiva recusa TEXTO em `innerHTML`, `outerHTML`, `insertAdjacentHTML`,
+    // `document.write`, `eval` e `script.src`; so passa o que a politica
+    // `phx` fabricou -- e ela so fabrica HTML, conferido pelo `funil.js`.
+    // Quem nao conhece a diretiva a ignora, e a pagina roda igual.
     let script = if html {
         format!(
-            "script-src {}; script-src-attr 'none'; ",
+            "script-src {}; script-src-attr 'none'; \
+             require-trusted-types-for 'script'; trusted-types phx; ",
             hashes_dos_scripts_da(corpo)
         )
     } else {
@@ -1577,6 +1593,93 @@ mod testes_da_csp {
         );
     }
 
+    /// Trusted Types (pedido 771): a pagina exige `TrustedHTML` nos sinks e
+    /// so autoriza UMA politica, a `phx`, sem duplicata. Tire a diretiva e
+    /// um `innerHTML` de texto cru volta a passar no navegador; ponha
+    /// `'allow-duplicates'` ou um segundo nome e qualquer script fabrica
+    /// HTML confiavel sem passar pelo funil.
+    #[test]
+    fn a_pagina_exige_trusted_types_com_a_politica_phx_so() {
+        let r = montar_resposta_da_interface(montar_pagina(), true);
+        let c = csp(&r);
+        assert_eq!(
+            diretiva(&c, "require-trusted-types-for"),
+            Some("require-trusted-types-for 'script'"),
+            "{c}"
+        );
+        assert_eq!(
+            diretiva(&c, "trusted-types"),
+            Some("trusted-types phx"),
+            "{c}"
+        );
+        // E o funil e o PRIMEIRO script: um `innerHTML` antes dele morreria.
+        let primeiro = conteudos_de_script(montar_pagina())
+            .into_iter()
+            .next()
+            .expect("a pagina tem script");
+        assert!(
+            primeiro.contains("createPolicy(\"phx\""),
+            "o primeiro script nao e o funil"
+        );
+        // Resposta que nao e HTML nao precisa: nao roda script.
+        let dados = csp(&montar_resposta(200, "application/json", "{}"));
+        assert!(diretiva(&dados, "trusted-types").is_none(), "{dados}");
+    }
+
+    /// Todo sink de HTML da interface passa pelo funil (pedido 771). O
+    /// navegador ja barra o que nao passar -- mas so na tela que alguem
+    /// ABRIR; esta guarda le o texto inteiro que o navegador recebe e acha o
+    /// sink da tela que nenhum caso exercita. Reponha um `x.innerHTML = s`
+    /// sem o `phxHTML(...)` em qualquer arquivo de `ui/` e ela cai.
+    #[test]
+    fn todo_innerhtml_da_interface_passa_pelo_funil() {
+        let explorador = include_str!("../ui/explorador.js");
+        let mut sem_funil = Vec::new();
+        let mut com_funil = 0;
+        for texto in [montar_pagina(), explorador] {
+            for marca in [".innerHTML", ".outerHTML", "insertAdjacentHTML("] {
+                let mut de = 0;
+                while let Some(i) = texto[de..].find(marca) {
+                    let ini = de + i;
+                    de = ini + marca.len();
+                    let linha_ini = texto[..ini].rfind('\n').map_or(0, |n| n + 1);
+                    let linha = texto[linha_ini..].lines().next().unwrap_or("");
+                    let t = linha.trim_start();
+                    if t.starts_with('*') || t.starts_with("//") || t.starts_with("/*") {
+                        continue;
+                    }
+                    let resto = &texto[de..];
+                    let valor = if marca.ends_with('(') {
+                        // o segundo argumento: depois da posicao
+                        match resto.find(',') {
+                            Some(v) => resto[v + 1..].trim_start(),
+                            None => resto,
+                        }
+                    } else {
+                        let r = resto.trim_start();
+                        // so atribuicao: leitura (`x.innerHTML;`, `== `) nao e sink
+                        match r.strip_prefix('=') {
+                            Some(v) if !v.starts_with('=') => v.trim_start(),
+                            _ => continue,
+                        }
+                    };
+                    if valor.starts_with("phxHTML(") || valor.starts_with("funilHTML(") {
+                        com_funil += 1;
+                    } else {
+                        sem_funil.push(linha.trim().to_string());
+                    }
+                }
+            }
+        }
+        assert!(
+            sem_funil.is_empty(),
+            "sink de HTML sem o funil: {sem_funil:#?}"
+        );
+        // O medidor (`testes-web/medir-innerhtml.mjs`) conta 221; um numero
+        // muito menor aqui quer dizer que a varredura deixou de enxergar.
+        assert!(com_funil >= 200, "so {com_funil} sinks vistos");
+    }
+
     /// A pagina da interface: script so por hash, um hash por bloco embutido,
     /// nenhum `'unsafe-inline'` nem `'unsafe-eval'`, atributo `on*` barrado.
     /// Reponha o `script-src 'unsafe-inline'` na politica e este teste cai.
@@ -1589,8 +1692,8 @@ mod testes_da_csp {
         assert!(!script.contains("unsafe-inline"), "{script}");
         assert!(!script.contains("unsafe-eval"), "{script}");
         let blocos = conteudos_de_script(pagina).len();
-        // Seis modulos de `ui/` mais o script do proprio `index.html`.
-        assert_eq!(blocos, 7, "blocos <script> embutidos na pagina");
+        // O funil, seis modulos de `ui/` e o script do proprio `index.html`.
+        assert_eq!(blocos, 8, "blocos <script> embutidos na pagina");
         assert_eq!(script.matches("'sha256-").count(), blocos, "{script}");
         assert_eq!(
             diretiva(&c, "script-src-attr"),

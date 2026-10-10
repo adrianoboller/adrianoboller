@@ -21,6 +21,15 @@
   function txt(nome, padrao) {
     return root.txt ? root.txt(nome, padrao) : padrao;
   }
+  /* Todo `innerHTML` da grade passa pelo funil da pagina hospedeira (pedido
+     771, Trusted Types), pelo mesmo desenho do `txt`: com o `phxHTML` em
+     volta, a politica `phx` confere e fabrica o `TrustedHTML`; sem ele, a
+     grade continua de zero dependencias e entrega o texto. Lido a cada
+     chamada, e nao guardado, porque o funil nasce antes mas a grade nao
+     manda na ordem dos scripts de quem a hospeda. */
+  function funilHTML(s) {
+    return root.phxHTML ? root.phxHTML(s) : s;
+  }
 
   /* O ROTULO da coluna -- o que se pinta na cabeca dela -- e diferente do
      NOME da coluna, que e como se fala dela no seletor de colunas, no resumo
@@ -45,7 +54,7 @@
   function el(tag, cls, html) {
     var e = document.createElement(tag);
     if (cls) e.className = cls;
-    if (html != null) e.innerHTML = html;
+    if (html != null) e.innerHTML = funilHTML(html);
     return e;
   }
   function agora() { return (root.performance && performance.now) ? performance.now() : Date.now(); }
@@ -631,7 +640,7 @@
 
     var wrap = el("div", "phx-grid");
     wrap.innerHTML =
-      '<div class="phx-envoltorio"><table class="phx-tabela">' +
+      funilHTML('<div class="phx-envoltorio"><table class="phx-tabela">' +
       '<thead></thead><tbody></tbody></table></div>' +
       '<div class="phx-rodape">' +
       '<div class="phx-pag"></div>' +
@@ -645,7 +654,7 @@
         '<button type="button" class="phx-exp-btn" title="' +
         esc(txt("tela.gr_exportar_dica", "baixa o que está na tela: estas colunas, este filtro, esta ordem")) +
         '">' + esc(txt("tela.gr_exportar_vista", "⤓ Exportar a vista")) + "</button>") +
-      "</div></div>";
+      "</div></div>");
     var LIMITE_LISTA_EXCEL = 500;
     function valoresDistintos(campo) {
       if (!fonte.local) return { remoto: true, itens: [], temNulos: false, total: 0 };
@@ -688,9 +697,9 @@
     function montaBusca() {
       if (!cfg.buscaGlobal) return;
       var bb = el("div", "phx-busca");
-      bb.innerHTML = '<input type="text" class="phx-busca-in" placeholder="' +
+      bb.innerHTML = funilHTML('<input type="text" class="phx-busca-in" placeholder="' +
         esc(txt("tela.gr_busca_tudo", "Buscar em tudo\u2026 (v\u00e1rios termos = E)")) +
-        '"><span class="phx-busca-conta"></span>';
+        '"><span class="phx-busca-conta"></span>');
       wrap.insertBefore(bb, wrap.firstChild);
       buscaEl = bb.querySelector("input");
       buscaContaEl = bb.querySelector(".phx-busca-conta");
@@ -719,8 +728,8 @@
     function renderGroupBox() {
       if (!groupBox) return;
       if (!grupos.length) {
-        groupBox.innerHTML = '<span class="phx-groupbox-dica">' +
-          esc(txt("tela.gr_arraste", "Arraste uma coluna para c\u00e1 para agrupar")) + "</span>";
+        groupBox.innerHTML = funilHTML('<span class="phx-groupbox-dica">' +
+          esc(txt("tela.gr_arraste", "Arraste uma coluna para c\u00e1 para agrupar")) + "</span>");
         return;
       }
       var html = "", j2;
@@ -746,7 +755,7 @@
           esc(txt("tela.gr_total_grupo_dica", "mostra o total embaixo de cada grupo")) + '">' +
           esc(txt("tela.gr_total_por_grupo", "total por grupo")) + "</button>" +
         "</span>";
-      groupBox.innerHTML = html;
+      groupBox.innerHTML = funilHTML(html);
       var acs = groupBox.querySelectorAll("[data-todos]"), ja;
       for (ja = 0; ja < acs.length; ja++) {
         (function (bt) {
@@ -801,7 +810,7 @@
       var campos = [], k3, j2;
       for (k3 in filtros) if (filtros[k3]) campos.push(k3);
       campos.sort();
-      if (!campos.length) { barraFiltros.hidden = true; barraFiltros.innerHTML = ""; atualizaContaBusca(); return; }
+      if (!campos.length) { barraFiltros.hidden = true; barraFiltros.innerHTML = funilHTML(""); atualizaContaBusca(); return; }
       var html = '<span class="phx-filtros-conta">' +
         esc(preencher(txt("tela.gr_filtros_ativos", "Filtros Ativos ({n})"), { n: campos.length })) + "</span>";
       for (j2 = 0; j2 < campos.length; j2++) {
@@ -811,7 +820,7 @@
       }
       html += '<button type="button" class="phx-filtros-limpar">' +
         esc(txt("tela.gr_limpar_todos", "Limpar Todos")) + "</button>";
-      barraFiltros.innerHTML = html;
+      barraFiltros.innerHTML = funilHTML(html);
       barraFiltros.hidden = false;
       var xs = barraFiltros.querySelectorAll(".phx-chip-x");
       for (j2 = 0; j2 < xs.length; j2++) {
@@ -892,7 +901,7 @@
         for (j3 = 0; j3 < vis.length; j3++) {
           html += '<label class="phx-fpop-item"><input type="checkbox" data-ch="' + esc(vis[j3].chave) + '"' + (marcado(vis[j3]) ? " checked" : "") + "> " + esc(vis[j3].rotulo) + "</label>";
         }
-        fpop.querySelector(".phx-fpop-lista").innerHTML = html;
+        fpop.querySelector(".phx-fpop-lista").innerHTML = funilHTML(html);
         atualizaMestreFpop();
         var rodT = fpop.querySelector(".phx-fpop-trunc");
         if (dist.total > vis.length && (busca ? true : dist.total > LIMITE_LISTA_EXCEL)) {
@@ -903,7 +912,7 @@
         } else rodT.hidden = true;
       }
       fpop.innerHTML =
-        '<button type="button" class="phx-fpop-acao" data-a="az">' +
+        funilHTML('<button type="button" class="phx-fpop-acao" data-a="az">' +
         esc(txt("tela.gr_ordenar_az", "Classificar de A a Z")) + "</button>" +
         '<button type="button" class="phx-fpop-acao" data-a="za">' +
         esc(txt("tela.gr_ordenar_za", "Classificar de Z a A")) + "</button>" +
@@ -927,7 +936,7 @@
           '<label><input type="radio" name="phxcomb" value="ou"' + (combIni === "ou" ? " checked" : "") + "> " +
           esc(txt("tela.gr_ou", "OU")) + "</label></div>" + linhaNum(1) : "") +
         '<div class="phx-fpop-rodape"><button type="button" class="phx-fpop-ok">OK</button>' +
-        '<button type="button" class="phx-fpop-cancela">' + esc(txt("tela.cancelar", "Cancelar")) + "</button></div>";
+        '<button type="button" class="phx-fpop-cancela">' + esc(txt("tela.cancelar", "Cancelar")) + "</button></div>");
       var rb = ancora.getBoundingClientRect(), rw = wrap.getBoundingClientRect();
       fpop.style.left = Math.max(8, Math.min(rb.left - rw.left, wrap.offsetWidth - 260)) + "px";
       fpop.style.top = (rb.bottom - rw.top + 4) + "px";
@@ -1040,7 +1049,7 @@
         var valor = ultimaCarga.linhas[lx][cp];
         var texto;
         try { texto = JSON.stringify(valor, null, 2); } catch (e2) { texto = String(valor); }
-        popover.innerHTML = "<pre>" + esc(texto) + "</pre>";
+        popover.innerHTML = funilHTML("<pre>" + esc(texto) + "</pre>");
         var rb = jbtn.getBoundingClientRect(), rw = wrap.getBoundingClientRect();
         popover.style.left = Math.max(8, rb.left - rw.left - 120) + "px";
         popover.style.top = (rb.bottom - rw.top + 6) + "px";
@@ -1136,13 +1145,13 @@
       if (c.fixa === "dir") th.className += " phx-fixa-dir";
       var ind = estado.ordem.campo === c.campo ? (estado.ordem.dir === "asc" ? " \u25b2" : " \u25bc") : "";
       th.innerHTML =
-        '<span class="phx-th-titulo">' + esc(rotulo(c)) + '<span class="phx-sort-ind">' + ind + "</span></span>" +
+        funilHTML('<span class="phx-th-titulo">' + esc(rotulo(c)) + '<span class="phx-sort-ind">' + ind + "</span></span>" +
         (c.dimensao ? '<span class="phx-th-dim">(' + esc(c.dimensao) + ")</span>" : "") +
         (c.agregador ? '<button type="button" class="phx-th-agg" title="' +
           esc(txt("tela.gr_alternar_agregador", "alternar agregador")) + '">' + esc(c.agregador.toUpperCase()) + "</button>" : "") +
         (c.filtravel !== false ? '<button type="button" class="phx-fbtn' + (filtros[c.campo] ? " phx-fbtn-on" : "") +
           '" title="' + esc(txt("tela.gr_filtrar", "filtrar")) + '">\u25bc</button>' : "") +
-        '<span class="phx-col-resz"></span>';
+        '<span class="phx-col-resz"></span>');
       if (c.ordenavel !== false) {
         th.className += " phx-ordenavel";
         th.querySelector(".phx-th-titulo").addEventListener("click", function () { alternaOrdem(c.campo); });
@@ -1210,7 +1219,7 @@
       if (temSelecao) {
         var thS = el("th", "phx-th phx-td-sel");
         thS.rowSpan = D + 1;
-        thS.innerHTML = '<input type="checkbox" class="phx-sel-mestre" tabindex="-1">';
+        thS.innerHTML = funilHTML('<input type="checkbox" class="phx-sel-mestre" tabindex="-1">');
         thS.querySelector("input").addEventListener("click", function () {
           var linhas = ultimaCarga ? ultimaCarga.linhas : [], j2;
           var marcar = this.checked;
@@ -1223,7 +1232,7 @@
         linhas2[0].appendChild(thS);
       }
       anda(arvore, 0);
-      thead.innerHTML = "";
+      thead.innerHTML = funilHTML("");
       for (d2 = 0; d2 <= D; d2++) if (linhas2[d2].children.length) thead.appendChild(linhas2[d2]);
       if (cfg.filterRow) thead.appendChild(montaFilterRow());
       mideFixas();
@@ -1257,7 +1266,7 @@
           continue;
         }
         if (tipoC === "numero" || tipoC === "moeda" || tipoC === "percentual") {
-          td2.innerHTML = '<span class="phx-frow-num"><select class="phx-frow-op"><option>&gt;</option><option>&gt;=</option><option>&lt;</option><option>&lt;=</option><option>=</option><option>!=</option></select><input type="number" step="any" size="5" class="phx-frow-in" placeholder="' + esc(txt("tela.gr_valor", "valor")) + '"></span>';
+          td2.innerHTML = funilHTML('<span class="phx-frow-num"><select class="phx-frow-op"><option>&gt;</option><option>&gt;=</option><option>&lt;</option><option>&lt;=</option><option>=</option><option>!=</option></select><input type="number" step="any" size="5" class="phx-frow-in" placeholder="' + esc(txt("tela.gr_valor", "valor")) + '"></span>');
           (function (campo, cel) {
             var aplica = debounce(function () {
               var vNum = parseFloat(cel.querySelector(".phx-frow-in").value);
@@ -1267,7 +1276,7 @@
             cel.querySelector(".phx-frow-op").addEventListener("change", aplica);
           })(c2.campo, td2);
         } else if (tipoC === "data" || tipoC === "dataHora") {
-          td2.innerHTML = '<input type="date" class="phx-frow-in">';
+          td2.innerHTML = funilHTML('<input type="date" class="phx-frow-in">');
           (function (campo, cel) {
             cel.querySelector("input").addEventListener("change", function () {
               var vd = this.value;
@@ -1279,15 +1288,15 @@
           var dist2 = valoresDistintos(c2.campo), hOp = '<select class="phx-frow-in phx-frow-sel"><option value="">' +
             esc(txt("tela.gr_selecionar", "Selecionar")) + "</option>", j3;
           for (j3 = 0; j3 < dist2.itens.length && j3 < 50; j3++) hOp += "<option>" + esc(dist2.itens[j3].chave) + "</option>";
-          td2.innerHTML = hOp + "</select>";
+          td2.innerHTML = funilHTML(hOp + "</select>");
           (function (campo, cel) {
             cel.querySelector("select").addEventListener("change", function () {
               api.filtrar(campo, this.value ? { tipo: "valores", valores: [this.value] } : null);
             });
           })(c2.campo, td2);
         } else {
-          td2.innerHTML = '<input type="text" size="6" class="phx-frow-in" placeholder="' +
-            esc(txt("tela.gr_buscar_curto", "Buscar\u2026")) + '">';
+          td2.innerHTML = funilHTML('<input type="text" size="6" class="phx-frow-in" placeholder="' +
+            esc(txt("tela.gr_buscar_curto", "Buscar\u2026")) + '">');
           (function (campo, cel) {
             cel.querySelector("input").addEventListener("input", debounce(function () {
               var vt = cel.querySelector("input").value;
@@ -1459,7 +1468,7 @@
         html += "</tr>";
       }
       var tB = agora();
-      tbody.innerHTML = html;
+      tbody.innerHTML = funilHTML(html);
       pintaCorpo(tbody);
       var tC = agora();
       atualizaMestre();
@@ -1511,9 +1520,9 @@
       itens.push('<span class="phx-pg-irpara">' + esc(txt("tela.gr_ir_para", "ir para")) +
         ' <input type="number" min="1" max="' + tp + '" value="' + p + '"></span>');
       var tP = agora();
-      pagEl.innerHTML = esc(preencher(
+      pagEl.innerHTML = funilHTML(esc(preencher(
         txt("tela.gr_pagina_de", "Página {p} de {tp} ({n} registros)"),
-        { p: p, tp: fmt.numero(tp), n: fmt.numero(estado.total) })) + " " + itens.join("");
+        { p: p, tp: fmt.numero(tp), n: fmt.numero(estado.total) })) + " " + itens.join(""));
       var bs = pagEl.querySelectorAll(".phx-pg"), j2;
       for (j2 = 0; j2 < bs.length; j2++) {
         (function (bEl) {
@@ -1571,7 +1580,7 @@
           '<label class="phx-colsel-item"><input type="checkbox" data-campo="' + esc(c.campo) + '"' +
           (ocultas[c.campo] ? "" : " checked") + "> " + esc(c.titulo || c.campo) + "</label></div>";
       }
-      colMenu.innerHTML = html;
+      colMenu.innerHTML = funilHTML(html);
       var cbs = colMenu.querySelectorAll("input"), k2;
       for (k2 = 0; k2 < cbs.length; k2++) {
         (function (cb) {

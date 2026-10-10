@@ -135,7 +135,7 @@ function desenhar() {
   var info = ESPEC.info || {};
   document.getElementById("titulo").textContent = info.title || "";
   document.getElementById("versao").textContent = info.version || "";
-  document.getElementById("resumo").innerHTML = marcado(info.description || "");
+  document.getElementById("resumo").innerHTML = phxHTML(marcado(info.description || ""));
 
   var caminhos = ESPEC.paths || {};
   var filtro = (document.getElementById("busca").value || "").toLowerCase();
@@ -146,14 +146,14 @@ function desenhar() {
             (p["x-phxsql-apelidos"] || []).join(" ")).toLowerCase().indexOf(filtro) >= 0;
   });
   document.getElementById("conta").textContent = rotas.length;
-  document.getElementById("lista").innerHTML = rotas.length
+  document.getElementById("lista").innerHTML = phxHTML(rotas.length
     ? rotas.map(function (r) { return blocoDaOperacao(r, caminhos[r].post || {}); }).join("")
-    : "<p class=\"vazio\">" + esc(txt("tela.api_nada_achado")) + "</p>";
+    : "<p class=\"vazio\">" + esc(txt("tela.api_nada_achado")) + "</p>");
 
   var seg = ((ESPEC.components || {}).securitySchemes) || {};
-  document.getElementById("seguranca").innerHTML = Object.keys(seg).map(function (n) {
+  document.getElementById("seguranca").innerHTML = phxHTML(Object.keys(seg).map(function (n) {
     return "<li><code>" + esc(n) + "</code> — " + esc(seg[n].description || "") + "</li>";
-  }).join("");
+  }).join(""));
 }
 
 /** A enfase das mensagens da fabrica: `**assim**` e a palavra entre crases.
@@ -191,9 +191,9 @@ function carregarIdioma(col) {
     IDIOMAS_VIVOS = r.idiomas || [];
     var sel = document.getElementById("idioma");
     if (sel && !sel.options.length) {
-      sel.innerHTML = IDIOMAS_VIVOS.map(function (i) {
+      sel.innerHTML = phxHTML(IDIOMAS_VIVOS.map(function (i) {
         return "<option value=\"" + esc(i) + "\">" + esc(i) + "</option>";
-      }).join("");
+      }).join(""));
     }
     if (sel) sel.value = r.idioma;
     aplicarIdioma();
