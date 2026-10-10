@@ -57,19 +57,15 @@
   assign pp_media_count = product.media.size
 
   comment
-    WX: modelo de preco (setembro/2026).
-    O price da Shopify e o preco no cartao, em 1x ou 2x sem juros.
-    Pix = price com desconto, aplicado no checkout pelo app de
-    desconto Pix. O percentual aqui e so exibicao e PRECISA ser o
-    mesmo configurado no app - senao a pagina promete o que o
-    checkout nao entrega. 3x e 4x levam juros do Mercado Pago:
-    nao mostramos valor fixo de proposito, a taxa e do MP e muda
-    sem avisar; um numero errado aqui foi o problema de agosto.
-    O mesmo pp_pix_pct existe em snippets/product-card.liquid.
+    WX: modelo de preco (outubro/2026).
+    O price da Shopify e o preco a vista, em 1x ou 2x sem juros no
+    cartao. Nao existe mais desconto no Pix (decisao do dono,
+    10/10/2026): a Shopify nunca teve desconto cadastrado — eram zero
+    automaticos e zero codigos —, entao o "5% no Pix" da pagina
+    prometia o que o checkout nao entregava. 3x e 4x levam juros do
+    Mercado Pago: nao mostramos valor fixo de proposito, a taxa e do MP
+    e muda sem avisar; um numero errado aqui foi o problema de agosto.
   endcomment
-  assign pp_pix_pct = 5
-  assign pp_pix_mult = 100 | minus: pp_pix_pct
-  assign pp_pix = product_var.price | times: pp_pix_mult | divided_by: 100.0 | round
   assign pp_2x = product_var.price | divided_by: 2.0 | round
 -%}
 
@@ -207,9 +203,9 @@
               {{- product.metafields.judgeme.badge -}}
             </div>
           </div>
-          <div class="pp__pricebox" data-pp-pix-pct="{{ pp_pix_pct }}">
-            <div class="pp__price-pix" data-pp-pix><strong>{{ pp_pix | money }}</strong> no Pix <span class="pp__pix-tag">{{ pp_pix_pct }}% de desconto</span></div>
-            <div class="pp__price-card" data-pp-card>ou <strong>2x de {{ pp_2x | money }}</strong> sem juros no cartão <span class="pp__price-base">({{ product_var.price | money }})</span></div>
+          <div class="pp__pricebox">
+            <div class="pp__price-main" data-pp-price><strong>{{ product_var.price | money }}</strong></div>
+            <div class="pp__price-card" data-pp-card>ou <strong>2x de {{ pp_2x | money }}</strong> sem juros no cartão</div>
             <div class="pp__price-more">até 4x com juros</div>
           </div>
         </div>
@@ -260,7 +256,7 @@
                 {%- elsif option.values.size <= 6 -%}
                   {%- comment -%}
                     Cartoes de variante: o cliente ve "Padrão" e "Combo" lado a
-                    lado, com o preco Pix de cada um quando o produto tem uma
+                    lado, com o preco de cada um quando o produto tem uma
                     opcao so (aí cada valor e exatamente uma variante). Com duas
                     ou mais opcoes o preco depende do cruzamento e fica so no
                     bloco de preco, que o JS atualiza.
@@ -295,7 +291,7 @@
                         >
                         <span class="pp__vcard-name">{{ value }}</span>
                         {%- if wx_val_price != nil and wx_val_price > 0 -%}
-                          <span class="pp__vcard-price">{{ wx_val_price | times: pp_pix_mult | divided_by: 100.0 | round | money }} <em>no Pix</em></span>
+                          <span class="pp__vcard-price">{{ wx_val_price | money }}</span>
                         {%- endif -%}
                         {%- if wx_val_down contains 'breve' -%}
                           <span class="pp__vcard-oos">Em breve</span>
@@ -457,7 +453,7 @@
             {%- if cs.featured_media -%}{{ cs.featured_media | image_url: width: 140 | image_tag: loading: 'lazy', class: 'pp__cross-img', alt: cs.title }}{%- endif -%}
             <span class="pp__cross-info">
               <span class="pp__cross-name">{{ cs.title }}</span>
-              <span class="pp__cross-price">{{ cs.price | times: pp_pix_mult | divided_by: 100.0 | round | money }} no Pix</span>
+              <span class="pp__cross-price">{{ cs.price | money }}</span>
             </span>
             <span class="pp__cross-add" aria-hidden="true">+</span>
           </a>
@@ -521,7 +517,7 @@
         {{ product.featured_media | image_url: width: 96 | image_tag: loading: 'lazy', class: 'pp__sticky-img', alt: '' }}
       {%- endif -%}
       <div class="pp__sticky-info">
-        <strong class="pp__sticky-price" data-pp-sticky-price>{{ pp_pix | money }} no Pix</strong>
+        <strong class="pp__sticky-price" data-pp-sticky-price>{{ product_var.price | money }}</strong>
         <span class="pp__sticky-title">{{ product.title }}</span>
       </div>
       <button type="button" class="pp__sticky-add" data-pp-sticky-add {% unless product_var.available %}disabled{% endunless %}>
@@ -663,10 +659,8 @@
   .pp__head { display: flex; flex-direction: column; align-items: flex-start; gap: .4rem; }
   .pp__eyebrow { margin: 0; font-size: .82rem; font-weight: 700; letter-spacing: .04em; color: #6e6e73; }
   .pp__pricebox { display: flex; flex-direction: column; align-items: flex-start; }
-  .pp__price-pix { color: #c2410c; font-size: clamp(1.25rem, 1rem + .9vw, 1.7rem); font-weight: 700; white-space: nowrap; line-height: 1.2; }
-  .pp__pix-tag { display: inline-block; margin-left: .5rem; padding: .16rem .6rem; border-radius: 999px; background: #ff8a1f; color: #0a0a0a; font-size: .68rem; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; vertical-align: middle; }
+  .pp__price-main { color: #c2410c; font-size: clamp(1.25rem, 1rem + .9vw, 1.7rem); font-weight: 700; white-space: nowrap; line-height: 1.2; }
   .pp__price-card { color: #0a0a0a; font-size: .98rem; font-weight: 500; margin-top: 4px; white-space: nowrap; }
-  .pp__price-base { color: #4a4a4f; font-weight: 500; }
   .pp__price-more { color: #4a4a4f; font-size: .85rem; font-weight: 500; margin-top: 2px; }
   .pp__title { font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.3rem); line-height: 1.1; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
   /* nome e estrelas na mesma linha; nome longo empurra as estrelas para a
@@ -771,10 +765,20 @@
   @media (prefers-reduced-motion: reduce) { .pp__stock-link { transition: none; } }
   .pp__stock-prazo { font-weight: 500; color: #6e6e73; }
   .pp__dot { width: 8px; height: 8px; border-radius: 999px; background: #1d7a3a; box-shadow: 0 0 0 3px rgba(29,122,58,.15); }
+  /* a bolinha verde pulsa (pedido do dono, 10/10/2026): so o anel cresce e
+     some, num ciclo de 2 s — box-shadow numa area de 8 px e barato de
+     pintar. A cinza, sem estoque, fica parada. */
+  .pp__dot:not(.pp__dot--out):not(.pp__dot--low) { animation: pp-pulso 2s ease-out infinite; }
+  @keyframes pp-pulso {
+    0% { box-shadow: 0 0 0 0 rgba(29,122,58,.45); }
+    70% { box-shadow: 0 0 0 7px rgba(29,122,58,0); }
+    100% { box-shadow: 0 0 0 0 rgba(29,122,58,0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .pp__dot { animation: none !important; } }
   .pp__stock--low, .pp__dot--low { color: #b45309; }
   .pp__dot--low { background: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,.18); }
   .pp__stock--out, .pp__dot--out { color: #6e6e73; }
-  .pp__dot--out { background: #9a9a9a; box-shadow: none; }
+  .pp__dot--out { background: #9a9a9a; box-shadow: none; animation: none; }
 
   .pp__pagamento { margin: 0; text-align: center; font-size: .82rem; line-height: 1.5; color: #6e6e73; }
 
@@ -837,7 +841,7 @@
 
   /* celular estreito: preco pode quebrar linha em vez de vazar */
   @media screen and (max-width: 480px) {
-    .pp__price-pix, .pp__price-card, .pp__price-more, .pp__price { white-space: normal; }
+    .pp__price-main, .pp__price-card, .pp__price-more, .pp__price { white-space: normal; }
     .pp__stage { border-radius: 18px; }
     .pp__cards { grid-template-columns: 1fr 1fr; }
   }
@@ -1003,9 +1007,7 @@
         let variants = [];
         try { variants = JSON.parse(dataEl.textContent); } catch (e) {}
         const idInput = sec.querySelector('[data-pp-id]');
-        const priceBox = sec.querySelector('.pp__pricebox');
-        const PIX_PCT = parseInt((priceBox && priceBox.dataset.ppPixPct) || '5', 10);
-        const pixEl = sec.querySelector('[data-pp-pix]');
+        const priceEl = sec.querySelector('[data-pp-price]');
         const cardEl = sec.querySelector('[data-pp-card]');
         const addBtn = sec.querySelector('[data-pp-add]');
         const addText = sec.querySelector('[data-pp-add-text]');
@@ -1069,14 +1071,9 @@
           });
           if (!match) return;
           if (idInput) idInput.value = match.id;
-          const pix = Math.round(match.price * (100 - PIX_PCT) / 100);
-          if (pixEl) {
-            pixEl.innerHTML = '<strong>' + money(pix) + '</strong> no Pix <span class="pp__pix-tag">' + PIX_PCT + '% de desconto</span>';
-          }
-          if (cardEl) {
-            cardEl.innerHTML = 'ou <strong>2x de ' + money(Math.round(match.price / 2)) + '</strong> sem juros no cartão <span class="pp__price-base">(' + money(match.price) + ')</span>';
-          }
-          if (stickyPrice) stickyPrice.textContent = money(pix) + ' no Pix';
+          if (priceEl) priceEl.innerHTML = '<strong>' + money(match.price) + '</strong>';
+          if (cardEl) cardEl.innerHTML = 'ou <strong>2x de ' + money(Math.round(match.price / 2)) + '</strong> sem juros no cartão';
+          if (stickyPrice) stickyPrice.textContent = money(match.price);
           const label = addBtn ? (addBtn.getAttribute('data-label') || 'Adicionar ao carrinho') : 'Adicionar ao carrinho';
           if (addBtn) {
             addBtn.disabled = !match.available;

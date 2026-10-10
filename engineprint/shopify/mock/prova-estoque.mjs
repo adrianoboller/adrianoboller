@@ -57,6 +57,9 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
       centro: Math.abs((r.left + r.right) / 2 - (b.left + b.right) / 2),
       cor: getComputedStyle(a).color, sublinhado: getComputedStyle(a).textDecorationLine,
       bolinha: (() => { const d = a.querySelector('.pp__dot'); return d ? getComputedStyle(d).backgroundColor : null; })(),
+      pulso: (() => { const d = a.querySelector('.pp__dot'); return d ? getComputedStyle(d).animationName + ' ' + getComputedStyle(d).animationDuration : null; })(),
+      precoTexto: (document.querySelector('.pp__pricebox') || { innerText: '' }).innerText.replace(/\s+/g, ' ').trim(),
+      secaoTexto: (document.querySelector('.pp') || { innerText: '' }).innerText,
       icone: !!a.querySelector('svg'),
       transicao: getComputedStyle(a).transitionProperty + ' ' + getComputedStyle(a).transitionDuration + ' ' + getComputedStyle(a).transitionTimingFunction,
     } : null;
@@ -72,6 +75,11 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
   confere(m.centro <= 2, `${w}px: centrado sob o botao (desvio ${m.centro.toFixed(1)} px)`);
   confere(m.sublinhado.includes('underline'), `${w}px: sublinhado, para parecer link (${m.sublinhado})`);
   confere(m.bolinha === 'rgb(29, 122, 58)' && !m.icone, `${w}px: a bolinha verde de antes, sem icone (${m.bolinha}, icone ${m.icone})`);
+  confere(/^pp-pulso 2s$/.test(m.pulso || ''), `${w}px: a bolinha verde pulsa (${m.pulso})`);
+  // o Pix saiu (10/10/2026): nem desconto nem "no Pix" em lugar nenhum da secao
+  const sobras = (m.secaoTexto.match(/no Pix|% de desconto/gi) || []).length;
+  confere(sobras === 0, `${w}px: nenhuma mencao a desconto no Pix na secao (${sobras})`);
+  confere(/^R\$ [\d.]+,\d\d ou 2x de R\$ [\d.]+,\d\d sem juros no cartão até 4x com juros$/.test(m.precoTexto), `${w}px: preco a vista e 2x, sem Pix ("${m.precoTexto}")`);
 
   /* Passar o mouse: a cor nao muda, o link cresce ~5% e a transicao e
      suave — medido contando quantas larguras DISTINTAS aparecem em 20
@@ -132,8 +140,8 @@ for (const [w, h] of [[390, 844], [1280, 900]]) {
     const s = await page.evaluate(() => ({ link: !!document.querySelector('[data-pp-wa]'), texto: document.querySelector('[data-pp-stock]').innerText.trim() }));
     confere(!s.link && s.texto === 'Em estoque', `${w}px sem numero: volta "${s.texto}" sem link`);
     // e o estado sem estoque da bolinha: cinza, sem anel — a mesma regra de antes
-    const cinza = await page.evaluate(() => { const d = document.querySelector('[data-pp-stock] .pp__dot'); d.classList.add('pp__dot--out'); const c = getComputedStyle(d); return c.backgroundColor + ' / ' + c.boxShadow; });
-    confere(cinza === 'rgb(154, 154, 154) / none', `${w}px sem estoque: bolinha cinza estatica (${cinza})`);
+    const cinza = await page.evaluate(() => { const d = document.querySelector('[data-pp-stock] .pp__dot'); d.classList.add('pp__dot--out'); const c = getComputedStyle(d); return c.backgroundColor + ' / ' + c.boxShadow + ' / ' + c.animationName; });
+    confere(cinza === 'rgb(154, 154, 154) / none / none', `${w}px sem estoque: bolinha cinza estatica, sem pulso (${cinza})`);
   }
   await page.context().close();
 }
