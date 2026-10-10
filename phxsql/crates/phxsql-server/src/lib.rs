@@ -43,6 +43,7 @@ pub mod ligacoes;
 pub mod mcp;
 pub mod mensagens;
 pub mod ocorrencias;
+pub mod perfis;
 pub mod pg;
 pub mod pivot;
 pub mod plano_largo;

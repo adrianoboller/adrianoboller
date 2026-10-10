@@ -108,16 +108,26 @@ impl Servidor {
         // lista de perigo, sem a sessao liberada pela senha de execucao, nao
         // chega nem a contar como escrita local. Mora AQUI pelo motivo do
         // observador logo abaixo -- os tres irmaos passam por este ponto.
+        // O perfil habitual (765, P7) mora AQUI porque aqui passam os tres
+        // irmaos, e os passos que a op `sql` produz chegam com a op e a
+        // tabela de verdade. Antes da camada de cima de proposito: o perfil
+        // e do que a pessoa PEDE, e o comando perigoso que a camada recusa
+        // e justamente o pedido fora do habito. O portao -- a telemetria
+        // ligada -- vem antes de tudo: desligada, o pedido paga esta leitura
+        // e nada mais.
+        if self.telemetria.ligada() {
+            self.perfil_do_pedido(op, pedido, sessao);
+        }
         let liberado = self.protecao_do_pedido(op, pedido, sessao)?;
         // O observador de injecao (495, F3) mora AQUI porque aqui passam os
         // tres irmaos -- a rede, a op `sql` derivada e o job -- e porque so
         // aqui se ve o desfecho dos dois lados. O portao e o `bool`, antes
         // de tudo; a vez abre antes do `executar` porque e la dentro que a
         // analise entrega as classes (`crate::injecao`).
-        let vez = self
-            .config
-            .politica
-            .observar_injecao_sql
+        // A P8 do 766 abre a vez tambem: contar a forma para bloquear
+        // precisa da mesma classificacao, e nao de uma segunda.
+        let vez = (self.config.politica.observar_injecao_sql
+            || self.config.protecao.bloquear_por_codigo)
             .then(crate::injecao::abrir);
         // A conta entra ANTES da escrita e sai se ela falhar (pedido 630,
         // corrigido em 02/10/2026): contar depois deixava uma janela entre
@@ -633,10 +643,15 @@ impl Servidor {
     /// resposta, nao recusa, nao bloqueia: so registra, para quem
     /// administra. O `dados` e o pedido inteiro, que a camada redige
     /// ANALISANDO -- o texto do SQL normalizado, todo valor `?`.
+    ///
+    /// As classes ficam tambem para o `despachar_o_pedido` (pedido 766, P8),
+    /// que tem o IP e a sessao para mudar -- e e la que elas contam, quando
+    /// `protecao.bloquear_por_codigo` pede.
     fn acusar_injecao(&self, sinais: phxsql_sql::Sinais, pedido: &Json) {
         if sinais.vazio() {
             return;
         }
+        super::SINAIS_DO_PEDIDO.with(|c| c.set(sinais));
         crate::telemetria::sinal_com_sinais(
             crate::aquario::Alarme::InjecaoSuspeita,
             &pedido.escrever(),

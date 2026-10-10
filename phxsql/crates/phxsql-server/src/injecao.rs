@@ -26,7 +26,9 @@
 //!
 //! # O preco
 //!
-//! O portao e o `bool` `seguranca.observar_injecao_sql`, lido ANTES de tudo
+//! O portao e o `bool` `seguranca.observar_injecao_sql` -- ou o
+//! `protecao.bloquear_por_codigo` do 766 (P8), que conta as mesmas classes
+//! para bloquear e por isso abre a mesma vez --, lido ANTES de tudo
 //! no gancho: desligado, nada daqui roda e a profundidade fica em zero, entao
 //! a op `sql` e os campos de expressao tambem nao classificam nada (uma
 //! leitura de `thread_local` cada). Ligado, o pedido comum paga a

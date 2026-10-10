@@ -527,6 +527,12 @@ struct Sessao {
     /// Nesta fatia (P1) nada a preenche fora dos testes: quem libera e a P14,
     /// a da segunda senha. Sem liberacao, o comando perigoso recusa.
     execucao_liberada: Option<LiberacaoDeExecucao>,
+    /// A camada de protecao encerrou esta sessao (pedido 766, P8): o pedido
+    /// com forma de injecao chegou ao limite. A identidade ja saiu daqui; a
+    /// marca fica para a porta HTTP, que guarda a sessao FORA desta copia
+    /// (`http::Sessoes`), encerra-la tambem -- ver
+    /// `Servidor::fim_da_sessao_web_pela_protecao`.
+    encerrada_pela_protecao: bool,
 }
 
 /// O que a senha de execucao liberou: para quem e de onde. Ver
@@ -538,6 +544,17 @@ struct LiberacaoDeExecucao {
 }
 
 impl Sessao {
+    /// A camada de protecao encerra a sessao (pedido 766, P8): o mesmo que o
+    /// `sair` faz, e mais a marca para a porta HTTP. A conexao continua de
+    /// pe -- derrubar o soquete seria um erro de REDE para uma decisao de
+    /// sessao --, e o proximo pedido dela recebe o «faca login».
+    fn encerrar_pela_protecao(&mut self) {
+        self.usuario = None;
+        self.desafio = None;
+        self.execucao_liberada = None;
+        self.encerrada_pela_protecao = true;
+    }
+
     /// A sessao esta liberada pela senha de execucao? So para a mesma
     /// identidade e o mesmo IP de quando foi liberada.
     fn execucao_liberada(&self) -> bool {
@@ -656,6 +673,10 @@ pub struct Servidor {
     /// fora da lista negra: o login escreve aqui e o `barrado()` de toda
     /// conexao nao espera por isso.
     ips_vistos: Mutex<crate::ips_vistos::IpsVistos>,
+    /// O perfil habitual de cada usuario (pedido 765, P7): so observa, e so
+    /// com a telemetria ligada. Mutex proprio pelo motivo do de cima: o
+    /// pedido escreve aqui sem nada mais na mao.
+    perfis: Mutex<crate::perfis::Perfis>,
     /// Sessoes do navegador. Vazio enquanto a interface web estiver desligada.
     sessoes: Mutex<http::Sessoes>,
     /// Tabelas residentes em RAM, por "database/tabela". Nada entra aqui
@@ -1399,6 +1420,7 @@ impl Servidor {
         // O quorum do pedido (207) nasce limpo: o de um pedido anterior desta
         // thread nao pode vazar para a resposta deste.
         QUORUM_DO_PEDIDO.with(|q| q.borrow_mut().take());
+        SINAIS_DO_PEDIDO.with(|c| c.set(phxsql_sql::Sinais::NENHUM));
         // O prazo de COMANDO (765, P2), armado aqui porque este e o UNICO
         // ponto por onde passa cada pedido de cada porta -- dados, `/api`,
         // REST e MCP -- uma vez, e antes dos pedidos derivados: o prazo e do
@@ -1423,6 +1445,12 @@ impl Servidor {
             if let Ok(j) = &mut resultado {
                 self.por_o_quorum_na_resposta(j, &q);
             }
+        }
+        // O perfil habitual (765, P7) vai ao disco daqui, e nao de onde o
+        // pedido entrou nele: aqui nao ha trava de dados na mao, e o `fsync`
+        // da troca duravel nao pode acontecer com ela. O portao antes.
+        if self.telemetria.ligada() {
+            self.gravar_os_perfis();
         }
         (op, autenticado, resultado)
     }
@@ -1695,6 +1723,31 @@ impl Servidor {
         // a escrita local na replica se conta so DEPOIS dele, com `Ok`
         // (pedido 630).
         let r = self.executar_e_contar_escrita_local(&op, &pedido, sessao);
+        let sinais = SINAIS_DO_PEDIDO.with(|c| c.replace(phxsql_sql::Sinais::NENHUM));
+
+        // Pedido 766, P8 -- a forma de injecao conta para bloquear, pedida.
+        //
+        // A ocorrencia `InjecaoSuspeita` (as quatro classes, no sucesso E no
+        // erro) passa a contar como tentativa leve quando
+        // `protecao.bloquear_por_codigo` esta ligado. Nao e uma politica
+        // nova: e o `violacao_leve` de sempre, e com ele as guardas de nao se
+        // trancar (P9), o escalonamento (P10) e o firewall (P11).
+        //
+        // No limite -- bloqueando OU poupado pela guarda --, a sessao do
+        // usuario termina: o IP que a guarda poupou (o loopback, o NAT de
+        // muitos, o de quem administra) nao vai ao firewall, e sem isto quem
+        // disparou as cinco tautologias seguiria autenticado na mesma
+        // conexao. A sessao que termina e a deste pedido; quem divide o IP
+        // nao perde nada.
+        let contado_pelo_codigo =
+            self.config.protecao.bloquear_por_codigo && !sinais.vazio() && !ip.is_empty();
+        if contado_pelo_codigo {
+            let classes: Vec<&str> = sinais.nomes().collect();
+            let motivo = format!("codigo malicioso ({})", classes.join(", "));
+            if self.violacao_leve(ip, &op, &motivo).chegou_ao_limite() {
+                sessao.encerrar_pela_protecao();
+            }
+        }
 
         // Pedido 215 -- a injecao de SQL que ninguem bloqueava.
         //
@@ -1707,7 +1760,11 @@ impl Servidor {
         // Nao ha portao novo: quem conta e o `violacao_leve` de sempre, com o
         // `tentativas_ate_bloquear` e a `janela_minutos` da mesma politica --
         // o mesmo caminho do token invalido e da credencial errada.
+        //
+        // Com a P8 contando, este vira o caso particular dela (o empilhado e
+        // uma das quatro classes): o mesmo pedido nao conta duas vezes.
         if self.config.politica.contar_injecao_sql
+            && !contado_pelo_codigo
             && r.is_err()
             && op == "sql"
             && !ip.is_empty()
@@ -2382,6 +2439,15 @@ thread_local! {
     /// e o `Drop` da trava, que nao tem a resposta na mao.
     static QUORUM_DO_PEDIDO: std::cell::RefCell<Option<crate::quorum::Resultado>> =
         const { std::cell::RefCell::new(None) };
+
+    /// As classes de injecao que o observador acusou no pedido de fora
+    /// (pedido 766, P8), que o `despachar_o_pedido` le para contar. Por
+    /// thread pelo molde do `QUORUM_DO_PEDIDO`: quem acusa e o
+    /// `executar_e_contar_escrita_local`, que so recebe a sessao para ler e
+    /// nao tem o IP do pedido -- e o job, que passa por la sem IP, nunca e
+    /// lido por ninguem (o `despachar_o_pedido` zera na entrada).
+    static SINAIS_DO_PEDIDO: std::cell::Cell<phxsql_sql::Sinais> =
+        const { std::cell::Cell::new(phxsql_sql::Sinais::NENHUM) };
 }
 
 /// O abraco mortal com a propria trava, transformado em erro.
@@ -2791,6 +2857,7 @@ fontes_do_servidor! {
     "servidor/testes_do_memo_estragado_no_atualizar.rs",
     "servidor/testes_do_observador.rs",
     "servidor/testes_do_panico_sob_a_trava.rs",
+    "servidor/testes_do_perfil_e_do_codigo.rs",
     "servidor/testes_do_plano_largo.rs",
     "servidor/testes_do_prazo_de_comando.rs",
     "servidor/testes_do_pular_manual.rs",
@@ -3170,6 +3237,9 @@ mod testes_dos_produtores_779;
 
 #[cfg(test)]
 mod testes_da_protecao_766;
+
+#[cfg(test)]
+mod testes_do_perfil_e_do_codigo;
 
 #[cfg(test)]
 mod testes_da_guarda_da_protecao;

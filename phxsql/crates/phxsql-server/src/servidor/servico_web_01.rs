@@ -1136,6 +1136,7 @@ impl Servidor {
         if resultado.is_ok() {
             self.acertar_sessao(op, &sessao, &mut id_sessao, agora);
         }
+        self.fim_da_sessao_web_pela_protecao(&sessao, &mut id_sessao);
 
         let (codigo_http, mut campos) = match &resultado {
             Ok(valor) => (
@@ -1397,6 +1398,24 @@ impl Servidor {
     /// (pedido 719 -- ver `girar_sessao`), o `sair` a encerra e o
     /// `trancar_execucao` tira a liberacao da senha de execucao (767). Esta funcao e chamada pelos DOIS caminhos HTTP -- ver
     /// `sessao_do_cabecalho` para o motivo de nao haver duas copias.
+    /// A sessao que a camada de protecao encerrou (pedido 766, P8) morre
+    /// tambem no `http::Sessoes`: a copia do `despachar` ja perdeu a
+    /// identidade, mas o id do navegador continuaria valendo no clique
+    /// seguinte. UM lugar para as duas portas HTTP que despacham local -- a
+    /// `/api` e o REST --, pelo mesmo motivo do `acertar_sessao`.
+    pub(super) fn fim_da_sessao_web_pela_protecao(&self, sessao: &Sessao, id_sessao: &mut String) {
+        if !sessao.encerrada_pela_protecao || id_sessao.is_empty() {
+            return;
+        }
+        if let Ok(mut vivas) = self.sessoes.lock() {
+            vivas.encerrar(id_sessao);
+        }
+        if let Ok(mut r) = self.remotos.lock() {
+            r.remove(id_sessao.as_str());
+        }
+        id_sessao.clear();
+    }
+
     fn acertar_sessao(&self, op: &str, sessao: &Sessao, id_sessao: &mut String, agora: i64) {
         let duracao = self.config.web.sessao_ms();
         match op {
@@ -1668,6 +1687,7 @@ impl Servidor {
         if resultado.is_ok() && !remota {
             self.acertar_sessao(&op, &sessao, &mut id_sessao, agora);
         }
+        self.fim_da_sessao_web_pela_protecao(&sessao, &mut id_sessao);
 
         let mut campos = match &resultado {
             Ok(valor) => vec![

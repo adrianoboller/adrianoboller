@@ -4554,6 +4554,24 @@ telefone, supervisor e o poder sobre cada base. A SENHA E GUARDADA COMO HASH.
     ips-vistos.jsonl, ao lado do acessos.log, semeada do acessos.log no
     primeiro arranque.
 
+    FORA DO PERFIL: com a telemetria ligada, cada usuario ganha um perfil
+    habitual -- quantos pedidos de cada (categoria, base, tabela) e em que
+    hora UTC. Depois de 7 dias e 200 pedidos, a combinacao nunca vista ou a
+    hora com menos de 1% da massa vira a ocorrencia amarela fora_do_perfil.
+    So observa: nada e recusado. A memoria e o perfis.jsonl, ao lado do
+    acessos.log (1.000 usuarios, 256 combinacoes cada; so metadado).
+
+    CODIGO MALICIOSO CONTA PARA BLOQUEAR, se pedido:
+
+        "protecao": { "bloquear_por_codigo": true }
+
+    O pedido com forma de injecao (a ocorrencia injecao_suspeita) passa a
+    contar como tentativa leve, pela mesma politica de cima: 5 em 10 min
+    bloqueiam, com as guardas, o escalonamento e o firewall. No limite, a
+    sessao de quem mandou termina -- inclusive quando a guarda poupou o IP.
+    Nasce false: a aplicacao que monta SQL concatenando texto dispara a
+    forma sem ser ataque, e trancaria o proprio IP de fabrica.
+
 15.3 A lista de bloqueio
 
     O blacklist.json guarda IP, data e hora, motivo, comando e ate quando:

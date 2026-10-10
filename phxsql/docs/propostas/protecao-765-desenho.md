@@ -433,6 +433,61 @@ baixar a linha) e o MANUAL — P15; a isenção da réplica no P13 provada contr
 um nó réplica de verdade (o teste usa só o papel isolado); o `restaurar_backup`
 de `phxsys` provado de ponta a ponta (provado só na classificação).
 
+### 6.3 P7 e P8 — o que o papel B entregou, e o RED (10/10/2026)
+
+Provas em `servidor/testes_do_perfil_e_do_codigo.rs`, `perfis::testes` e
+`config::testes_da_protecao`; 19 entradas novas no catálogo, provadas pelo
+provador com `--so` (verde na árvore limpa, cada defeito reposto derruba o
+`caem` e deixa o `seguem` de pé).
+
+**Decisões desta fatia, com o motivo:**
+
+- **P7, a categoria sai do motor da permissão** (`Atividade::da_operacao`),
+  dobrada nas classes do pgaudit. Diverge num nome: ROLE vira `administrar`,
+  porque o `Administrar` daqui junta o cadastro com a DDL destrutiva.
+- **P7, onde mora:** no `executar_e_contar_escrita_local`, por onde passam os
+  três irmãos, e ANTES da camada de proteção — o comando perigoso recusado é
+  justamente o pedido fora do hábito. A op `sql` entra pelos passos (com a op e
+  a tabela de verdade); o caminho sem IP (job, rotina, réplica) fica fora.
+- **P7, o disco:** reescrita inteira pela troca durável no máximo 1×/min,
+  chamada do `despachar` (fora de toda trava de dados) e com o corpo montado
+  sob o `Mutex` e escrito fora dele. Uma queda perde ≤ 1 min de aprendizado.
+- **P7, o ruído:** a hora rara e o perfil cheio acusam no máximo 1×/hora de
+  relógio por usuário; a combinação nova acusa uma vez e entra no perfil.
+- **P8, um portão de classificação só:** ligada, a P8 abre a mesma vez do
+  observador do 495, mesmo com ele desligado; o `contar_injecao_sql` velho
+  vira caso particular e não conta o mesmo pedido duas vezes.
+- **P8, a sessão que termina:** no limite — bloqueando ou poupado —, a
+  identidade sai da sessão (a conexão fica de pé e o próximo pedido recebe o
+  «faça login») e a sessão web morre no `http::Sessoes`. É o «de fora» da P9.
+
+| guarda | defeito reposto | caiu |
+|---|---|---|
+| `perfil-sem-produtor` | sem a chamada `perfil_do_pedido` | o aceite (300 leituras + excluir) |
+| `perfil-sem-portao-da-telemetria` | o portão vira `true` | `com_a_telemetria_desligada_o_perfil_nao_nasce` |
+| `perfil-sem-piso-de-pedidos` | sem o piso de 200 | os dois «menos de 200» |
+| `perfil-acusa-o-habitual` | toda combinação é nova | o aceite e o unitário |
+| `perfil-sem-teto-por-hora` | sem a marca da hora | a hora rara; o perfil cheio |
+| `perfil-sem-teto-de-combinacoes` | `cabe` sempre | o perfil cheio |
+| `perfil-so-em-memoria` | `escrever` não grava | o reinício |
+| `perfil-conta-a-op-sql` | a op `sql` conta | `a_op_sql_entra_pelos_passos…` |
+| `perfil-conta-o-caminho-sem-ip` | sem IP conta | idem |
+| `perfil-depois-da-camada` | o perfil depois do `?` da camada | o perigoso recusado |
+| `p8-bloquear-nasce-ligado` | fábrica `true` | 50 tautologias desligado |
+| `p8-codigo-nao-conta` | sem o `violacao_leve` | 5 tautologias ligado |
+| `p8-poupado-segue-autenticado` | sem encerrar a sessão | o poupado; o ligado |
+| `p8-conta-sem-classe` | conta todo pedido `sql` | a pergunta comum |
+| `p8-empilhado-conta-duas-vezes` | sem o `!contado_pelo_codigo` | as duas ligadas |
+| `p8-interruptor-sem-leitor` | o campo não é lido | o leitor do config |
+| `p8-sessao-web-sobrevive` | o helper não encerra | a sessão web |
+| `p8-so-o-observador-classifica` | a vez só pelo 495 | sem o observador |
+| `p8-classes-nao-entregues` | as classes não chegam ao `despachar` | 5 tautologias ligado |
+
+**De fora, e por quê:** a tela do perfil (P15); os números 7/200/1% medidos
+contra tráfego real (L2 — seguem raciocinados); a sessão web encerrada provada
+pelo helper e não por uma requisição HTTP de ponta a ponta; o perfil não tem
+op de leitura (só o arquivo e a ocorrência).
+
 ## 7. Choque com pétrea?
 
 **Nenhum.** «Guarda nova entra pedida»: tudo nasce `observar` (não muda resposta), o `bloquear_por_codigo`

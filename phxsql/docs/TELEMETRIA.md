@@ -1370,6 +1370,7 @@ declarados). Uma linha do produtor único em cada fato:
 | `SenhaEmClaro` | `conferir_o_fio_da_senha`, na recusa (pedido 779): o login local e o remoto pela web passam por ela. `dados` é o texto fixo `login` — nada do pedido |
 | `IntegridadeRecusada` | o `anotar`, pelos códigos `CODIGOS_DE_INTEGRIDADE` (3002 duplicado, 3004 conflito, 3006 integridade), no mesmo ponto e pelo mesmo motivo do 1001: quem recusa é o `store`/`core`, que não vê a telemetria (pedido 779) |
 | `IpNovo` | `Servidor::ip_visto_no_login`, no `login` que deu certo: a primeira vez de (usuário, database, IP) em 90 dias, pela memória do `ips-vistos.jsonl` (FORMATO §28; pedido 765, P6). Amarelo, grupo `seguranca`, bit 15. `dados` = o login |
+| `ForaDoPerfil` | `Servidor::perfil_do_pedido`, no `executar_e_contar_escrita_local` (os três irmãos), só com a telemetria ligada: depois de 7 dias e 200 pedidos, a combinação (categoria, database, tabela) nunca vista, ou a hora UTC com menos de 1 % da massa — pelo `perfis.jsonl` (FORMATO §32; pedido 765, P7). Amarelo, grupo `seguranca`, bit 16. Só observa. `dados` = motivo, categoria, database e tabela, separados por espaço; nunca valor |
 
 Os alarmes do **arranque** saem depois de `ocorrencias::instalar`: o fato é de
 antes, mas sinalizado lá a ocorrência iria à camada de outro servidor do

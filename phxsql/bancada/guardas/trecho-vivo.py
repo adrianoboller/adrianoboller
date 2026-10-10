@@ -988,7 +988,15 @@ TETO_TESTE_SEM_MODULO = 0
 # sem teto e a de 60 min, a politica de senha frouxa e a que ninguem chamava,
 # e o valor velho escrito valendo calado. Provadas com `--so` nas sete.
 # 947 = 940 (P12/P13) + 7 (770), somados na integracao.
-PISO_DAS_ENTRADAS = 947
+# +19 (pedidos 765/766 P7 e P8, 10/10/2026): 10 do perfil habitual (o
+# produtor, o portao da telemetria, os pisos de 200 pedidos, o habitual que
+# nao acusa, o teto por hora, o teto de combinacoes, o arquivo, a op `sql`
+# pelos passos, o caminho sem IP e o recusado pela camada) e 9 do codigo
+# malicioso que conta (nasce
+# desligado, conta, a sessao do poupado termina, so a forma conta, o
+# empilhado uma vez, o leitor do interruptor, a sessao web, a classificacao
+# sem o observador e a entrega das classes). Provadas com `--so` nas 19.
+PISO_DAS_ENTRADAS = 966
 
 # ------------------------------------------------------------- APOSENTADAS
 #

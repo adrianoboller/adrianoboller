@@ -5115,3 +5115,48 @@ grade a edita, o diário registra quem mudou, o backup a leva.
   `restaurar`, copiar/renomear para ela, restaurar o backup de `phxsys`) —
   exige a sessão liberada. Subir pelo `inserir`, `atualizar` ou `excluir`
   nunca exige.
+
+## 32. `perfis.jsonl` — o perfil habitual de cada usuário (pedido 765, P7)
+
+JSON Lines ao lado do `acessos.log`, **0600** pelo motor da permissão do banco
+(o hábito de cada login é dado de acesso, como o próprio log). **Uma linha por
+usuário**, e o arquivo é **reescrito inteiro** pela troca durável
+(`gravar_duravel`) no máximo uma vez por minuto, pelo `despachar` e fora de
+toda trava de dados — uma linha acrescentada por pedido seria um `fsync` por
+pedido. Leitor e escritor: `crates/phxsql-server/src/perfis.rs`.
+
+```json
+{"usuario":"ana","primeiro_ms":1791551101500,"n":301,"horas":[0,0,0,0,0,0,0,0,0,12,40,…],"combinacoes":[["escrever","b","folha",1],["ler","b","clientes",300]],"coringa":0}
+```
+
+| campo | o que é |
+|---|---|
+| `usuario` | o login. Linha sem ele é ignorada |
+| `primeiro_ms` | o primeiro pedido que o perfil viu — conta os 7 dias de história |
+| `n` | quantos pedidos o perfil viu |
+| `horas` | 24 contagens, uma por hora **UTC** (o motor não tem fuso; a tela converte) |
+| `combinacoes` | `[categoria, database, tabela, contagem]`. A categoria sai de `Atividade::da_operacao`, dobrada nas classes do pgaudit: `ler`, `escrever`, `ddl`, `administrar`, `outros`. Nome de database e tabela cortado em **64 bytes** |
+| `coringa` | pedidos de combinação nova que não couberam no perfil cheio |
+
+**O que entra:** só com a **telemetria ligada** (o portão vem antes do
+trabalho), só pedido de **usuário** numa **conexão com IP** — o serviço pelo
+token, o job, a rotina interna e a réplica ficam fora —, e a op `sql` pelos
+**passos** que ela produz, com a op e a tabela de verdade. **Nenhum valor de
+linha nem texto de SQL**: só metadado.
+
+**Quem lê:** só o servidor. Depois de **7 dias e 200 pedidos** de história, a
+combinação nunca vista, ou a hora com menos de **1 %** da massa, vira a
+ocorrência amarela `ForaDoPerfil` (grupo `seguranca`, bit 16). Só observa: a
+resposta não muda. Números raciocinados, não medidos (L2 do desenho).
+
+**Teto:** 1.000 perfis e 256 combinações por perfil. O usuário que não cabe não
+ganha perfil (e não é acusado); a combinação que não cabe conta no `coringa` e
+segue acusada, no máximo uma vez por hora de relógio. **Arquivo ausente** nasce
+vazio (sem semente: o perfil precisa de 7 dias de qualquer jeito); linha torta
+é ignorada; arquivo que não se lê por E/S faz o servidor **avisar e subir** com
+a memória vazia. Uma queda perde no máximo o último minuto de aprendizado.
+
+O interruptor da P8 (pedido 766) não tem arquivo próprio:
+`protecao.bloquear_por_codigo` (fábrica `false`) faz a ocorrência
+`InjecaoSuspeita` contar como tentativa leve pela política de bloqueio que já
+existe (§29).

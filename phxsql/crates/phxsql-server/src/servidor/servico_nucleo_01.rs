@@ -268,6 +268,20 @@ impl Servidor {
                 crate::ips_vistos::IpsVistos::default()
             })
         };
+        // O perfil habitual (pedido 765, P7), ao lado da memoria de IPs e
+        // pelo mesmo motivo de nao derrubar o arranque: e aviso.
+        let perfis = {
+            let caminho = config
+                .log_acessos
+                .with_file_name(crate::perfis::NOME_DO_ARQUIVO);
+            crate::perfis::Perfis::abrir(&caminho, crate::agora_ms()).unwrap_or_else(|e| {
+                eprintln!(
+                    "AVISO: o perfil habitual ({}) nao abriu: {e}",
+                    caminho.display()
+                );
+                crate::perfis::Perfis::default()
+            })
+        };
         // Com a chave mestra do cadastro (pedido 372). A chave que falta, ou
         // a errada, NAO recusa aqui: tranca so as ligacoes cifradas, e o aviso
         // ja saiu pela lista do `Config::ler`. E o arquivo torto, o formato
@@ -408,6 +422,7 @@ impl Servidor {
             log: Mutex::new(log),
             lista_negra: Mutex::new(lista_negra),
             ips_vistos: Mutex::new(ips_vistos),
+            perfis: Mutex::new(perfis),
             sessoes: Mutex::new(http::Sessoes::default()),
             residentes: Mutex::new(HashMap::new()),
             remotos: Mutex::new(HashMap::new()),

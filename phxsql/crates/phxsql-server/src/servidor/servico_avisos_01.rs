@@ -368,6 +368,60 @@ impl Servidor {
         }
     }
 
+    /// O pedido vai ao perfil habitual do usuario (pedido 765, P7), e o
+    /// desvio vira a ocorrencia amarela `ForaDoPerfil`. So observa: a
+    /// resposta ja esta pronta e nao muda.
+    ///
+    /// Quem chama ja olhou o portao -- a telemetria ligada --, ANTES de
+    /// chegar aqui: desligada, isto nao roda, e o pedido nao paga nem a
+    /// `String` da chave.
+    ///
+    /// Fica de fora o que nao e o habito de uma PESSOA numa conexao: o
+    /// pedido sem usuario (o servico pelo token), o caminho sem IP (job,
+    /// rotina interna, replica -- vazio ali e a verdade) e a op `sql`
+    /// inteira, porque cada passo que ela produz passa por aqui com a op e
+    /// a tabela de verdade.
+    ///
+    /// O `dados` e a forma -- motivo, categoria, database e tabela --, nunca
+    /// o pedido: o perfil nao guarda valor de linha, e o aviso dele tambem
+    /// nao.
+    pub(super) fn perfil_do_pedido(&self, op: &str, pedido: &Json, sessao: &Sessao) {
+        if op == "sql" || sessao.ip.is_empty() {
+            return;
+        }
+        let Some(u) = &sessao.usuario else {
+            return;
+        };
+        let categoria = crate::perfis::categoria(op);
+        let database = pedido.texto_ou("database", "");
+        let tabela = pedido.texto_ou("tabela", "");
+        let desvio = match self.perfis.lock() {
+            Ok(mut m) => m.registrar(&u.login, categoria, database, tabela, crate::agora_ms()),
+            Err(_) => return,
+        };
+        if let Some(d) = desvio {
+            crate::telemetria::sinal(
+                crate::aquario::Alarme::ForaDoPerfil,
+                &format!("{} {categoria} {database} {tabela}", d.nome()),
+            );
+        }
+    }
+
+    /// O arquivo do perfil habitual, no maximo uma vez por passo, e fora do
+    /// `Mutex` dele: o `fsync` da troca duravel nao segura o pedido seguinte.
+    /// Chamado pelo `despachar`, que nao tem trava de dados na mao.
+    pub(super) fn gravar_os_perfis(&self) {
+        let a_gravar = match self.perfis.lock() {
+            Ok(mut m) => m.a_gravar(crate::agora_ms()),
+            Err(_) => None,
+        };
+        if let Some((caminho, corpo)) = a_gravar {
+            if let Err(e) = crate::perfis::gravar_o_arquivo(&caminho, &corpo) {
+                eprintln!("AVISO: o perfil habitual nao gravou: {e}");
+            }
+        }
+    }
+
     /// A reconciliacao do firewall do SO com a lista (pedido 766, P11), pelo
     /// motor unico da `blacklist`. O arranque a chama numa thread propria: os
     /// comandos tem prazo, mas a porta nao espera por eles.

@@ -214,12 +214,17 @@ pub enum Alarme {
     /// amarelo: nada foi recusado -- o aviso e para quem administra olhar se
     /// reconhece a origem.
     IpNovo,
+    /// Pedido 765, P7: o pedido saiu do perfil habitual do usuario -- uma
+    /// combinacao (categoria de op, database, tabela) nunca vista, ou uma
+    /// hora UTC rara para ele -- depois de 7 dias e 200 pedidos de historia.
+    /// De TAREFA e amarelo: so observa, nada foi recusado.
+    ForaDoPerfil,
 }
 
 impl Alarme {
     /// Todos, na ordem da declaracao. Os testes conferem que nenhum fica de
     /// fora, pelo `match` exaustivo do [`Alarme::chave`].
-    pub const TODOS: [Alarme; 27] = [
+    pub const TODOS: [Alarme; 28] = [
         Alarme::TravaReentrante,
         Alarme::TravaEnvenenada,
         Alarme::ErroDeDisco,
@@ -247,6 +252,7 @@ impl Alarme {
         Alarme::ComandoBloqueado,
         Alarme::SenhaDeExecucaoRecusada,
         Alarme::IpNovo,
+        Alarme::ForaDoPerfil,
     ];
 
     /// A chave da fabrica de idiomas. E o MESMO texto da bolha e do e-mail,
@@ -283,6 +289,7 @@ impl Alarme {
             Alarme::ComandoBloqueado => "aquario.motivo.comando_bloqueado",
             Alarme::SenhaDeExecucaoRecusada => "aquario.motivo.senha_de_execucao_recusada",
             Alarme::IpNovo => "aquario.motivo.ip_novo",
+            Alarme::ForaDoPerfil => "aquario.motivo.fora_do_perfil",
         }
     }
 
@@ -306,7 +313,8 @@ impl Alarme {
             | Alarme::EsgotamentoPrevisto
             | Alarme::ReplicaAtrasada
             | Alarme::PlanoLargo
-            | Alarme::IpNovo => Gravidade::Amarelo,
+            | Alarme::IpNovo
+            | Alarme::ForaDoPerfil => Gravidade::Amarelo,
             _ => Gravidade::Vermelho,
         }
     }
@@ -331,7 +339,8 @@ impl Alarme {
             | Alarme::FirewallBloqueou
             | Alarme::ComandoBloqueado
             | Alarme::SenhaDeExecucaoRecusada
-            | Alarme::IpNovo => Grupo::Seguranca,
+            | Alarme::IpNovo
+            | Alarme::ForaDoPerfil => Grupo::Seguranca,
             Alarme::PrazoEstourado | Alarme::ForaDoHabitual | Alarme::ForaDoHabitualReincidente => {
                 Grupo::Prazo
             }
@@ -375,6 +384,7 @@ impl Alarme {
             Alarme::ComandoBloqueado => 13,
             Alarme::SenhaDeExecucaoRecusada => 14,
             Alarme::IpNovo => 15,
+            Alarme::ForaDoPerfil => 16,
             Alarme::FechoRecusado
             | Alarme::FsyncRecusadoAntes
             | Alarme::MarcaNaoResolvida

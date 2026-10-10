@@ -29224,4 +29224,345 @@ fn anotar(""",
             "servidor::testes_dos_padroes_770::a_sessao_web_nasce_curta_e_com_teto",
         ],
     },
+    {
+        "id": "perfil-sem-produtor",
+        "titulo": 'o perfil habitual existia e nenhum pedido passava por ele: o `ForaDoPerfil` não tinha produtor (pedido 765, P7)',
+        "porque": ('pedido 765, P7: alarme declarado sem produtor e guarda que nao guarda (M1 do desenho).'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """            self.perfil_do_pedido(op, pedido, sessao);
+""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
+        ],
+        "seguem": [
+            "perfis::testes::a_combinacao_nunca_vista_acusa_e_a_habitual_nao",
+        ],
+    },
+    {
+        "id": "perfil-sem-portao-da-telemetria",
+        "titulo": 'o perfil habitual trabalhava com a telemetria desligada: instrumentação desligada cobrava a chave e o mutex de todo pedido (pedido 765, P7)',
+        "porque": ('lei da casa: instrumentacao desligada custa zero, e o portao vem antes do trabalho.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        if self.telemetria.ligada() {
+            self.perfil_do_pedido(op, pedido, sessao);""",
+        "troca": """        if true {
+            self.perfil_do_pedido(op, pedido, sessao);""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::com_a_telemetria_desligada_o_perfil_nao_nasce",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
+        ],
+    },
+    {
+        "id": "perfil-sem-piso-de-pedidos",
+        "titulo": 'o perfil acusava o usuário com menos de 200 pedidos: tudo é novo para quem acabou de chegar (pedido 765, P7)',
+        "porque": ('desenho 4.5: ForaDoPerfil so depois de 7 dias e 200 pedidos; antes, o aviso ensina a ignorar o aviso.'),
+        "arquivo": "crates/phxsql-server/src/perfis.rs",
+        "trecho": """let maduro = p.n >= PISO_DE_PEDIDOS && """,
+        "troca": """let maduro = """,
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "perfis::testes::o_usuario_sem_historia_nao_acusa",
+            "servidor::testes_do_perfil_e_do_codigo::o_usuario_com_menos_de_200_pedidos_nao_sai_do_perfil",
+        ],
+        "seguem": [
+            "perfis::testes::a_combinacao_nunca_vista_acusa_e_a_habitual_nao",
+        ],
+    },
+    {
+        "id": "perfil-acusa-o-habitual",
+        "titulo": 'o perfil acusava a combinação que o usuário já fazia: a leitura de sempre virava aviso (pedido 765, P7)',
+        "porque": ('desenho 6, P7: a mesma leitura -> 0 ocorrencias.'),
+        "arquivo": "crates/phxsql-server/src/perfis.rs",
+        "trecho": """let conhecida = p.combinacoes.contains_key(&k);""",
+        "troca": """let conhecida = { let _ = &k; false };""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "perfis::testes::a_combinacao_nunca_vista_acusa_e_a_habitual_nao",
+            "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
+        ],
+        "seguem": [
+            "perfis::testes::o_usuario_sem_historia_nao_acusa",
+        ],
+    },
+    {
+        "id": "perfil-sem-teto-por-hora",
+        "titulo": 'a hora rara virava um aviso por pedido: a madrugada de quem fez hora extra eram cem ocorrências (pedido 765, P7)',
+        "porque": ('pedido 765, P7: no maximo um aviso de hora (ou de perfil cheio) por hora de relogio.'),
+        "arquivo": "crates/phxsql-server/src/perfis.rs",
+        "trecho": """                    p.ultimo_aviso_por_hora = hora_de_relogio;
+""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "perfis::testes::a_hora_rara_acusa_uma_vez_por_hora",
+            "perfis::testes::com_o_teto_cheio_o_perfil_nao_cresce",
+        ],
+        "seguem": [
+            "perfis::testes::a_combinacao_nunca_vista_acusa_e_a_habitual_nao",
+        ],
+    },
+    {
+        "id": "perfil-sem-teto-de-combinacoes",
+        "titulo": 'o perfil de um usuário crescia sem teto: quem variava a tabela de propósito fazia a memória crescer (pedido 765, P7)',
+        "porque": ('pedido 765, P7: persistido com teto -- 256 combinacoes por usuario, 1.000 usuarios.'),
+        "arquivo": "crates/phxsql-server/src/perfis.rs",
+        "trecho": """let cabe = conhecida || p.combinacoes.len() < TETO_DE_COMBINACOES;""",
+        "troca": """let cabe = true;""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "perfis::testes::com_o_teto_cheio_o_perfil_nao_cresce",
+        ],
+        "seguem": [
+            "perfis::testes::a_combinacao_nunca_vista_acusa_e_a_habitual_nao",
+        ],
+    },
+    {
+        "id": "perfil-so-em-memoria",
+        "titulo": 'o perfil habitual só valia em processo: depois de reiniciar, a história de 7 dias recomeçava do zero (pedido 765, P7)',
+        "porque": ('pedido 765, P7: persistido; o perfil precisa de 7 dias e nao pode recomecar a cada arranque.'),
+        "arquivo": "crates/phxsql-server/src/perfis.rs",
+        "trecho": """    phxsql_store::sincronia::gravar_duravel(caminho, corpo.as_bytes())
+}""",
+        "troca": """    let _ = (caminho, corpo);
+    Ok(())
+}""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "perfis::testes::o_perfil_sobrevive_ao_reinicio",
+        ],
+        "seguem": [
+            "perfis::testes::a_combinacao_nunca_vista_acusa_e_a_habitual_nao",
+        ],
+    },
+    {
+        "id": "perfil-conta-a-op-sql",
+        "titulo": 'a op `sql` entrava no perfil como combinação própria, ao lado dos passos que ela produz (pedido 765, P7)',
+        "porque": ('pedido 765, P7: cada passo do sql chega com a op e a tabela de verdade; contar o sql inteiro duplica o pedido.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """if op == "sql" || sessao.ip.is_empty() {""",
+        "troca": """if sessao.ip.is_empty() {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_op_sql_entra_pelos_passos_e_o_caminho_sem_ip_fica_fora",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
+        ],
+    },
+    {
+        "id": "perfil-conta-o-caminho-sem-ip",
+        "titulo": 'o job e a rotina interna entravam no perfil de quem os agendou, como se fossem a pessoa numa conexão (pedido 765, P7)',
+        "porque": ('pedido 765, P7: o perfil e o habito de uma pessoa numa conexao; sem IP (job, rotina, replica) fica fora.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_avisos_01.rs",
+        "trecho": """if op == "sql" || sessao.ip.is_empty() {""",
+        "troca": """if op == "sql" {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_op_sql_entra_pelos_passos_e_o_caminho_sem_ip_fica_fora",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
+        ],
+    },
+    {
+        "id": "p8-bloquear-nasce-ligado",
+        "titulo": 'o bloqueio por código malicioso nascia ligado: a aplicação que concatena SQL trancava o próprio IP de fábrica (pedido 766, P8)',
+        "porque": ('guarda nova entra pedida: `protecao.bloquear_por_codigo` nasce false.'),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """            primeiro_cadastro_pelo_administrador: true,
+            bloquear_por_codigo: false,""",
+        "troca": """            primeiro_cadastro_pelo_administrador: true,
+            bloquear_por_codigo: true,""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::desligado_cinquenta_tautologias_nao_bloqueiam",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-codigo-nao-conta",
+        "titulo": 'a forma de injeção acusada não contava para o bloqueio, mesmo com `bloquear_por_codigo` ligado (pedido 766, P8)',
+        "porque": ('pedido 766, P8: InjecaoSuspeita conta no violacao_leve sob bloquear_por_codigo.'),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            if self.violacao_leve(ip, &op, &motivo).chegou_ao_limite() {""",
+        "troca": """            if { let _ = &motivo; false } {""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::desligado_cinquenta_tautologias_nao_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-poupado-segue-autenticado",
+        "titulo": 'o IP poupado pela guarda chegava ao limite e quem disparou as tautologias seguia autenticado na mesma conexão (pedido 766, P8)',
+        "porque": ('o que o relatorio do 766 deixou para a P8: encerrar a sessao do IP poupado quando ele estoura o limite.'),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """                sessao.encerrar_pela_protecao();
+""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::o_ip_poupado_nao_bloqueia_mas_a_sessao_termina",
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::desligado_cinquenta_tautologias_nao_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-conta-sem-classe",
+        "titulo": 'a P8 contava todo pedido SQL, e não só o que tem forma de injeção (pedido 766, P8)',
+        "porque": ('pedido 766, P8: so as quatro classes do sinais contam; a pergunta comum nao.'),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """self.config.protecao.bloquear_por_codigo && !sinais.vazio() && !ip.is_empty();""",
+        "troca": """self.config.protecao.bloquear_por_codigo && !ip.is_empty();""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_a_pergunta_comum_nao_conta",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-empilhado-conta-duas-vezes",
+        "titulo": 'com o `contar_injecao_sql` velho ligado junto, o comando empilhado contava duas vezes (pedido 766, P8)',
+        "porque": ('desenho 4.6: o contar_injecao_sql vira caso particular; uma politica so.'),
+        "arquivo": "crates/phxsql-server/src/servidor.rs",
+        "trecho": """            && !contado_pelo_codigo
+""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::com_as_duas_ligadas_o_empilhado_conta_uma_vez",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-interruptor-sem-leitor",
+        "titulo": 'o interruptor `protecao.bloquear_por_codigo` não era lido do config.json (pedido 766, P8)',
+        "porque": ('lei da casa: configuracao que nao e lida mente.'),
+        "arquivo": "crates/phxsql-server/src/config.rs",
+        "trecho": """.and_then(|c| c.campo("bloquear_por_codigo"))""",
+        "troca": """.and_then(|c| c.campo("bloquear_por_codigo_que_ninguem_le"))""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "config::testes_da_protecao::bloquear_por_codigo_nasce_desligado_e_e_lido",
+        ],
+        "seguem": [
+            "config::testes_da_protecao::os_interruptores_do_767_nascem_no_lado_seguro",
+        ],
+    },
+    {
+        "id": "p8-sessao-web-sobrevive",
+        "titulo": 'a sessão do navegador que a proteção encerrou continuava valendo no clique seguinte (pedido 766, P8)',
+        "porque": ('pedido 766, P8: a porta HTTP guarda a sessao fora da copia do despachar.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_web_01.rs",
+        "trecho": """        if let Ok(mut vivas) = self.sessoes.lock() {
+            vivas.encerrar(id_sessao);
+        }
+        if let Ok(mut r) = self.remotos.lock() {
+            r.remove(id_sessao.as_str());
+        }
+        id_sessao.clear();
+    }
+
+    fn acertar_sessao(""",
+        "troca": """        id_sessao.clear();
+    }
+
+    fn acertar_sessao(""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::a_sessao_web_encerrada_pela_protecao_morre_no_navegador",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-so-o-observador-classifica",
+        "titulo": 'com o observador do 495 desligado, a P8 ligada não classificava nada e não bloqueava (pedido 766, P8)',
+        "porque": ('pedido 766, P8: contar a forma precisa da mesma classificacao, aberta tambem pela P8.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        let vez = (self.config.politica.observar_injecao_sql
+            || self.config.protecao.bloquear_por_codigo)""",
+        "troca": """        let vez = (self.config.politica.observar_injecao_sql)""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_bloqueia_mesmo_com_o_observador_desligado",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+    },
+    {
+        "id": "p8-classes-nao-entregues",
+        "titulo": 'as classes que o observador acusou não chegavam a quem tem o IP para contar (pedido 766, P8)',
+        "porque": ('pedido 766, P8: o acusar_injecao entrega as classes ao despachar_o_pedido.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        super::SINAIS_DO_PEDIDO.with(|c| c.set(sinais));
+""",
+        "troca": """""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::ligado_cinco_tautologias_do_mesmo_ip_bloqueiam",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::desligado_cinquenta_tautologias_nao_bloqueiam",
+        ],
+    },
+    {
+        "id": "perfil-depois-da-camada",
+        "titulo": 'o perfil habitual ficava depois da camada de proteção, e o comando perigoso recusado -- o pedido mais fora do hábito -- nunca entrava nele (pedido 765, P7)',
+        "porque": ('cognicao de 10/10/2026 16:00: o `?` da camada sai antes do observador posto depois dela.'),
+        "arquivo": "crates/phxsql-server/src/servidor/servico_permissao_01.rs",
+        "trecho": """        if self.telemetria.ligada() {
+            self.perfil_do_pedido(op, pedido, sessao);
+        }
+        let liberado = self.protecao_do_pedido(op, pedido, sessao)?;
+""",
+        "troca": """        let liberado = self.protecao_do_pedido(op, pedido, sessao)?;
+        if self.telemetria.ligada() {
+            self.perfil_do_pedido(op, pedido, sessao);
+        }
+""",
+        "pacote": "phxsql-server",
+        "alvo": ["--lib"],
+        "caem": [
+            "servidor::testes_do_perfil_e_do_codigo::o_comando_perigoso_recusado_tambem_sai_do_perfil",
+        ],
+        "seguem": [
+            "servidor::testes_do_perfil_e_do_codigo::trezentas_leituras_e_um_excluir_em_outra_tabela_saem_do_perfil",
+        ],
+    },
 ]

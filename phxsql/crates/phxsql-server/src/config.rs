@@ -4607,6 +4607,15 @@ pub struct Protecao {
     /// primeiro administrador do servidor, enquanto nenhum tem a sua, se
     /// cadastra sozinho. `false` volta ao comportamento da P14.
     pub primeiro_cadastro_pelo_administrador: bool,
+    /// P8 do 766: o pedido com FORMA de injecao (a ocorrencia
+    /// `InjecaoSuspeita`, as quatro classes do `phxsql_sql::sinais`) conta
+    /// como tentativa leve, pela MESMA politica de bloqueio da senha errada
+    /// -- `tentativas_ate_bloquear` na `janela_minutos`, as guardas de nao
+    /// se trancar, o escalonamento e o firewall. Nasce `false`: guarda nova
+    /// entra pedida, e o motivo e o do `seguranca.contar_injecao_sql` -- a
+    /// aplicacao que monta SQL por concatenacao e dispara a forma sem ser
+    /// ataque trancaria o proprio IP de fabrica.
+    pub bloquear_por_codigo: bool,
 }
 
 impl Default for Protecao {
@@ -4617,6 +4626,7 @@ impl Default for Protecao {
             prazo_comando_so_observa: false,
             modo_dispensa_a_senha: false,
             primeiro_cadastro_pelo_administrador: true,
+            bloquear_por_codigo: false,
         }
     }
 }
@@ -4664,12 +4674,19 @@ impl Protecao {
             .and_then(|c| c.campo("primeiro_cadastro_pelo_administrador"))
             .and_then(Json::booleano)
             .unwrap_or(true);
+        // Torto vale o lado de FABRICA, que aqui e nao bloquear: o que nao e
+        // `true` nao liga uma guarda que tranca IP.
+        let por_codigo = secao
+            .and_then(|c| c.campo("bloquear_por_codigo"))
+            .and_then(Json::booleano)
+            .unwrap_or(false);
         Protecao {
             ligada: Self::efetiva(pedida, cfg!(debug_assertions), avisos),
             prazo_comando_ms: prazo,
             prazo_comando_so_observa: so_observa,
             modo_dispensa_a_senha: dispensa,
             primeiro_cadastro_pelo_administrador: pelo_admin,
+            bloquear_por_codigo: por_codigo,
         }
     }
 
@@ -4714,6 +4731,7 @@ impl Protecao {
                 "primeiro_cadastro_pelo_administrador",
                 Json::Bool(self.primeiro_cadastro_pelo_administrador),
             ),
+            ("bloquear_por_codigo", Json::Bool(self.bloquear_por_codigo)),
         ])
     }
 }
@@ -11866,5 +11884,30 @@ mod testes_da_protecao {
         );
         assert!(p.modo_dispensa_a_senha);
         assert!(!p.primeiro_cadastro_pelo_administrador);
+    }
+
+    /// P8 do 766: `protecao.bloquear_por_codigo` nasce `false`, o torto vale
+    /// `false`, e so o `true` escrito liga -- e o `para_json` o devolve.
+    /// RED: o campo sem leitor (o `unwrap_or(false)` direto) derruba o
+    /// ultimo `assert`.
+    #[test]
+    fn bloquear_por_codigo_nasce_desligado_e_e_lido() {
+        let le = |t: &str| {
+            let mut avisos = Vec::new();
+            Protecao::de_json(&Json::analisar(t).unwrap(), &mut avisos)
+        };
+        for t in [
+            r#"{}"#,
+            r#"{"protecao":{}}"#,
+            r#"{"protecao":{"bloquear_por_codigo":"sim"}}"#,
+        ] {
+            assert!(!le(t).bloquear_por_codigo, "{t}");
+        }
+        let p = le(r#"{"protecao":{"bloquear_por_codigo":true}}"#);
+        assert!(p.bloquear_por_codigo);
+        assert_eq!(
+            p.para_json().campo("bloquear_por_codigo"),
+            Some(&Json::Bool(true))
+        );
     }
 }

@@ -94,7 +94,7 @@ fn desescapar(t: &str) -> String {
     out
 }
 
-fn do_arsenal(rotulo: &str) -> String {
+pub(super) fn do_arsenal(rotulo: &str) -> String {
     arsenal()
         .into_iter()
         .find(|(n, _)| n == rotulo)
@@ -104,7 +104,7 @@ fn do_arsenal(rotulo: &str) -> String {
 
 /// A tautologia do arsenal -- a mesma que a F1 acusa e que a premissa do
 /// SEC mediu executando (2 de 2 linhas).
-fn tautologia_do_arsenal() -> String {
+pub(super) fn tautologia_do_arsenal() -> String {
     do_arsenal("aspa solta / tautologia")
 }
 
