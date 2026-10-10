@@ -223,7 +223,7 @@ footer{
 <div class="envelope">
 <header>
   <div class="rotulo">PhxSql · o dossiê do que foi pedido — página 8 de 8</div>
-  <h1>Pedidos 671 em diante<br>de 786 ao todo</h1>
+  <h1>Pedidos 671 em diante<br>de 787 ao todo</h1>
   <p class="chamada">Uma linha por pedido seu, na ordem em que você pediu. O
   estado é <strong>medido contra o código</strong>, não contra a lembrança — foi
   assim que a chave estrangeira saiu de «pronto» para «parcial», e o Centro de
@@ -238,25 +238,25 @@ footer{
   <nav class="faixas" aria-label="As 8 páginas de pedidos, por faixa"><a href="https://claude.ai/artifact/4jSZ5yZFnjEnbGGbE3i5nz">1–190</a><a href="https://claude.ai/artifact/MAc3CcjfCPbjVm5sQZwYoC">191–260</a><a href="https://claude.ai/artifact/8NyMWXanJFbpsNAbWu1RU3">261–320</a><a href="https://claude.ai/artifact/UAN1DASSFWsLroFmJfufTb">321–360</a><a href="https://claude.ai/artifact/F1N9ZkNW9K5fD1CHr7jsf4">361–430</a><a href="https://claude.ai/artifact/8yxw4iBsJJ8KeWEAWB64PB">431–540</a><a href="https://claude.ai/artifact/KrzPcsd9fqLHfz8XTyzGgY">541–670</a><a href="https://claude.ai/artifact/TJ3nzrNVK6MWpBQzRz8DMg" class="ativa" aria-current="page">671 em diante</a></nav>
 
   <div class="placar">
-    <div class="c"><div class="v">786</div><div class="r">pedidos, ao todo</div></div>
+    <div class="c"><div class="v">787</div><div class="r">pedidos, ao todo</div></div>
     <div class="c feito"><div class="v">677</div><div class="r">feitos</div></div>
     <div class="c parcial"><div class="v">0</div><div class="r">parciais</div></div>
     <div class="c planejado"><div class="v">5</div><div class="r">planejados</div></div>
-    <div class="c depois"><div class="v">104</div><div class="r">depois da versão</div></div>
+    <div class="c depois"><div class="v">105</div><div class="r">depois da versão</div></div>
   </div>
 
   <div class="faixa-info">
     <span class="rotulo-inline">Nesta página</span>
-    <strong>116</strong> pedidos (faixa 671 em diante) ·
+    <strong>117</strong> pedidos (faixa 671 em diante) ·
     <span class="feito">96 feitos</span> ·
     <span class="parcial">0 parciais</span> ·
     <span class="planejado">3 planejados</span> ·
-    <span class="depois">17 depois da versão</span>
+    <span class="depois">18 depois da versão</span>
   </div>
 </header>
 
 <h2>O que está aberto, nesta faixa</h2>
-<p class="sub">Os 3 que não fecharam nesta faixa (3 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (17 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
+<p class="sub">Os 3 que não fecharam nesta faixa (3 sem começar), com o motivo de cada um. O motivo importa mais que o estado: uns esperam trabalho, outros esperam uma decisão sua, e outros esperam coisa de fora deste repositório. (18 ficaram para depois desta versão — veja a lista completa abaixo.)</p>
 <div class="rolo">
   <table>
     <thead><tr><th class="n">#</th><th class="st">estado</th><th>o que você pediu</th><th>onde está</th></tr></thead>
@@ -277,7 +277,7 @@ footer{
   não tem opinião própria sobre nenhum item.
 </div>
 
-<h2 id="todos">Os 116 desta faixa (671 em diante), na ordem em que você pediu</h2>
+<h2 id="todos">Os 117 desta faixa (671 em diante), na ordem em que você pediu</h2>
 <p class="sub">A numeração é a sequência real dos seus pedidos — ela diz
 <em>quando</em> cada coisa foi pedida, e é por isso que vale mantê-la. As
 outras 7 faixas estão no menu acima.</p>
@@ -414,6 +414,7 @@ outras 7 faixas estão no menu acima.</p>
       <tr data-e="feito"><td class="n mono">784</td><td class="st"><span class="pino feito">Feito</span></td><td class="p"><strong>Provas do aquário e caso de sessões quebrados pela segunda senha e pela paginação</strong> (achado da frente do 783, 10/10/2026)</td><td class="e"><code>testes-web/prova-780-aneis.mjs</code> reprova «console sem erro» por um 403 do <code>liberar_execucao</code> que o <code>entrar()</code> provoca no primeiro login (efeito do 767), e <code>prova-707-aquario.mjs</code> cai em «faça login antes» depois da carga — os dois medidos iguais também na base <code>4afd4690</code>, então são de antes do 783. E o caso 40 (<code>botoes-de-sessoes…</code>, tema claro) procura a sessão do outro navegador só na PRIMEIRA página da grade paginada: cada caso novo que abre sessão o empurra para fora. Prova que não passa é garantia que não vale. <strong>FEITO NA ÁRVORE, 10/10/2026 (papel E, base <code>b48389b3</code>; espera o VERDE do integrador).</strong> Três causas medidas: <strong>(1) 780</strong> — o <code>entrar()</code> batia no <code>liberar_execucao</code> sem saber se havia senha cadastrada, e o 403 ia para o console; o ajudante agora lembra quem já cadastrou e, na primeira vez, cadastra antes (o teste lia errado). <strong>(2) 707</strong> — DEFEITO DA TELA: a <code>api()</code> adotava o <code>sessao</code> de toda resposta, e a sondagem do aquário presa na trava voltava DEPOIS do giro do <code>liberar_execucao</code> trazendo o id morto; só adota quem saiu com o id vigente. RED: caso 54 <code>giro-com-pedido-em-voo</code>, 2/2 vermelhos na base, 2/2 verdes. Mais dois do teste: a TV (só <code>monitorar</code>) entra com <code>liberar: false</code>, e a volta de 5 min esperava o selo e não a reprise pintada (<code>NaN</code> → trilho no meio, 1 em 2 corridas no 2º tema). <strong>(3) caso 40</strong> — acha a sessão do outro navegador pela BUSCA da grade, não só na 1ª página. As duas provas seguem AVULSAS.</td></tr>
       <tr data-e="depois"><td class="n mono">785</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>Levar o CI para o Ubuntu 26</strong> (decisão do dono, 10/10/2026)</td><td class="e">O <code>portoes.yml</code> foi fixado em <code>ubuntu-24.04</code> porque o <code>ubuntu-latest</code> vira Ubuntu 26 em 19/10/2026. A troca se mede antes: um job de ensaio no 26 com os portões inteiros, e só então o pino sobe.</td></tr>
       <tr data-e="planejado"><td class="n mono">786</td><td class="st"><span class="pino planejado">Planejado</span></td><td class="p"><strong>Defeito ativo (dado): o <code>atualizar</code> grava a linha inteira e a coluna que não vem no pedido vira NULL, enquanto o catálogo (também ferramenta MCP) diz «valores: só as que mudam»</strong> (achado da frente P15, 10/10/2026)</td><td class="e"><code>json_para_linha</code> em <code>valores.rs</code>. Quem segue o catálogo apaga calado as colunas anuláveis que não mandou; a obrigatória é recusada. Visto pela leitura do código e pela recusa da obrigatória — ainda sem teste da anulável. Decisão do papel C antes do conserto: ou o <code>atualizar</code> mescla com a linha gravada (a coluna ausente fica como está), ou o catálogo passa a dizer a verdade. A régua dos motores decide (<code>UPDATE … SET</code> só toca o que cita, nos quatro); a prova é a coluna anulável que sobrevive a um <code>atualizar</code> sem ela.</td></tr>
+      <tr data-e="depois"><td class="n mono">787</td><td class="st"><span class="pino depois">Depois da versão</span></td><td class="p"><strong>DECISÃO DO DONO, 10/10/2026 — compilador: manter a versão homologada anterior, fixada, e não subir para o Rust 1.99.0 sem laboratório</strong></td><td class="e">Palavra do dono: <em>«Manter a versão homologada anterior fixada no rust-toolchain.toml, além do Cargo.lock e artefatos correspondentes. Se o PhoenixClaw já estiver em 1.99.0, o caminho conservador é retornar ao Rust 1.98.1 para builds Native que utilizem FFI, sem alterar dependências simultaneamente.»</em> Estado medido no PhxSql: <code>rust-toolchain.toml</code> pinado em <strong>1.94.1</strong> (com rustfmt e clippy), <code>Cargo.lock</code> versionado (zero dependências externas), o CI resolve o toolchain pelo pino (os dois jobs, Linux e Windows) e o MSRV declarado é 1.89 — a regra já vale aqui, e o FFI do PhxSql (<code>phxsql-ffi</code>) compila no 1.94.1. A ida a qualquer versão nova é este pedido: laboratório com os portões inteiros, a bateria web e a compilação cruzada para Windows no toolchain candidato, trocando SÓ o compilador (nunca junto com outra mudança); se algo quebrar, volta ao pino. O PhoenixClaw é outro repositório, fora deste: a regra do retorno a 1.98.1 para builds nativos com FFI vale lá e não se aplica daqui.</td></tr>
     </tbody>
   </table>
   <div class="vazio" id="vazio" hidden>Nenhum pedido bate com isso.</div>
