@@ -39,10 +39,15 @@
 // sobre um index.html velho nao acha o #ideLeitura nem o #ideCompartilhar.
 // Casca 17: a tela Insights (insights.js) -- um arquivo a mais, e index.html, app.css e
 // textos.json mudaram junto: um index.html novo sem o insights.js no cache abriria a tela vazia.
-const CACHE = 'phxclaw-casca-17';
+// Casca 18: a vista Conversa (conversa.js, conversa.css) e o HUD retratil Aurora (aurora.js) --
+// tres arquivos a mais. A onda da Conversa tinha deixado conversa.js/css FORA do pre-cache (o
+// instalado sem rede abria a Conversa vazia); entram agora com a Aurora, e index.html e
+// textos.json mudaram junto -- um index.html novo sem o aurora.js no cache abriria a tela sem o HUD.
+const CACHE = 'phxclaw-casca-18';
 const CASCA = [
   './', './index.html', './manifest.webmanifest',
   './assets/app.css', './assets/app.js', './assets/tema.js', './assets/inspecao.js', './assets/idiomas.js', './assets/tarefas.js', './assets/tarefas.css', './assets/fluxos.js', './assets/fluxos.css', './assets/insights.js',
+  './assets/conversa.js', './assets/conversa.css', './assets/aurora.js',
   './assets/grades.js', './assets/grades.css', './assets/config.js', './assets/config-catalogo.json', './assets/ide.js', './assets/paineis.js',
   './assets/vendor/phx-grid/phx-grid.js', './assets/vendor/phx-grid/phx-grid.css',
   './assets/textos.json', './assets/fonte/exo2-latin.woff2',

@@ -360,6 +360,16 @@ const FIXAS: &[L] = &[
         ),
     ),
     c(
+        "ambiente.auto_instalar",
+        "PHXCLAW_AMBIENTE_AUTO_INSTALAR",
+        B,
+        Some("false"),
+        (
+            "Auto-instalar o ambiente de desenvolvimento no arranque quando a permissão do instalador (environment.install) foi concedida; false (padrão) só propõe, nunca instala sozinho",
+            "Auto-install the development environment at startup when the installer permission (environment.install) is granted; false (default) only proposes, never installs by itself",
+        ),
+    ),
+    c(
         "agente.tentativas_argumento",
         "PHXCLAW_TENTATIVAS_ARGUMENTO",
         I,
@@ -2783,6 +2793,9 @@ const CONTA: Txt = (
 /// (TETO) e servidor/conta/canal do operador (CONTA). Executavel continua do projeto
 /// confiado: e o que a confianca sempre cobriu.
 pub const SO_DO_OPERADOR: &[(&str, Txt)] = &[
+    // Auto-instalar dispara instalacao de sistema (pacotes, /opt): um repositorio confiado
+    // nao liga o que instala software na maquina do operador.
+    ("ambiente.auto_instalar", TETO),
     ("api.url_cliente", DESTINO),
     ("decisao.laya.url", DESTINO),
     ("decisao.laya.credencial_nome", DESTINO),

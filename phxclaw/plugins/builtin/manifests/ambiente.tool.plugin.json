@@ -10,7 +10,7 @@
  },
  "core_api": ">=0.5.0, <0.6.0",
  "dependencies": [],
- "description": "Instala e atualiza o ambiente de desenvolvimento no Linux: Rust, PostgreSQL e Python com bibliotecas de desenvolvimento de sistemas, das fontes oficiais e conferidos (SHA-256, impressao digital PGDG, Sigstore).",
+ "description": "Instala e atualiza o ambiente de desenvolvimento no Linux: Rust, PostgreSQL, Python, Node.js (npm/npx) e Ollama com bibliotecas de desenvolvimento de sistemas, das fontes oficiais e conferidos (SHA-256, impressao digital PGDG, Sigstore, GPG pinado do Node e SHA-256 pinado do Ollama v0.40.2).",
  "entrypoint": {
   "type": "process",
   "value": "plugins/builtin/artifacts/ambiente-instalador"
@@ -18,7 +18,7 @@
  "extension_points": [],
  "integrity": {
   "artifact": "plugins/builtin/artifacts/ambiente-instalador",
-  "digest": "d09c13fdc7a7d6b612bdd40a9aedb7f6717ebd31c88c1cb662928fc1eab2b72b",
+  "digest": "788987fb35ef2f93fc802f502abaa6f4bc180218c8ae5f0f62bfea13ea9d2f5f",
   "hash_algorithm": "sha256",
   "provenance": "PhxClaw v0.70 / plugin de ambiente, 01/10/2026",
   "signature": "/NheQeumampC+ebVw0M0mzhINZCeX89xEQXnxclzXUX7UDcXWSkkHTUauEzqA2DC3pqUlAFl03tXyoNI8CkIAw==",
@@ -75,7 +75,12 @@
    "www.python.org",
    "pypi.org",
    "files.pythonhosted.org",
-   "astral.sh"
+   "astral.sh",
+   "nodejs.org",
+   "raw.githubusercontent.com",
+   "github.com",
+   "objects.githubusercontent.com",
+   "release-assets.githubusercontent.com"
   ],
   "read_only_paths": [],
   "timeout_ms": 3600000,
@@ -83,7 +88,8 @@
    "/opt",
    "/usr/lib/postgresql",
    "/etc/apt/sources.list.d",
-   "/usr/share/keyrings"
+   "/usr/share/keyrings",
+   "/usr/local/bin"
   ]
  },
  "tests": [

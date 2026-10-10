@@ -105,3 +105,6 @@ ed25519-dalek.workspace = true
 url.workspace = true
 rustls.workspace = true
 rustls-pki-types.workspace = true
+# Corpo que CONTA os bytes puxados (`poll_frame`): e assim que o teste da rota de voz mede
+# QUANTO foi lido antes da credencial, nao SE a rota recusou (o alto de memoria pre-credencial).
+http-body = "1"

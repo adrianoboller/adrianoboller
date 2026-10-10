@@ -354,6 +354,48 @@ async fn ask_user_pausa_e_retoma_pela_rota_da_api() {
 }
 
 #[tokio::test]
+async fn ajuste_entra_na_lista() {
+    // A resposta do usuario a uma pergunta do agente tem de sobreviver na tarefa viva: o
+    // motor e o dono dela em memoria, e e no `perguntar` que a resposta chega.
+    let raiz = tmp("ajuste");
+    let s = estado(
+        &raiz,
+        Arc::new(|| {
+            vec![
+                ScriptedLlm::call("c1", "ask_user", json!({"question": "Qual o cliente?"})),
+                ScriptedLlm::text("Relatorio pronto."),
+            ]
+        }),
+        Arc::new(Vec::<Arc<dyn Tool>>::new),
+        &["user.ask"],
+    );
+    let base = subir(&s, None).await;
+    let c = criar_tarefa(
+        &s,
+        phxclaw_agent_core::tarefa::NovaTarefa {
+            objective: "faca o relatorio".into(),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    esperar(&s, &c.id, TaskStatus::AwaitingInput).await;
+    let cli = reqwest::Client::new();
+    let r = cli
+        .post(format!("{base}/v1/tasks/{}/answer", c.id))
+        .bearer_auth(TOKEN)
+        .json(&json!({"answer": "Maria Ltda"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r.status(), 202);
+    let fim = c.fim.await.unwrap();
+    assert_eq!(fim.status, TaskStatus::Completed, "{fim:?}");
+    assert_eq!(fim.ajustes.len(), 1, "{:?}", fim.ajustes);
+    assert_eq!(fim.ajustes[0].texto, "Maria Ltda");
+    assert!(fim.ajustes[0].em >= fim.created_at);
+}
+
+#[tokio::test]
 async fn heartbeat_e_gatilhos_criam_tarefa_pela_mesma_funcao() {
     use phxclaw_agent::gatilhos::{
         GatilhoDeArquivo, GatilhoDeWebhook, Gatilhos, Heartbeat, Observador, disparar_arquivos,

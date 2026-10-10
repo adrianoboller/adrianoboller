@@ -1323,7 +1323,7 @@ pub async fn evoluir(agente: &Agent, c: &Ciclo, obs: &dyn Observer) -> Result<Re
         format!("evolucao {id}: item {}", item.nome),
         agente.llm.id(),
     );
-    mae.status = TaskStatus::Running;
+    mae.mudar_estado(TaskStatus::Running);
     store.save(&mae).map_err(|e| e.to_string())?;
     let m = store.workdir(&mae.id);
     let mut r = Registro {
@@ -1363,13 +1363,15 @@ pub async fn evoluir(agente: &Agent, c: &Ciclo, obs: &dyn Observer) -> Result<Re
             r.motivo = Some(p.motivo);
         }
     }
-    mae.status = if r.estado == Estado::EsperandoGo {
+    // Pelo ponto unico (`Task::mudar_estado`): a transicao final entra no historico, senao a
+    // trilha do Kanban perde o ultimo salto desta tarefa-mae de evolucao.
+    let desfecho = if r.estado == Estado::EsperandoGo {
         TaskStatus::Completed
     } else {
         TaskStatus::Failed
     };
+    mae.mudar_estado(desfecho);
     mae.error = r.motivo.clone();
-    mae.updated_at = Utc::now();
     let _ = store.save(&mae);
     gravar(&c.projeto, &r)?;
     let desfecho = match r.estado {

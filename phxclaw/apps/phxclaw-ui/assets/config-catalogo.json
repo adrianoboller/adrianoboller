@@ -227,6 +227,21 @@
       "variavel": "PHXCLAW_TENTATIVAS_ARGUMENTO"
     },
     {
+      "chave": "ambiente.auto_instalar",
+      "comando_do_segredo": null,
+      "descricao": "Auto-instalar o ambiente de desenvolvimento no arranque quando a permissão do instalador (environment.install) foi concedida; false (padrão) só propõe, nunca instala sozinho",
+      "descricao_en": "Auto-install the development environment at startup when the installer permission (environment.install) is granted; false (default) only proposes, never installs by itself",
+      "motivo_so_ambiente": null,
+      "motivo_so_ambiente_en": null,
+      "natureza": "config",
+      "opcoes": null,
+      "padrao": false,
+      "secao": "ambiente",
+      "segredo": false,
+      "tipo": "booleano",
+      "variavel": "PHXCLAW_AMBIENTE_AUTO_INSTALAR"
+    },
+    {
       "chave": "anthropic.chave",
       "comando_do_segredo": "phxclaw anthropic chave",
       "descricao": "Chave da Anthropic (modelos anthropic:*)",

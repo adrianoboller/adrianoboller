@@ -101,8 +101,10 @@ async function abrirPagina(browser, { semEquipe = false, sem = [], csp = null } 
     if (caminho.startsWith('/v1/')) {
       const m = caminho.match(/^\/v1\/tasks\/(t\d)$/);
       // A tela Fluxos pede a lista ao abrir: pasta vazia (o editor e provado no ui_fluxos.mjs).
+      // A tela Insights pede /v1/insights ao abrir: retrato vazio valido (provado no ui_insights.mjs).
       const corpo = m ? TAREFAS.find(t => t.id === m[1]) : caminho === '/v1/tasks' ? TAREFAS : caminho === '/v1/config' ? VISTA_CONFIG
-        : caminho === '/v1/fluxos' ? { fluxos: [], invalidos: [] } : null;
+        : caminho === '/v1/fluxos' ? { fluxos: [], invalidos: [] }
+        : caminho === '/v1/insights' ? { total: 0, terminadas: 0, taxa_falha: 0, falhas: 0, duracao: { p50_ms: null, p95_ms: null, amostras: 0 }, custo: { total: null, nao_medidas: 0 }, por_estado: {}, falhas_comuns: [], dias: [], fluxos: [], desde: null, ate: '2026-10-10T00:00:00Z' } : null;
       return route.fulfill({ status: corpo ? 200 : 404, contentType: 'application/json', headers: CABECALHOS, body: JSON.stringify(corpo ?? { error: 'nao existe' }) });
     }
     const arq = join(UI, caminho === '/' ? 'index.html' : caminho);
@@ -126,8 +128,9 @@ try {
   const botoes = await page.$$eval('.nav[data-tela]', bs => bs.map(b => b.dataset.tela));
   // Ordem das 4 areas da casca (SP000036 L1): Painel; Trabalho; Capacidades; Sistema. A ordem
   // do DOM e a visual, para o foco seguir o olho.
-  // Oito desde a tela Fluxos (editor em grafo, F4 da v0.70), logo depois de Tarefas.
-  check('menu tem as oito telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'tarefas', 'fluxos', 'ide', 'agentes', 'ferramentas', 'absorcao', 'config']), botoes.join(','));
+  // Dez desde a tela Conversa (projeto -> pedido -> cartao), primeira do grupo TRABALHO, antes
+  // de Tarefas; Fluxos e Insights seguem no mesmo grupo.
+  check('menu tem as dez telas', JSON.stringify(botoes) === JSON.stringify(['geral', 'conversa', 'tarefas', 'fluxos', 'insights', 'ide', 'agentes', 'ferramentas', 'absorcao', 'config']), botoes.join(','));
 
   for (const tela of botoes) {
     await page.click(`.nav[data-tela="${tela}"]`);

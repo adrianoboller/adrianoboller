@@ -355,6 +355,23 @@ que o portao do alcance tem de recusar, dentro de um literal; nao cria processo.
         "fixture de `teste_comum_e_calculadora_pura_passam` (#[cfg(test)]): TEXTO de um teste \
 de crate que o portao do alcance aceita, dentro de um literal; nao cria processo.",
     ),
+    (
+        "ambiente_auto.rs",
+        "Command::new(instalador).arg(\"--health\")",
+        "instalador de ambiente (parte C): roda como ROOT fora do bwrap por necessidade -- \
+instala pacote de sistema, e o bwrap do agente mascara o diretorio, tira a rede e nao tem \
+root. Gated no arranque por `verificar_instalador`, que so devolve o caminho se o \
+PluginRegistry validou assinatura e digest do plugin (senao quarentena); caminho fixo, sem \
+entrada do modelo.",
+    ),
+    (
+        "ambiente_auto.rs",
+        "Command::new(&instalador).arg(\"tudo\")",
+        "mesmo instalador assinado rodando a instalacao completa como ROOT fora do bwrap \
+(pacote de sistema, /opt, /usr/local/bin); so dispara com auto_instalar ligado E a permissao \
+concedida, e so depois de `verificar_instalador` aprovar o selo do plugin no arranque \
+(assinatura + digest pelo PluginRegistry).",
+    ),
 ];
 
 /// O primeiro argumento de toda chamada que roda git no hospedeiro em `evolucao.rs`: so o

@@ -1,0 +1,235 @@
+/* Conversa: portao de projeto + Kanban fixo e retratil (zona de cima) + area de realizacao
+   (zona de baixo). Arquivo proprio, como tarefas.css e fluxos.css. So tokens de tema
+   (var(--...)), para o claro e o escuro trocarem sem uma regra a mais. Cor de acao so em acao;
+   DADO nunca recebe text-transform (a regra «rotulo se estiliza, dado nao»). */
+
+/* ---- Seletor de projeto no topo ---- */
+.proj-seletor{display:flex;align-items:center;gap:7px;height:36px;max-width:220px;padding:0 10px;
+  border:1px solid var(--linha-forte);background:var(--painel-2);color:var(--texto);border-radius:6px;cursor:pointer}
+.proj-seletor .ico{color:var(--texto-2)}
+.proj-seletor .ico svg{width:18px;height:18px}
+.proj-seletor b{font-size:var(--fs-1);font-weight:700;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:none}
+.proj-seletor.sem-projeto{border-color:var(--acao-consultar);color:var(--acao-consultar)}
+.proj-seletor.sem-projeto .ico{color:var(--acao-consultar)}
+@media(hover:hover){.proj-seletor:hover{border-color:var(--info)}}
+
+/* ---- Dialogo do portao ---- */
+.proj-dialogo{width:min(440px,92vw);border:1px solid var(--linha-forte);border-radius:12px;
+  background:var(--painel);color:var(--texto);padding:18px 18px 16px}
+.proj-dialogo::backdrop{background:color-mix(in srgb,var(--fundo) 72%,transparent)}
+.proj-dlg-head{display:flex;align-items:center;justify-content:space-between}
+.proj-dlg-head h2{margin:0;font-size:var(--fs-5);font-weight:700}
+.proj-dlg-head .icone{border:1px solid var(--linha-forte);background:var(--painel-2);border-radius:6px;width:34px;height:34px;color:var(--texto-2)}
+.proj-dlg-head .icone svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:var(--traco);stroke-linecap:round}
+.proj-dlg-dica{margin:8px 0 12px;color:var(--texto-2);font-size:var(--fs-2)}
+.proj-dlg-sub{margin:0 0 6px;font-size:var(--fs-1);letter-spacing:.14em;color:var(--texto-3);text-transform:uppercase}
+.proj-lista{list-style:none;margin:0 0 10px;padding:0;max-height:40vh;overflow:auto;display:flex;flex-direction:column;gap:6px}
+.proj-lista .vazio{color:var(--texto-3);font-size:var(--fs-2);padding:8px 2px}
+.proj-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:10px 12px;border:1px solid var(--linha);
+  background:var(--painel-2);color:var(--texto);border-radius:7px;cursor:pointer}
+.proj-item-nome{font-size:var(--fs-2);font-weight:600;text-transform:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-item-ativo{margin-left:auto;font-style:normal;font-size:var(--fs-1);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);border-radius:3px;padding:1px 6px}
+@media(hover:hover){.proj-item:hover{border-color:var(--info)}}
+.proj-item[aria-current="true"]{border-color:var(--ok)}
+.proj-criar{margin-bottom:10px}
+.proj-criar-linha{display:flex;gap:8px;flex-wrap:wrap}
+.proj-nome{flex:1;min-width:160px;background:var(--fundo);color:var(--texto);border:1px solid var(--linha-forte);
+  border-radius:6px;padding:9px 11px;font:inherit;font-size:var(--fs-2)}
+.proj-dlg-acoes{display:flex;justify-content:flex-end}
+
+/* ---- Tela: duas zonas ---- */
+.tela-conversa{overflow:hidden!important}
+.conversa-gate{flex:1;display:grid;place-items:center}
+.conversa-gate[hidden]{display:none}
+.gate-cartao{max-width:460px;text-align:center;border:1px dashed var(--linha-forte);border-radius:12px;padding:30px 26px;background:color-mix(in srgb,var(--painel) 70%,transparent)}
+.gate-cartao .ico{display:inline-block;color:var(--acao-consultar)}
+.gate-cartao .ico svg{width:40px;height:40px;fill:none;stroke:currentColor;stroke-width:var(--traco);stroke-linecap:round;stroke-linejoin:round}
+.gate-cartao h2{margin:12px 0 8px;font-size:var(--fs-5)}
+.gate-cartao p{margin:0 0 16px;color:var(--texto-2);font-size:var(--fs-2)}
+.conversa-corpo{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px}
+.conversa-corpo[hidden]{display:none}
+
+/* ---- Kanban fixo e retratil (zona de cima) ---- */
+.kanban{flex:none;border:1px solid var(--linha);border-radius:10px;background:color-mix(in srgb,var(--painel) 60%,transparent)}
+.kanban-head{display:flex;align-items:center;gap:12px;padding:8px 10px}
+.kanban-alca{display:flex;align-items:center;gap:8px;background:transparent;border:0;color:var(--texto);cursor:pointer;padding:2px 4px}
+.kanban-alca b{font-size:var(--fs-1);letter-spacing:.14em;text-transform:uppercase;color:var(--texto-2)}
+.kanban-alca .chevron svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:var(--traco);stroke-linecap:round;stroke-linejoin:round;transition:transform .2s ease}
+.kanban[data-recolhido="1"] .kanban-alca .chevron svg{transform:rotate(-90deg)}
+.kanban-contadores{display:none;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-left:auto;font-size:var(--fs-1)}
+.kanban-contadores .sep{color:var(--texto-3);font-style:normal}
+.kanban-conta{display:inline-flex;align-items:center;gap:5px}
+.kanban-conta .rot{color:var(--texto-3);letter-spacing:.1em;text-transform:uppercase}
+.kanban-conta b{color:var(--texto)}
+.kanban[data-recolhido="1"] .kanban-contadores{display:flex}
+.kanban-quadro{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;padding:0 10px 10px;
+  max-height:46vh;overflow:hidden;transition:max-height .25s ease}
+.kanban[data-recolhido="1"] .kanban-quadro{max-height:0;padding-top:0;padding-bottom:0}
+.kanban-col{display:flex;flex-direction:column;min-width:0;border:1px solid var(--linha);border-radius:8px;background:var(--painel)}
+.kanban-col-head{display:flex;align-items:center;justify-content:space-between;padding:7px 9px;border-bottom:1px solid var(--linha)}
+.kanban-col-nome{font-size:var(--fs-1);letter-spacing:.1em;text-transform:uppercase;color:var(--texto-2)}
+.kanban-col-conta{font-size:var(--fs-1);color:var(--fundo);background:var(--texto-3);border-radius:10px;min-width:16px;text-align:center;padding:1px 6px}
+.kanban-col-backlog .kanban-col-conta{background:var(--texto-3)}
+.kanban-col-fazendo .kanban-col-conta{background:var(--acao-consultar)}
+.kanban-col-feito .kanban-col-conta{background:var(--acao-incluir)}
+.kanban-col-parado .kanban-col-conta{background:var(--acao-excluir)}
+/* So a LISTA de cartoes rola (o cabecalho da coluna fica fixo acima): a coluna nao passa da
+   altura de ~3 cartoes, e do 4o em diante abre a barra vertical. Assim o Kanban do topo fica
+   compacto por mais tarefas que o projeto tenha. */
+.kanban-col-corpo{display:flex;flex-direction:column;gap:7px;padding:8px;overflow-y:auto;max-height:236px;min-height:40px}
+.kanban-col-vazio{margin:0;color:var(--texto-3);font-size:var(--fs-1)}
+.kanban-card{display:flex;flex-direction:column;gap:5px;width:100%;text-align:left;padding:9px 10px;cursor:pointer;
+  border:1px solid var(--linha-forte);border-radius:7px;background:var(--painel-2);color:var(--texto)}
+.kanban-card-obj{font-size:var(--fs-2);line-height:1.3;text-transform:none;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.kanban-card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.kanban-card-data{font-size:var(--fs-1);color:var(--texto-3);font-variant-numeric:tabular-nums}
+@media(hover:hover){.kanban-card:hover{border-color:var(--info)}}
+.kanban-card.selecionada{border-color:var(--info);box-shadow:inset 2px 0 0 var(--info)}
+
+/* ---- Realizacao (zona de baixo) ---- */
+.conversa-realizacao{flex:1;min-height:0;display:flex;flex-direction:column;border:1px solid var(--linha);border-radius:10px;overflow:hidden}
+.conversa-historico{flex:1;min-height:0;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.conversa-vazio{margin:auto;color:var(--texto-3);font-size:var(--fs-2);text-align:center;max-width:360px}
+.realizacao-barra{display:flex;align-items:center;gap:10px}
+.realizacao-barra .acao{padding:5px 10px;font-size:var(--fs-1);min-height:0}
+
+/* baloes */
+.balao{max-width:82%;display:flex;flex-direction:column;gap:3px}
+.balao-usuario{align-self:flex-end;align-items:flex-end}
+.balao-agente{align-self:flex-start}
+.balao-autor{font-size:var(--fs-1);letter-spacing:.1em;text-transform:uppercase;color:var(--texto-3)}
+.balao-texto{margin:0;padding:10px 12px;border-radius:12px;font-size:var(--fs-2);line-height:1.4;white-space:pre-wrap;text-transform:none;word-break:break-word}
+.balao-usuario .balao-texto{background:color-mix(in srgb,var(--acao-consultar) 16%,var(--painel));border:1px solid color-mix(in srgb,var(--acao-consultar) 40%,transparent);border-bottom-right-radius:4px}
+.balao-agente .balao-texto{background:var(--painel-2);border:1px solid var(--linha);border-bottom-left-radius:4px}
+.balao-erro{color:var(--vermelho);border-color:color-mix(in srgb,var(--vermelho) 45%,transparent)!important}
+.balao-trabalhando .balao-texto::after{content:"";display:inline-block;width:1em;text-align:left;animation:conversa-dots 1.2s steps(4,end) infinite}
+@keyframes conversa-dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+
+/* detalhe do cartao */
+.detalhe{align-self:stretch;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;
+  border:1px solid var(--linha);border-radius:10px;padding:12px;background:color-mix(in srgb,var(--painel-2) 60%,transparent)}
+.det-bloco{min-width:0;border:1px solid var(--linha);border-radius:8px;padding:9px 10px;background:var(--painel)}
+.det-rot{margin:0 0 7px;font-size:var(--fs-1);letter-spacing:.12em;text-transform:uppercase;color:var(--texto-2)}
+.dado{text-transform:none!important}
+.det-chave{display:block;font-size:var(--fs-1);color:var(--texto-3);letter-spacing:.08em;margin:6px 0 2px}
+.det-agente{margin:0;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.det-agente b{font-size:var(--fs-2);color:var(--texto)}
+.det-subs{margin:0;padding-left:16px;font-size:var(--fs-1);color:var(--texto-2)}
+.det-chips{display:flex;flex-wrap:wrap;gap:5px}
+.det-chips code{font-size:var(--fs-1);color:var(--info);background:color-mix(in srgb,var(--info) 12%,transparent);border:1px solid color-mix(in srgb,var(--info) 35%,transparent);border-radius:4px;padding:1px 6px}
+.num{font-variant-numeric:tabular-nums}
+.det-ter{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:var(--fs-2)}
+.det-ter dt{color:var(--texto-3)}
+.det-ter dd{margin:0;color:var(--texto)}
+.prog-barra{height:7px;border:1px solid var(--linha);border-radius:6px;background:var(--painel-2);overflow:hidden}
+.prog-barra i{display:block;height:100%;background:var(--acao-incluir);transition:width .3s ease}
+.prog-barra.indet i{width:40%!important;background:var(--acao-consultar);animation:prog-indet 1.1s linear infinite}
+@keyframes prog-indet{0%{margin-left:-40%}100%{margin-left:100%}}
+.prog-valor{display:block;margin-top:5px;font-size:var(--fs-1);color:var(--texto-2);font-variant-numeric:tabular-nums}
+.pizza-wrap{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.pizza{width:108px;height:108px;flex:none}
+.pizza-legenda{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:var(--fs-1)}
+.pizza-legenda li{display:flex;align-items:center;gap:7px}
+.pizza-amostra{width:11px;height:11px;border-radius:2px;flex:none}
+.pizza-legenda .rot{color:var(--texto-2)}
+.pizza-legenda .num{margin-left:auto;color:var(--texto);font-weight:700}
+.det-timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.det-timeline li{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:var(--fs-1);
+  border-left:2px solid var(--linha-forte);padding:2px 0 2px 9px}
+.det-timeline time{color:var(--texto-3)}
+.det-ajustes{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
+.det-ajustes li{border-left:2px solid color-mix(in srgb,var(--acao-alterar) 60%,transparent);padding-left:9px}
+.det-ajustes p{margin:0 0 2px;font-size:var(--fs-2);white-space:pre-wrap}
+.det-ajustes time{font-size:var(--fs-1);color:var(--texto-3)}
+.det-artefatos{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.det-artefatos .tarefa-artefato{margin:0}
+/* Testar o resultado: so quando a tarefa terminou E produziu um artefato web (ex.: um
+   index.html). Abre em TELA NOVA (a URL do artefato da tarefa) -- o uso de verdade. */
+.det-testar{margin-top:9px;display:flex;flex-direction:column;gap:6px}
+.det-testar .test-nova{align-self:flex-start;text-decoration:none;padding:7px 12px;font-size:var(--fs-1)}
+.det-testar .test-nota{margin:0;font-size:var(--fs-1);color:var(--texto-3)}
+
+/* barra de entrada */
+.conversa-entrada{flex:none;display:flex;align-items:flex-end;gap:8px;padding:10px;border-top:1px solid var(--linha);background:var(--painel)}
+.conversa-entrada textarea{flex:1;min-width:0;resize:none;max-height:160px;background:var(--fundo);color:var(--texto);
+  border:1px solid var(--linha-forte);border-radius:8px;padding:9px 12px;font:inherit;font-size:var(--fs-2);line-height:1.4}
+.conversa-mic{width:42px;height:42px;flex:none;display:grid;place-items:center;padding:0}
+.conversa-mic .ico svg{width:20px;height:20px}
+.conversa-mic.gravando{color:var(--acao-excluir);border-color:var(--acao-excluir);box-shadow:0 0 0 3px color-mix(in srgb,var(--acao-excluir) 24%,transparent);animation:mic-pulsar 1.2s ease-in-out infinite}
+@keyframes mic-pulsar{50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--acao-excluir) 10%,transparent)}}
+.conversa-entrada .acao{min-height:0;height:42px}
+.conversa-status{flex:none;margin:0;padding:0 12px 8px;font-size:var(--fs-1);color:var(--texto-3)}
+.conversa-status.aviso{color:var(--vermelho)}
+
+/* ---- Celular (<=640): kanban recolhido e util, colunas rolando lado a lado ---- */
+@media(max-width:640px){
+  .proj-seletor{max-width:120px;height:44px}
+  .proj-seletor b{display:none}
+  .conversa-corpo{gap:8px}
+  .kanban-quadro{grid-auto-flow:column;grid-template-columns:none;grid-auto-columns:minmax(72vw,72vw);overflow-x:auto;overflow-y:hidden;
+    max-height:52vh;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+  .kanban-quadro>.kanban-col{scroll-snap-align:start}
+  .kanban[data-recolhido="1"] .kanban-quadro{max-height:0}
+  .detalhe{grid-template-columns:1fr}
+  .balao{max-width:92%}
+  /* A barra de entrada acessivel, respeitando o safe-area do aparelho. */
+  .conversa-entrada{padding-bottom:max(10px,env(safe-area-inset-bottom))}
+}
+
+/* ---- Aurora: o HUD retratil do assistente (camada ADICIONAL, aurora.js) ----
+   A cor vem da persona escolhida (--au, posta pelo JS num token de acao que ja existe no tema),
+   nunca de literal: claro e escuro trocam sem uma regra a mais. Fica por cima, canto inferior
+   direito, sem roubar o foco da realizacao. */
+.aurora-hud{position:fixed;right:18px;bottom:18px;z-index:40;width:min(300px,calc(100vw - 36px));
+  --au:var(--acao-consultar);
+  border:1px solid color-mix(in srgb,var(--au) 42%,transparent);border-radius:14px;
+  background:color-mix(in srgb,var(--painel) 88%,var(--au) 6%);
+  box-shadow:0 1px 0 color-mix(in srgb,var(--au) 18%,transparent) inset,0 14px 40px color-mix(in srgb,var(--fundo) 70%,transparent);
+  padding:11px 13px;transform-origin:bottom right;transition:transform .45s cubic-bezier(.2,.8,.2,1),opacity .35s}
+.aurora-hud[hidden]{display:none}
+.au-cabeca{display:flex;align-items:center;gap:9px}
+.au-anel{width:38px;height:38px;flex:none}
+.au-anel-base{fill:none;stroke:color-mix(in srgb,var(--au) 18%,transparent);stroke-width:1.5}
+.au-anel-1{fill:none;stroke:var(--au);stroke-width:2;stroke-linecap:round;stroke-dasharray:34 100;transform-origin:center;animation:au-gira 3.2s linear infinite}
+.au-anel-2{fill:none;stroke:color-mix(in srgb,var(--au) 70%,var(--texto));stroke-width:1.3;stroke-linecap:round;stroke-dasharray:16 70;transform-origin:center;animation:au-gira-r 4.5s linear infinite}
+.au-anel-nucleo{fill:var(--au);opacity:.55;transform-origin:center;animation:au-pulsa 2s ease-in-out infinite}
+.au-id{min-width:0;flex:1;display:flex;flex-direction:column;gap:1px}
+.au-nome{font-size:var(--fs-2);font-weight:800;letter-spacing:.1em;color:color-mix(in srgb,var(--au) 70%,var(--texto));text-transform:none}
+.au-estado{font-size:var(--fs-1);color:var(--texto-3);letter-spacing:.02em}
+.au-bt{flex:none;width:26px;height:26px;display:grid;place-items:center;padding:0;cursor:pointer;
+  background:transparent;border:1px solid var(--linha);border-radius:6px;color:var(--texto-2);font-size:13px;line-height:1}
+.au-bt svg{width:14px;height:14px}
+.au-traco{stroke:currentColor;stroke-width:var(--traco,1.6);stroke-linecap:round}
+.au-voz.on{color:var(--au);border-color:color-mix(in srgb,var(--au) 50%,transparent)}
+@media(hover:hover){.au-bt:hover{border-color:var(--au);color:var(--au)}}
+.au-leitura{margin:9px 0 0;font-size:var(--fs-1);line-height:1.5;color:var(--texto-2);min-height:2.2em;text-transform:none;word-break:break-word;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.au-onda{display:flex;align-items:flex-end;gap:3px;height:0;overflow:hidden;transition:height .25s ease;margin-top:7px}
+.au-onda.on{height:20px}
+.au-onda i{width:3px;background:var(--au);border-radius:2px;height:4px;animation:au-onda 1s ease-in-out infinite}
+.au-onda i:nth-child(odd){animation-delay:.12s}.au-onda i:nth-child(3n){animation-delay:.26s}
+.aurora-orb{position:fixed;right:22px;bottom:22px;z-index:40;--au:var(--acao-consultar);
+  width:46px;height:46px;padding:0;cursor:pointer;border-radius:50%;
+  border:1px solid color-mix(in srgb,var(--au) 45%,transparent);
+  background:color-mix(in srgb,var(--painel) 88%,var(--au) 8%);
+  box-shadow:0 10px 28px color-mix(in srgb,var(--fundo) 70%,transparent);display:grid;place-items:center}
+.aurora-orb[hidden]{display:none}
+.aurora-orb .au-anel{width:34px;height:34px}
+@media(hover:hover){.aurora-orb:hover{border-color:var(--au)}}
+@keyframes au-gira{to{transform:rotate(360deg)}}
+@keyframes au-gira-r{to{transform:rotate(-360deg)}}
+@keyframes au-pulsa{0%,100%{opacity:.4}50%{opacity:.85}}
+@keyframes au-onda{0%,100%{height:4px}50%{height:18px}}
+@media(max-width:640px){.aurora-hud{right:12px;bottom:calc(12px + env(safe-area-inset-bottom))}
+  .aurora-orb{right:14px;bottom:calc(14px + env(safe-area-inset-bottom))}}
+
+/* ---- Movimento reduzido: sem pulso, sem deslize, sem animar a dobra ---- */
+@media(prefers-reduced-motion:reduce){
+  .conversa-mic.gravando{animation:none}
+  .balao-trabalhando .balao-texto::after{animation:none;content:"…"}
+  .prog-barra.indet i{animation:none}
+  .kanban-quadro,.kanban-alca .chevron svg,.prog-barra i{transition:none}
+  .aurora-hud{transition:none}
+  .au-anel-1,.au-anel-2,.au-anel-nucleo,.au-onda i{animation:none}
+}

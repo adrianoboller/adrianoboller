@@ -353,8 +353,7 @@ impl Agent {
         obs: &dyn Observer,
         plano: bool,
     ) -> Task {
-        task.status = TaskStatus::Running;
-        task.updated_at = Utc::now();
+        task.mudar_estado(TaskStatus::Running);
         self.persist(&task, obs);
         let ledger = match EvidenceLedger::open(self.store.evidence_path(&task.id)) {
             Ok(l) => l,
@@ -982,10 +981,8 @@ nova(s) tentativa(s) esgotado. Ultimo erro: {}",
             .prazo_de_resposta
             .unwrap_or(Duration::from_secs(0));
         let mut rx = crate::perguntas::registrar(&task.id);
-        task.status = TaskStatus::AwaitingInput;
-
         task.question = Some(pergunta.to_string());
-        task.updated_at = Utc::now();
+        task.mudar_estado(TaskStatus::AwaitingInput);
         self.persist(task, obs);
         let limite = tokio::time::Instant::now() + prazo;
         let r = loop {
@@ -1004,9 +1001,15 @@ nova(s) tentativa(s) esgotado. Ultimo erro: {}",
             }
         };
         crate::perguntas::retirar(&task.id);
-        task.status = TaskStatus::Running;
+        // A resposta do usuario entra no ajuste AQUI, no unico ponto em que ela chega a
+        // tarefa viva: o `responder` da API grava no disco, mas o motor, dono da tarefa em
+        // memoria, sobrescreveria esse disco no proximo passo. O prazo esgotado e o
+        // cancelamento nao sao resposta do usuario -- so o texto.
+        if let Resposta::Texto(t) = &r {
+            task.registrar_ajuste(t);
+        }
         task.question = None;
-        task.updated_at = Utc::now();
+        task.mudar_estado(TaskStatus::Running);
         self.persist(task, obs);
         r
     }
@@ -1493,9 +1496,8 @@ work so that it passes, then finish.\n{saida}"
         error: Option<String>,
         obs: &dyn Observer,
     ) -> Task {
-        task.status = status;
+        task.mudar_estado(status);
         task.error = error;
-        task.updated_at = Utc::now();
         self.persist(&task, obs);
         task
     }

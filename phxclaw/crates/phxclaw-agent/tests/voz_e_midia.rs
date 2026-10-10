@@ -124,6 +124,7 @@ fn whisper() -> Option<TranscribeTool> {
         model: Some(modelo),
         model_sha256: Some(SHA_TINY_EN.into()),
         elevenlabs: None,
+        perfil: PerfilDeVoz::Auto,
     })
 }
 
@@ -1294,6 +1295,7 @@ mod pagos {
                 cliente: Arc::new(ElevenLabs::novo(&base, cred()).unwrap()),
                 modelo: "scribe_v2".into(),
             })),
+            perfil: PerfilDeVoz::Auto,
         };
         let r = ouvir
             .run(json!({"path":"voz/el.wav","language":"pt"}), &c)
@@ -1373,6 +1375,7 @@ mod pagos {
             model: None,
             model_sha256: None,
             elevenlabs: Some(Err(ElevenLabs::da_pasta(&vazia).err().unwrap())),
+            perfil: PerfilDeVoz::Auto,
         };
         let e = ouvir.run(json!({"path":"a.wav"}), &c).await.unwrap_err();
         assert!(
