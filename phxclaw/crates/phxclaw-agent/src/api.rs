@@ -125,6 +125,8 @@ pub fn servidor(state: ApiState, extras: impl IntoIterator<Item = Router>) -> Ro
         .merge(crate::insights::rotas())
         // A transcricao de voz (STT) do microfone da Conversa, pelo MESMO motor do `transcribe`.
         .merge(crate::voz_rest::rotas())
+        // O monitor de hardware do hospedeiro (CPU, memoria, disco, temperatura, saude).
+        .merge(crate::hardware::rotas())
         // O portao do RBAC, por ULTIMO: `route_layer` cobre so as rotas que ja existem, e e
         // assim que nenhuma das acima escapa dele. Sem usuarios, ele nao faz nada.
         .route_layer(axum::middleware::from_fn_with_state(

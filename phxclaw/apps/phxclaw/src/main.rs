@@ -259,6 +259,7 @@ de e-mail a leem quando PHXCLAW_SMTP_PASSWORD nao esta no ambiente"
         "projeto" | "project" => contexto::projeto(&args[1..])?,
         "evoluir" | "evolve" => runtime()?.block_on(evolucao::comando(&args[1..]))?,
         "config" => config::comando(&args[1..])?,
+        "hardware" => hardware()?,
         other => match ajuda::sugestao(other) {
             Some(s) => bail!("comando desconhecido: {other}. Quis dizer `{PRODUCT_CLI} {s}`?"),
             None => bail!("comando desconhecido: {other}. Rode `{PRODUCT_CLI} ajuda`."),
@@ -271,6 +272,20 @@ fn runtime() -> Result<tokio::runtime::Runtime> {
     Ok(tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?)
+}
+
+/// `phxclaw hardware`: o painel do hospedeiro agora. Duas amostras com um intervalo curto,
+/// porque o CPU% e a diferenca entre os contadores -- uma leitura so nao tem comparacao.
+fn hardware() -> Result<()> {
+    let leitor = phxclaw_agent::hardware::LeitorHardware::do_sistema();
+    let antes = leitor.amostra();
+    std::thread::sleep(Duration::from_millis(phxclaw_agent::hardware::INTERVALO_MS));
+    let depois = leitor.amostra();
+    print!(
+        "{}",
+        phxclaw_agent::hardware::texto(&leitor.entre(&antes, &depois))
+    );
+    Ok(())
 }
 
 /// Valor de `--nome valor`, e os argumentos que sobram.

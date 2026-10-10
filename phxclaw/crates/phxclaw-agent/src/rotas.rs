@@ -365,6 +365,14 @@ pub const ROTAS: &[Rota] = &[
         "corpo: audio cru (audio/webm;codecs=opus ou audio/wav)",
         None,
     ),
+    // --- hardware::rotas ---
+    r(
+        "GET",
+        "/v1/hardware",
+        "Monitor de hardware: CPU, carga, memoria, swap, disco, uptime, temperatura, saude",
+        "consulta: nenhum",
+        Some("hardware"),
+    ),
     // --- gatilhos::router (juntado pelo `servir`) ---
     r(
         "POST",

@@ -206,6 +206,9 @@ pub const MATRIZ: &[Regra] = &[
     // para cima, como criar tarefa. O escopo e a instancia -- a transcricao da Conversa nao e
     // de projeto nenhum. O leitor nao alcanca, e e o que o teste `sem_capacidade` trava.
     r("POST", crate::voz_rest::ROTA, ME, I),
+    // O monitor de hardware e leitura do hospedeiro inteiro (nao de um projeto): do leitor,
+    // escopo instancia, como o `/metrics`.
+    r("GET", crate::hardware::ROTA, LE, I),
     r("*", "/mcp", AD, I),
 ];
 

@@ -1,4 +1,8 @@
-#![forbid(unsafe_code)]
+// A leitura de hardware do SO (disco por `statvfs` no Linux, Win32 no Windows) e FFI, e FFI e
+// `unsafe`. Por isso a postura e `deny` e nao `forbid`: o unsafe fica CONFINADO e auditado no
+// modulo `hardware` (a funcao `statvfs_em` e o `mod win`, cada um com o seu `#[allow]`
+// estreito), e em lugar nenhum mais do crate. Decisao do dono, 2026-10-10.
+#![deny(unsafe_code)]
 //! Motor do agente autonomo do PhxClaw: planeja, executa com ferramentas sob politica,
 //! registra cada passo em evidencia com hash encadeado, roda subagentes em paralelo e
 //! dispara tarefas agendadas. Os provedores de modelo e as ferramentas de navegador,
@@ -54,6 +58,7 @@ pub mod gatilhos;
 pub mod git;
 pub mod gonogo;
 pub mod gravacao;
+pub mod hardware;
 pub mod historico;
 pub mod hooks;
 pub mod ide;

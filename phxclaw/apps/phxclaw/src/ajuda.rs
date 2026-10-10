@@ -692,6 +692,17 @@ pub const COMANDOS: &[Comando] = &[
     },
     Comando {
         grupo: Grupo::Diagnostico,
+        nome: "hardware",
+        resumo: "Monitor de hardware: CPU, carga, memoria, swap, disco, uptime, temperatura, saude",
+        apelidos: &[],
+        uso: "hardware",
+        descricao: "O painel do hospedeiro agora, lido do SO (no Linux, /proc e /sys): CPU% (duas \
+                    amostras), carga, memoria (MemAvailable), swap, uptime, temperatura e ventoinha \
+                    (hwmon), e um veredito de saude. Cada campo e um numero medido ou o motivo de \
+                    nao ter sido. A mesma leitura da rota GET /v1/hardware.",
+    },
+    Comando {
+        grupo: Grupo::Diagnostico,
         nome: "version",
         resumo: "Versao",
         apelidos: &["--version", "-V"],
